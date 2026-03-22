@@ -1,5 +1,6 @@
 import { theme, multiply } from './theme';
 import { css } from 'csslit';
+import { Badge } from './Badge';
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
       `}>
         Click Me
       </button>
+      <Badge label="New" />
     </div>
   );
 }
