@@ -5,6 +5,19 @@ export default defineConfig({
     dts: {
       tsgo: true,
     },
+    format: "esm",
+    fixedExtension: false,
+    sourcemap: true,
     exports: true,
+  },
+  run: {
+    tasks: {
+      build: {
+        command: "vp pack",
+      },
+      dev: {
+        command: "vp pack --watch",
+      },
+    },
   },
 });

@@ -1,0 +1,4 @@
+{
+  "oxc.configPath": "./vite.config.json",
+  "typescript.experimental.useTsgo": true,
+}
