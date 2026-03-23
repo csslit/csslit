@@ -1,9 +1,9 @@
 export const theme = {
   colors: {
-    primary: 'blue',
-    secondary: 'darkred'
+    primary: "blue",
+    secondary: "darkred",
   },
-  gap: 5
+  gap: 5,
 };
 
 // Also export a function to prove compile-time JS execution

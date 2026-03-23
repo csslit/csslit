@@ -1,25 +1,26 @@
 {
   "name": "@csslit/rust-transformer",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "publishConfig": {
     "access": "public"
   },
-  "version": "1.0.0",
-  "main": "binding.js",
-  "types": "binding.d.ts",
-  "napi": {
-    "name": "rust-transformer",
-    "triples": {
-      "defaults": true,
-      "additional": []
-    }
-  },
   "scripts": {
     "artifacts": "napi artifacts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build",
+    "build": "napi build --platform --esm --release -o dist",
+    "build:debug": "napi build --platform --esm -o dist",
     "prepublishOnly": "napi prepublish -t npm"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.0.0"
+    "@napi-rs/cli": "^3.5.1"
   }
 }

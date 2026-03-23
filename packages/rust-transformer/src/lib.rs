@@ -70,8 +70,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         for (start, end) in &visitor.spans {
             let start_usize = *start as usize;
             let end_usize = *end as usize;
-            // The expression includes `css` followed by template literal.
-            // e.g. `css\`... \`` -> we slice after `css`
+            // The expression includes css followed by template literal so we slice after css
             let slice = &source_text[start_usize + 3..end_usize];
             exports.push_str(&format!(
                 "export const __ext_css_{} = () => {};\n",

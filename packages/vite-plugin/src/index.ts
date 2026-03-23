@@ -1,14 +1,13 @@
-import type { Plugin } from 'vite';
-import { transform as rustTransform } from '@csslit/rust-transformer';
+import { transform as rustTransform } from "@csslit/rust-transformer";
 
-import { createServer, type ViteDevServer } from 'vite';
+import { type Plugin, createServer, type ViteDevServer } from "vite";
 
 export function cssCompilePlugin(): Plugin {
   let buildServer: ViteDevServer | null = null;
   let devServer: ViteDevServer | null = null;
   return {
-    name: 'vite-plugin-css-compile',
-    enforce: 'pre',
+    name: "vite-plugin-css-compile",
+    enforce: "pre",
 
     configureServer(server) {
       devServer = server;
@@ -19,45 +18,43 @@ export function cssCompilePlugin(): Plugin {
     },
 
     async configResolved(config) {
-      if (config.command === 'build' && !process.env.VITE_INTERNAL_RUNNER) {
-        process.env.VITE_INTERNAL_RUNNER = '1';
+      if (config.command === "build" && !process.env.VITE_INTERNAL_RUNNER) {
+        process.env.VITE_INTERNAL_RUNNER = "1";
         buildServer = await createServer({
           configFile: config.configFile,
-          server: { middlewareMode: true }
+          server: { middlewareMode: true },
         });
       }
     },
 
-
-
     async transform(code: string, id: string) {
-      if (id.includes('node_modules') || id.startsWith('\0')) return null;
-      const cleanId = id.split('?')[0];
+      if (id.includes("node_modules") || id.startsWith("\0")) return null;
+      const cleanId = id.split("?")[0];
       if (!/\.[jt]sx?$/.test(cleanId)) return null;
 
-      const isEval = id.includes('css-compile-eval');
+      const isEval = id.includes("css-compile-eval");
 
       if (isEval) {
-        const result = rustTransform(code, { mode: 'compileTime', filename: id });
+        const result = rustTransform(code, { mode: "compileTime", filename: id });
         return { code: result.code, map: null };
       }
 
-      const result = rustTransform(code, { mode: 'runtime', filename: id });
+      const result = rustTransform(code, { mode: "runtime", filename: id });
 
       if (result.code === code) return null;
       return { code: result.code, map: null };
     },
 
     resolveId(source) {
-      if (source.includes('virtual:css-compile')) {
-        return '\0' + source;
+      if (source.includes("virtual:css-compile")) {
+        return "\0" + source;
       }
       return null;
     },
 
     async load(id) {
-      if (id.startsWith('\0virtual:css-compile')) {
-        const originalId = id.replace('\0virtual:css-compile/', '').split('?')[0];
+      if (id.startsWith("\0virtual:css-compile")) {
+        const originalId = id.replace("\0virtual:css-compile/", "").split("?")[0];
 
         const server = devServer || buildServer || (this as any).environment?.server;
         if (!server) {
@@ -66,14 +63,14 @@ export function cssCompilePlugin(): Plugin {
 
         try {
           const envName = (this as any).environment?.name;
-          if (envName && envName !== 'client') {
+          if (envName && envName !== "client") {
             return `.hashed_class {}`;
           }
 
-          const evalId = originalId + (originalId.includes('?') ? '&' : '?') + 'css-compile-eval';
+          const evalId = originalId + (originalId.includes("?") ? "&" : "?") + "css-compile-eval";
           const mod = await server.environments.ssr.runner.import(evalId);
-          const extractIndex = id.match(/id=([0-9]+)/)?.[1] || '1';
-          const exportName = '__ext_css_' + extractIndex;
+          const extractIndex = id.match(/id=([0-9]+)/)?.[1] || "1";
+          const exportName = "__ext_css_" + extractIndex;
           const rawCss = mod[exportName] ? mod[exportName]() : `/* No CSS */`;
           const generatedCss = `.hashed_class {\n${rawCss}\n}`;
 
@@ -86,11 +83,11 @@ export function cssCompilePlugin(): Plugin {
           this.addWatchFile(originalId);
 
           return generatedCss;
-        } catch (e: any) {
+        } catch {
           return `/* Execution Error */`;
         }
       }
       return null;
-    }
+    },
   };
 }
