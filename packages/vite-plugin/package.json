@@ -1,16 +1,16 @@
 {
   "name": "@csslit/vite-plugin",
   "version": "1.0.0",
-  "type": "module",
   "files": [
     "dist"
   ],
+  "type": "module",
   "exports": {
     ".": "./dist/index.js",
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@csslit/rust-transformer": "^1.0.0"
+    "@csslit/rust-transformer": "*"
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260322.1",

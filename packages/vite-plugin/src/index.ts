@@ -61,13 +61,14 @@ export function cssCompilePlugin(): Plugin {
           return `/* Error */`;
         }
 
-        try {
-          const envName = (this as any).environment?.name;
-          if (envName && envName !== "client") {
-            return `.hashed_class {}`;
-          }
+        const envName = (this as any).environment?.name;
+        if (envName && envName !== "client") {
+          return `.hashed_class {}`;
+        }
 
-          const evalId = originalId + (originalId.includes("?") ? "&" : "?") + "css-compile-eval";
+        const evalId = originalId + (originalId.includes("?") ? "&" : "?") + "css-compile-eval";
+
+        try {
           const mod = await server.environments.ssr.runner.import(evalId);
           const extractIndex = id.match(/id=([0-9]+)/)?.[1] || "1";
           const exportName = "__ext_css_" + extractIndex;
@@ -83,8 +84,15 @@ export function cssCompilePlugin(): Plugin {
           this.addWatchFile(originalId);
 
           return generatedCss;
-        } catch {
-          return `/* Execution Error */`;
+        } catch (err: unknown) {
+          const error = err instanceof Error ? err : Error(String(err));
+          this.error({
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            cause: error.cause,
+          });
+          return `.hashed_class {\n/* Execution Error:\n${error.toString().replace(/\*\//g, "* /")} */}`;
         }
       }
       return null;

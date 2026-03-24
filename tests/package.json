@@ -1,5 +1,5 @@
 {
-  "name": "playground",
+  "name": "tests",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,11 +10,10 @@
   },
   "devDependencies": {
     "@csslit/vite-plugin": "*",
-    "@types/node": "^25.5.0",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
-    "@typescript/native-preview": "^7.0.0-dev.20260322.1",
     "@vitejs/plugin-react": "^6.0.1",
+    "playwright": "^1.58.2",
     "vite-plus": "^0.1.13"
   }
 }
