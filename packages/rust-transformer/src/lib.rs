@@ -1,8 +1,7 @@
 use napi_derive::napi;
-use oxc_allocator::{Allocator, Box as AstBox};
+use oxc_allocator::{Allocator, Box as AstBox, CloneIn};
 use oxc_ast::ast::*;
 use oxc_ast::AstBuilder;
-use oxc_ast_visit::{walk, Visit};
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
@@ -21,32 +20,22 @@ pub struct TransformResult {
     pub map: Option<String>,
 }
 
-struct CssVisitor {
-    pub spans: Vec<(u32, u32)>,
+struct CompileTimeVisitor<'a> {
+    pub allocator: &'a Allocator,
+    pub templates: Vec<TemplateLiteral<'a>>,
     pub import_spans: Vec<(u32, u32)>,
 }
 
-impl<'a> Visit<'a> for CssVisitor {
-    fn visit_import_declaration(&mut self, decl: &ImportDeclaration<'a>) {
-        self.import_spans.push((decl.span.start, decl.span.end));
-    }
-
-    fn visit_export_named_declaration(&mut self, decl: &ExportNamedDeclaration<'a>) {
-        if decl.source.is_some() {
-            self.import_spans.push((decl.span.start, decl.span.end));
-        }
-        walk::walk_export_named_declaration(self, decl);
-    }
-
-    fn visit_export_all_declaration(&mut self, decl: &ExportAllDeclaration<'a>) {
-        self.import_spans.push((decl.span.start, decl.span.end));
-        walk::walk_export_all_declaration(self, decl);
-    }
-
-    fn visit_tagged_template_expression(&mut self, expr: &TaggedTemplateExpression<'a>) {
-        if let Expression::Identifier(ident) = &expr.tag {
-            if ident.name == "css" {
-                self.spans.push((expr.span.start, expr.span.end));
+impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
+    fn enter_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+        if let Expression::TaggedTemplateExpression(tagged) = expr {
+            if let Expression::Identifier(ident) = &tagged.tag {
+                if ident.name == "css" {
+                    self.templates.push(tagged.quasi.clone_in(self.allocator));
+                    eprintln!("[Rust] Tagged template 'css' found and pushed. Total: {}", self.templates.len());
+                } else {
+                    eprintln!("[Rust] Tagged template found with other tag: {}", ident.name);
+                }
             }
         }
     }
@@ -77,10 +66,10 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
                     let object = ctx
                         .ast
                         .expression_identifier(SPAN, ctx.ast.atom(&import_name));
-                    let property = ctx.ast.identifier_name(SPAN, ctx.ast.atom("hashed_class"));
+                    let property = Expression::StringLiteral(ctx.ast.alloc(ctx.ast.string_literal(SPAN, ctx.ast.atom(&format!("css-{}", index)), None)));
                     *expr = Expression::from(
                         ctx.ast
-                            .member_expression_static(SPAN, object, property, false),
+                            .member_expression_computed(SPAN, object, property, false),
                     );
                 }
             }
@@ -91,7 +80,8 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
 #[napi]
 pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(&options.filename)
+    let clean_filename = options.filename.split('?').next().unwrap_or(&options.filename);
+    let source_type = SourceType::from_path(clean_filename)
         .unwrap_or_default()
         .with_typescript(true)
         .with_jsx(true);
@@ -151,44 +141,161 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         });
     }
 
-    // compileTime mode still uses the visitor approach
-    let ret = Parser::new(&allocator, &source_text, source_type).parse();
-    let mut visitor = CssVisitor {
-        spans: vec![],
+    // compileTime mode: Extract CSS blocks and generate a JS module with exports + source map
+    let mut ret = Parser::new(&allocator, &source_text, source_type).parse();
+    
+    let mut visitor = CompileTimeVisitor {
+        allocator: &allocator,
+        templates: vec![],
         import_spans: vec![],
     };
-    visitor.visit_program(&ret.program);
+    let semantic_builder = SemanticBuilder::new();
+    let semantic = semantic_builder.build(&ret.program).semantic;
+    let scoping = semantic.into_scoping();
 
+    let state = ();
+    traverse_mut(&mut visitor, &allocator, &mut ret.program, scoping, state);
+
+    let ast = AstBuilder::new(&allocator);
+    let mut body = ast.vec();
+
+    // 1. Re-parse or re-extract ImportDeclarations from the original program to preserve them
+    for stmt in &ret.program.body {
+        match stmt {
+            Statement::ImportDeclaration(decl) => {
+                body.push(Statement::ImportDeclaration(
+                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
+                ));
+            }
+            Statement::ExportNamedDeclaration(decl) if decl.source.is_some() => {
+                body.push(Statement::ExportNamedDeclaration(
+                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
+                ));
+            }
+            Statement::ExportAllDeclaration(decl) => {
+                body.push(Statement::ExportAllDeclaration(
+                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
+                ));
+            }
+            _ => {}
+        }
+    }
+
+    // 2. Add the CSS exports
     let mut index = 1;
-    let mut new_output = String::new();
+    let mut sorted_templates = visitor.templates;
+    sorted_templates.sort_by(|a, b| a.span.start.cmp(&b.span.start));
 
-    // Add imports
-    for (start, end) in &visitor.import_spans {
-        new_output.push_str(&source_text[*start as usize..*end as usize]);
-        new_output.push('\n');
-    }
-
-    let mut exports = String::new();
-    let mut sorted_spans = visitor.spans.clone();
-    sorted_spans.sort_by(|a, b| a.0.cmp(&b.0));
-
-    for (start, end) in &sorted_spans {
-        let start_usize = *start as usize;
-        let end_usize = *end as usize;
-        // The expression includes css followed by template literal so we slice after css
-        let slice = &source_text[start_usize + 3..end_usize];
-        exports.push_str(&format!(
-            "export const __ext_css_{} = () => {};\n",
-            index, slice
-        ));
+    let templates_count = sorted_templates.len();
+    for template in &sorted_templates {
+        let export_name = format!("__ext_css_{}", index);
         index += 1;
+
+        // Build: export const __ext_css_N = () => ({ css: `...`, map: "..." });
+        
+        // Internal map for the CSS block itself
+        let sub_codegen_options = CodegenOptions {
+            source_map_path: Some(options.filename.clone().into()),
+            ..CodegenOptions::default()
+        };
+        let mut sub_body = ast.vec();
+        sub_body.push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(
+            SPAN,
+            Expression::TemplateLiteral(ast.alloc(CloneIn::clone_in(template, &allocator))),
+        ))));
+        let mut sub_program = Parser::new(&allocator, &source_text, source_type).parse().program;
+        sub_program.body = sub_body;
+        let sub_result = Codegen::new()
+            .with_options(sub_codegen_options)
+            .with_source_text(&source_text)
+            .build(&sub_program);
+        let sub_map = sub_result.map.map(|sm| sm.to_json_string()).unwrap_or_else(|| "null".to_string());
+
+        // Return object: { css: `...`, map: "..." }
+        let obj = ast.expression_object(
+            SPAN,
+            {
+                let mut props = ast.vec();
+                props.push(ObjectPropertyKind::ObjectProperty(ast.alloc(ast.object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StaticIdentifier(ast.alloc(ast.identifier_name(SPAN, ast.atom("css")))),
+                    Expression::TemplateLiteral(ast.alloc(CloneIn::clone_in(template, &allocator))),
+                    false, // method
+                    false, // shorthand
+                    false, // computed
+                ))));
+                props.push(ObjectPropertyKind::ObjectProperty(ast.alloc(ast.object_property(
+                    SPAN,
+                    PropertyKind::Init,
+                    PropertyKey::StaticIdentifier(ast.alloc(ast.identifier_name(SPAN, ast.atom("map")))),
+                    Expression::StringLiteral(ast.alloc(ast.string_literal(SPAN, ast.atom(&sub_map), None))),
+                    false, // method
+                    false, // shorthand
+                    false, // computed
+                ))));
+                props
+            },
+        );
+
+        // Arrow function: () => obj
+        // Signature: (span, expression, async, type_params, params, return_type, body)
+        let mut arrow = ast.arrow_function_expression(
+            SPAN,
+            true, // expression
+            false, // async
+            None::<TSTypeParameterDeclaration>,
+            ast.formal_parameters(SPAN, FormalParameterKind::ArrowFormalParameters, ast.vec(), None::<FormalParameterRest>),
+            None::<TSTypeAnnotation>,
+            ast.function_body(SPAN, ast.vec(), ast.vec()),
+        );
+        arrow.body.statements.clear();
+        arrow.body.statements.push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(SPAN, obj))));
+
+        // Variable declaration: const __ext_css_N = arrow
+        let var_decl = ast.variable_declaration(
+            SPAN,
+            VariableDeclarationKind::Const,
+            {
+                let mut decls = ast.vec();
+                decls.push(ast.variable_declarator(
+                    SPAN,
+                    VariableDeclarationKind::Const,
+                    BindingPattern::BindingIdentifier(ast.alloc(ast.binding_identifier(SPAN, ast.atom(&export_name)))),
+                    None::<TSTypeAnnotation>,
+                    Some(Expression::ArrowFunctionExpression(ast.alloc(arrow))),
+                    false,
+                ));
+                decls
+            },
+            false,
+        );
+        
+        body.push(Statement::ExportNamedDeclaration(ast.alloc(ast.export_named_declaration(
+                SPAN, 
+                Some(Declaration::VariableDeclaration(ast.alloc(var_decl))), 
+                ast.vec(), 
+                None, 
+                ImportOrExportKind::Value,
+                None::<WithClause>, // with_clause
+            ))
+        ));
     }
 
-    new_output.push_str("\n// --- COMPILE TIME EXPORTS ---\n");
-    new_output.push_str(&exports);
+    let mut final_program = Parser::new(&allocator, &source_text, source_type).parse().program;
+    final_program.body = body;
 
+    let codegen_options = CodegenOptions {
+        source_map_path: Some(options.filename.clone().into()),
+        ..CodegenOptions::default()
+    };
+    let result = Codegen::new()
+        .with_options(codegen_options)
+        .with_source_text(&source_text)
+        .build(&final_program);
+    
     Ok(TransformResult {
-        code: new_output,
-        map: None,
+        code: result.code,
+        map: result.map.map(|sm| sm.to_json_string()),
     })
 }
