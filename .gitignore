@@ -10,3 +10,6 @@ target/
 # Environments
 .env.local
 .env.*.local
+
+# Agent Scratch
+.agents/

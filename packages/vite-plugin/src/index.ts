@@ -36,13 +36,13 @@ export function cssCompilePlugin(): Plugin {
 
       if (isEval) {
         const result = rustTransform(code, { mode: "compileTime", filename: id });
-        return { code: result.code, map: null };
+        return { code: result.code, map: result.map || null };
       }
 
       const result = rustTransform(code, { mode: "runtime", filename: id });
 
       if (result.code === code) return null;
-      return { code: result.code, map: null };
+      return { code: result.code, map: result.map || null };
     },
 
     resolveId(source) {
