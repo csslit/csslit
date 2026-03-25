@@ -1,12 +1,13 @@
 use napi_derive::napi;
-use oxc_allocator::{Allocator, Box as AstBox, CloneIn};
+use oxc_allocator::{Allocator, Box as AstBox, CloneIn, FromIn};
 use oxc_ast::ast::*;
 use oxc_ast::AstBuilder;
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
-use oxc_span::{SourceType, SPAN};
+use oxc_span::{Atom, GetSpan, SourceType, SPAN};
 use oxc_traverse::{traverse_mut, Traverse, TraverseCtx};
+use serde::Serialize;
 
 #[napi(object)]
 pub struct TransformOptions {
@@ -18,23 +19,95 @@ pub struct TransformOptions {
 pub struct TransformResult {
     pub code: String,
     pub map: Option<String>,
+    pub meta: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OffsetSpan {
+    start: u32,
+    end: u32,
+}
+
+#[derive(Serialize)]
+struct CssBlockMetadata {
+    index: u32,
+    quasis: Vec<OffsetSpan>,
+    expressions: Vec<OffsetSpan>,
+}
+
+struct CssTemplateBlock<'a> {
+    template: TemplateLiteral<'a>,
+    metadata: CssBlockMetadata,
+}
+
+fn normalized_source_filename(filename: &str) -> String {
+    filename
+        .split('?')
+        .next()
+        .unwrap_or(filename)
+        .replace('\\', "/")
+}
+
+fn is_relative_script_import(specifier: &str) -> bool {
+    if !specifier.starts_with('.') || specifier.contains("?css-compile-eval") {
+        return false;
+    }
+
+    matches!(
+        specifier.rsplit_once('.').map(|(_, ext)| ext),
+        Some("js" | "jsx" | "ts" | "tsx" | "mjs" | "mts" | "cjs" | "cts")
+    )
+}
+
+fn append_eval_query(specifier: &str) -> String {
+    if is_relative_script_import(specifier) {
+        format!("{specifier}?css-compile-eval")
+    } else {
+        specifier.to_string()
+    }
 }
 
 struct CompileTimeVisitor<'a> {
     pub allocator: &'a Allocator,
-    pub templates: Vec<TemplateLiteral<'a>>,
-    pub import_spans: Vec<(u32, u32)>,
+    pub blocks: Vec<CssTemplateBlock<'a>>,
 }
 
 impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
-    fn enter_expression(&mut self, expr: &mut Expression<'a>, _ctx: &mut TraverseCtx<'a, ()>) {
+    fn enter_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a, ()>) {
         if let Expression::TaggedTemplateExpression(tagged) = expr {
             if let Expression::Identifier(ident) = &tagged.tag {
                 if ident.name == "css" {
-                    self.templates.push(tagged.quasi.clone_in(self.allocator));
-                    eprintln!("[Rust] Tagged template 'css' found and pushed. Total: {}", self.templates.len());
-                } else {
-                    eprintln!("[Rust] Tagged template found with other tag: {}", ident.name);
+                    let index = self.blocks.len() as u32 + 1;
+                    let quasis = tagged
+                        .quasi
+                        .quasis
+                        .iter()
+                        .map(|quasi| OffsetSpan {
+                            start: quasi.span.start,
+                            end: quasi.span.end,
+                        })
+                        .collect();
+                    let expressions = tagged
+                        .quasi
+                        .expressions
+                        .iter()
+                        .map(|expression| OffsetSpan {
+                            start: expression.span().start,
+                            end: expression.span().end,
+                        })
+                        .collect();
+
+                    self.blocks.push(CssTemplateBlock {
+                        template: tagged.quasi.clone_in(self.allocator),
+                        metadata: CssBlockMetadata {
+                            index,
+                            quasis,
+                            expressions,
+                        },
+                    });
+                    *expr = Expression::StringLiteral(
+                        ctx.ast.alloc(ctx.ast.string_literal(SPAN, ctx.ast.atom(""), None)),
+                    );
                 }
             }
         }
@@ -56,9 +129,8 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
                     self.index += 1;
                     let import_name = format!("__css_module_import_{}", index);
                     let virtual_path = format!(
-                        "virtual:css-compile/{}?id={}.module.css",
-                        self.filename.replace("\\", "/"),
-                        index
+                        "virtual:css-compile/{}.module.css?source={}",
+                        index, self.filename
                     );
                     self.imports_to_add
                         .push((import_name.clone(), virtual_path));
@@ -80,8 +152,8 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
 #[napi]
 pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
     let allocator = Allocator::default();
-    let clean_filename = options.filename.split('?').next().unwrap_or(&options.filename);
-    let source_type = SourceType::from_path(clean_filename)
+    let source_filename = normalized_source_filename(&options.filename);
+    let source_type = SourceType::from_path(&source_filename)
         .unwrap_or_default()
         .with_typescript(true)
         .with_jsx(true);
@@ -95,7 +167,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         let scoping = semantic.into_scoping();
 
         let mut transformer = RuntimeTransformer {
-            filename: options.filename.clone(),
+            filename: source_filename.clone(),
             imports_to_add: vec![],
             index: 1,
         };
@@ -129,7 +201,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         }
 
         let codegen_options = CodegenOptions {
-            source_map_path: Some(options.filename.clone().into()),
+            source_map_path: Some(source_filename.clone().into()),
             ..CodegenOptions::default()
         };
         let result = Codegen::new().with_options(codegen_options).build(&program);
@@ -138,6 +210,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         return Ok(TransformResult {
             code: result.code,
             map,
+            meta: None,
         });
     }
 
@@ -146,8 +219,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     
     let mut visitor = CompileTimeVisitor {
         allocator: &allocator,
-        templates: vec![],
-        import_spans: vec![],
+        blocks: vec![],
     };
     let semantic_builder = SemanticBuilder::new();
     let semantic = semantic_builder.build(&ret.program).semantic;
@@ -156,89 +228,67 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     let state = ();
     traverse_mut(&mut visitor, &allocator, &mut ret.program, scoping, state);
 
-    let ast = AstBuilder::new(&allocator);
-    let mut body = ast.vec();
-
-    // 1. Re-parse or re-extract ImportDeclarations from the original program to preserve them
-    for stmt in &ret.program.body {
+    for stmt in &mut ret.program.body {
         match stmt {
             Statement::ImportDeclaration(decl) => {
-                body.push(Statement::ImportDeclaration(
-                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
-                ));
+                let updated = append_eval_query(decl.source.value.as_str());
+                if updated != decl.source.value.as_str() {
+                    decl.source.value = Atom::from_in(updated, &allocator);
+                    decl.source.raw = None;
+                }
             }
-            Statement::ExportNamedDeclaration(decl) if decl.source.is_some() => {
-                body.push(Statement::ExportNamedDeclaration(
-                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
-                ));
+            Statement::ExportNamedDeclaration(decl) => {
+                if let Some(source) = &mut decl.source {
+                    let updated = append_eval_query(source.value.as_str());
+                    if updated != source.value.as_str() {
+                        source.value = Atom::from_in(updated, &allocator);
+                        source.raw = None;
+                    }
+                }
             }
             Statement::ExportAllDeclaration(decl) => {
-                body.push(Statement::ExportAllDeclaration(
-                    ast.alloc(CloneIn::clone_in(&**decl, &allocator)),
-                ));
+                let updated = append_eval_query(decl.source.value.as_str());
+                if updated != decl.source.value.as_str() {
+                    decl.source.value = Atom::from_in(updated, &allocator);
+                    decl.source.raw = None;
+                }
             }
             _ => {}
         }
     }
 
-    // 2. Add the CSS exports
-    let mut index = 1;
-    let mut sorted_templates = visitor.templates;
-    sorted_templates.sort_by(|a, b| a.span.start.cmp(&b.span.start));
+    let ast = AstBuilder::new(&allocator);
+    let mut body = CloneIn::clone_in(&ret.program.body, &allocator);
 
-    let templates_count = sorted_templates.len();
-    for template in &sorted_templates {
-        let export_name = format!("__ext_css_{}", index);
-        index += 1;
+    // Append the CSS exports without dropping the original module body.
+    let metadata_json =
+        serde_json::to_string(&visitor.blocks.iter().map(|block| &block.metadata).collect::<Vec<_>>())
+            .unwrap();
 
-        // Build: export const __ext_css_N = () => ({ css: `...`, map: "..." });
-        
-        // Internal map for the CSS block itself
-        let sub_codegen_options = CodegenOptions {
-            source_map_path: Some(options.filename.clone().into()),
-            ..CodegenOptions::default()
-        };
-        let mut sub_body = ast.vec();
-        sub_body.push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(
-            SPAN,
-            Expression::TemplateLiteral(ast.alloc(CloneIn::clone_in(template, &allocator))),
+    for block in &visitor.blocks {
+        let export_name = format!("__ext_css_{}", block.metadata.index);
+        let mut arguments = ast.vec();
+        arguments.push(Argument::from(Expression::NumericLiteral(ast.alloc(
+            ast.numeric_literal(SPAN, block.metadata.index as f64, None, NumberBase::Decimal),
         ))));
-        let mut sub_program = Parser::new(&allocator, &source_text, source_type).parse().program;
-        sub_program.body = sub_body;
-        let sub_result = Codegen::new()
-            .with_options(sub_codegen_options)
-            .with_source_text(&source_text)
-            .build(&sub_program);
-        let sub_map = sub_result.map.map(|sm| sm.to_json_string()).unwrap_or_else(|| "null".to_string());
 
-        // Return object: { css: `...`, map: "..." }
-        let obj = ast.expression_object(
+        let call_expression = Expression::CallExpression(ast.alloc_call_expression(
             SPAN,
-            {
-                let mut props = ast.vec();
-                props.push(ObjectPropertyKind::ObjectProperty(ast.alloc(ast.object_property(
-                    SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StaticIdentifier(ast.alloc(ast.identifier_name(SPAN, ast.atom("css")))),
-                    Expression::TemplateLiteral(ast.alloc(CloneIn::clone_in(template, &allocator))),
-                    false, // method
-                    false, // shorthand
-                    false, // computed
-                ))));
-                props.push(ObjectPropertyKind::ObjectProperty(ast.alloc(ast.object_property(
-                    SPAN,
-                    PropertyKind::Init,
-                    PropertyKey::StaticIdentifier(ast.alloc(ast.identifier_name(SPAN, ast.atom("map")))),
-                    Expression::StringLiteral(ast.alloc(ast.string_literal(SPAN, ast.atom(&sub_map), None))),
-                    false, // method
-                    false, // shorthand
-                    false, // computed
-                ))));
-                props
-            },
+            ast.expression_identifier(SPAN, ast.atom("__csslit_extract__")),
+            None::<TSTypeParameterInstantiation>,
+            arguments,
+            false,
+        ));
+        let extraction_expression = Expression::TaggedTemplateExpression(
+            ast.alloc_tagged_template_expression(
+                SPAN,
+                call_expression,
+                None::<TSTypeParameterInstantiation>,
+                CloneIn::clone_in(&block.template, &allocator),
+            ),
         );
 
-        // Arrow function: () => obj
+        // Arrow function: () => __csslit_extract__(n)`...`
         // Signature: (span, expression, async, type_params, params, return_type, body)
         let mut arrow = ast.arrow_function_expression(
             SPAN,
@@ -250,7 +300,12 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
             ast.function_body(SPAN, ast.vec(), ast.vec()),
         );
         arrow.body.statements.clear();
-        arrow.body.statements.push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(SPAN, obj))));
+        arrow.body
+            .statements
+            .push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(
+                SPAN,
+                extraction_expression,
+            ))));
 
         // Variable declaration: const __ext_css_N = arrow
         let var_decl = ast.variable_declaration(
@@ -282,20 +337,20 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         ));
     }
 
-    let mut final_program = Parser::new(&allocator, &source_text, source_type).parse().program;
-    final_program.body = body;
+    ret.program.body = body;
 
     let codegen_options = CodegenOptions {
-        source_map_path: Some(options.filename.clone().into()),
+        source_map_path: Some(source_filename.into()),
         ..CodegenOptions::default()
     };
     let result = Codegen::new()
         .with_options(codegen_options)
         .with_source_text(&source_text)
-        .build(&final_program);
+        .build(&ret.program);
     
     Ok(TransformResult {
         code: result.code,
         map: result.map.map(|sm| sm.to_json_string()),
+        meta: Some(metadata_json),
     })
 }
