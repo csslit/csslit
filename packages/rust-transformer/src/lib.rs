@@ -1,4 +1,5 @@
 use napi_derive::napi;
+use merge_source_map::merge;
 use oxc_allocator::{Allocator, Box as AstBox, CloneIn, FromIn};
 use oxc_ast::ast::*;
 use oxc_ast::AstBuilder;
@@ -8,11 +9,15 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::{Atom, GetSpan, SourceType, SPAN};
 use oxc_traverse::{traverse_mut, Traverse, TraverseCtx};
 use serde::Serialize;
+use std::path::{Path, PathBuf};
+use sourcemap::SourceMap;
 
 #[napi(object)]
 pub struct TransformOptions {
     pub mode: String,
     pub filename: String,
+    pub input_map: Option<String>,
+    pub root: Option<String>,
 }
 
 #[napi(object)]
@@ -22,17 +27,32 @@ pub struct TransformResult {
     pub meta: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct OffsetSpan {
     start: u32,
     end: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct CssBlockMetadata {
     index: u32,
     quasis: Vec<OffsetSpan>,
     expressions: Vec<OffsetSpan>,
+}
+
+#[derive(Serialize)]
+struct SourceLocation {
+    source: String,
+    line: u32,
+    column: u32,
+    content: Option<String>,
+}
+
+#[derive(Serialize)]
+struct RemappedCssBlock {
+    index: u32,
+    quasis: Vec<SourceLocation>,
+    expressions: Vec<SourceLocation>,
 }
 
 struct CssTemplateBlock<'a> {
@@ -46,6 +66,165 @@ fn normalized_source_filename(filename: &str) -> String {
         .next()
         .unwrap_or(filename)
         .replace('\\', "/")
+}
+
+fn normalize_path_string(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn normalize_path_buf(path: &Path) -> String {
+    normalize_path_string(path.to_string_lossy().as_ref())
+}
+
+fn is_within_root(path: &str, root: &str) -> bool {
+    path == root || path.starts_with(&format!("{root}/"))
+}
+
+fn to_browser_source_path(source: &str, root: &str) -> String {
+    let normalized_source = normalize_path_string(source);
+    if !Path::new(&normalized_source).is_absolute() {
+        return normalized_source;
+    }
+    if !is_within_root(&normalized_source, root) {
+        return normalized_source;
+    }
+
+    match Path::new(&normalized_source).strip_prefix(root) {
+        Ok(relative) => format!("/{}", normalize_path_buf(relative)),
+        Err(_) => normalized_source,
+    }
+}
+
+fn resolve_original_source(source: &str, clean_id: &str, root: &str) -> String {
+    let clean_source = source.split('?').next().unwrap_or(source);
+
+    if clean_source.starts_with('/') {
+        return clean_source.to_string();
+    }
+
+    let normalized_source = normalize_path_string(clean_source);
+    if Path::new(&normalized_source).is_absolute() {
+        return to_browser_source_path(&normalized_source, root);
+    }
+
+    let resolved = Path::new(clean_id)
+        .parent()
+        .map(|parent| parent.join(clean_source))
+        .unwrap_or_else(|| PathBuf::from(clean_source));
+
+    to_browser_source_path(&normalize_path_buf(&resolved), root)
+}
+
+fn create_line_starts(code: &str) -> Vec<u32> {
+    let mut line_starts = vec![0];
+    for (index, byte) in code.bytes().enumerate() {
+        if byte == b'\n' {
+            line_starts.push(index as u32 + 1);
+        }
+    }
+    line_starts
+}
+
+fn offset_to_position(line_starts: &[u32], offset: u32) -> (u32, u32) {
+    let line_index = match line_starts.binary_search(&offset) {
+        Ok(index) => index,
+        Err(index) => index.saturating_sub(1),
+    };
+    let line_start = line_starts.get(line_index).copied().unwrap_or(0);
+    (line_index as u32, offset.saturating_sub(line_start))
+}
+
+fn trace_location(
+    span: &OffsetSpan,
+    line_starts: &[u32],
+    fallback_source: &str,
+    fallback_content: &str,
+    input_map: Option<&SourceMap>,
+    root: &str,
+) -> SourceLocation {
+    let (generated_line, generated_column) = offset_to_position(line_starts, span.start);
+
+    if let Some(input_map) = input_map {
+        if let Some(token) = input_map.lookup_token(generated_line, generated_column) {
+            if let Some(source) = token.get_source() {
+                let content = token
+                    .get_source_view()
+                    .map(|view| view.source().to_string())
+                    .or_else(|| {
+                        let src_id = token.get_src_id();
+                        if src_id == !0 {
+                            None
+                        } else {
+                            input_map.get_source_contents(src_id).map(ToString::to_string)
+                        }
+                    });
+
+                return SourceLocation {
+                    source: resolve_original_source(source, fallback_source, root),
+                    line: token.get_src_line() + 1,
+                    column: token.get_src_col(),
+                    content,
+                };
+            }
+        }
+    }
+
+    SourceLocation {
+        source: to_browser_source_path(fallback_source, root),
+        line: generated_line + 1,
+        column: generated_column,
+        content: Some(fallback_content.to_string()),
+    }
+}
+
+fn remap_css_metadata(
+    metadata: &[CssBlockMetadata],
+    source_text: &str,
+    clean_id: &str,
+    root: &str,
+    input_map: Option<&SourceMap>,
+) -> Vec<RemappedCssBlock> {
+    let line_starts = create_line_starts(source_text);
+
+    metadata
+        .iter()
+        .map(|block| RemappedCssBlock {
+            index: block.index,
+            quasis: block
+                .quasis
+                .iter()
+                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map, root))
+                .collect(),
+            expressions: block
+                .expressions
+                .iter()
+                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map, root))
+                .collect(),
+        })
+        .collect()
+}
+
+fn sourcemap_to_json(map: &SourceMap) -> String {
+    let mut output = Vec::new();
+    map.to_writer(&mut output).unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+fn parse_output_sourcemap<T: ToString>(map: T) -> SourceMap {
+    SourceMap::from_slice(map.to_string().as_bytes()).unwrap()
+}
+
+fn collapse_sourcemap(
+    output_map: Option<SourceMap>,
+    input_map: Option<&SourceMap>,
+) -> Option<String> {
+    match (output_map, input_map) {
+        (Some(output_map), Some(input_map)) if input_map.get_token_count() > 0 => {
+            Some(sourcemap_to_json(&merge(vec![input_map.clone(), output_map], Default::default())))
+        }
+        (Some(output_map), _) => Some(sourcemap_to_json(&output_map)),
+        (None, _) => None,
+    }
 }
 
 fn is_relative_script_import(specifier: &str) -> bool {
@@ -153,6 +332,15 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
 pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
     let allocator = Allocator::default();
     let source_filename = normalized_source_filename(&options.filename);
+    let root = options
+        .root
+        .as_deref()
+        .map(normalized_source_filename)
+        .unwrap_or_else(String::new);
+    let input_map = options
+        .input_map
+        .as_deref()
+        .and_then(|map| SourceMap::from_slice(map.as_bytes()).ok());
     let source_type = SourceType::from_path(&source_filename)
         .unwrap_or_default()
         .with_typescript(true)
@@ -205,7 +393,10 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
             ..CodegenOptions::default()
         };
         let result = Codegen::new().with_options(codegen_options).build(&program);
-        let map = result.map.map(|sm| sm.to_json_string());
+        let map = collapse_sourcemap(
+            result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
+            input_map.as_ref(),
+        );
 
         return Ok(TransformResult {
             code: result.code,
@@ -261,9 +452,18 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     let mut body = CloneIn::clone_in(&ret.program.body, &allocator);
 
     // Append the CSS exports without dropping the original module body.
-    let metadata_json =
-        serde_json::to_string(&visitor.blocks.iter().map(|block| &block.metadata).collect::<Vec<_>>())
-            .unwrap();
+    let remapped_metadata = remap_css_metadata(
+        &visitor
+            .blocks
+            .iter()
+            .map(|block| block.metadata.clone())
+            .collect::<Vec<_>>(),
+        &source_text,
+        &source_filename,
+        &root,
+        input_map.as_ref(),
+    );
+    let metadata_json = serde_json::to_string(&remapped_metadata).unwrap();
 
     for block in &visitor.blocks {
         let export_name = format!("__ext_css_{}", block.metadata.index);
@@ -339,7 +539,10 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     
     Ok(TransformResult {
         code: result.code,
-        map: result.map.map(|sm| sm.to_json_string()),
+        map: collapse_sourcemap(
+            result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
+            input_map.as_ref(),
+        ),
         meta: Some(metadata_json),
     })
 }

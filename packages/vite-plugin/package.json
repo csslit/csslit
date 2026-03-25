@@ -20,6 +20,7 @@
     "vite-plus": "^0.1.13"
   },
   "peerDependencies": {
-    "vite": "^8.0.2"
+    "vite": "^8.0.2",
+    "vite-plus": "^0.1.13"
   }
 }

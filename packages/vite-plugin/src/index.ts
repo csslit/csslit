@@ -8,7 +8,6 @@ import {
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TraceMap, originalPositionFor, type EncodedSourceMap } from "@jridgewell/trace-mapping";
 import type { ExistingRawSourceMap, SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
 import { type Plugin, type ViteDevServer, normalizePath } from "vite-plus";
 
@@ -17,17 +16,6 @@ const DIST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const EXTRACT_RUNTIME_PATH = path.join(DIST_DIR, "extract-runtime.js");
 
 let extractRuntimeSourceCache: string | null = null;
-
-type OffsetSpan = {
-  start: number;
-  end: number;
-};
-
-type CssBlockMetadata = {
-  index: number;
-  quasis: OffsetSpan[];
-  expressions: OffsetSpan[];
-};
 
 type SourceLocation = {
   source: string;
@@ -52,13 +40,6 @@ function isWithinRoot(id: string, root: string) {
   return id === root || id.startsWith(`${root}/`);
 }
 
-function toBrowserSourcePath(source: string, root: string) {
-  const normalizedSource = normalizePath(source);
-  if (!path.isAbsolute(normalizedSource)) return normalizedSource;
-  if (!isWithinRoot(normalizedSource, root)) return normalizedSource;
-  return `/${normalizePath(path.relative(root, normalizedSource))}`;
-}
-
 function encodeSourceId(id: string) {
   return Buffer.from(id, "utf8").toString("base64url");
 }
@@ -75,36 +56,6 @@ function rewriteRuntimeVirtualIds(code: string, sourceId: string) {
   );
 }
 
-function createLineStarts(code: string) {
-  const lineStarts = [0];
-  for (let index = 0; index < code.length; index += 1) {
-    if (code.charCodeAt(index) === 10) {
-      lineStarts.push(index + 1);
-    }
-  }
-  return lineStarts;
-}
-
-function offsetToPosition(lineStarts: number[], offset: number) {
-  let low = 0;
-  let high = lineStarts.length - 1;
-
-  while (low <= high) {
-    const middle = (low + high) >> 1;
-    if (lineStarts[middle] <= offset) {
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  const lineIndex = Math.max(high, 0);
-  return {
-    line: lineIndex + 1,
-    column: offset - lineStarts[lineIndex],
-  };
-}
-
 function toRawSourceMap(map: SourceMapInput | null | undefined): ExistingRawSourceMap | null {
   if (!map || typeof map === "string") return null;
   return map;
@@ -119,100 +70,6 @@ function shiftSourcemap(map: SourceMapInput | null, prefix: string): SourceMapIn
     ...rawMap,
     mappings: `${";".repeat(prefixLines)}${rawMap.mappings}`,
   };
-}
-
-function resolveOriginalSource(
-  source: string,
-  cleanId: string,
-  root: string,
-  content: string | null,
-): SourceLocation {
-  const [cleanSource] = source.split("?");
-
-  if (cleanSource.startsWith("/")) {
-    return {
-      source: cleanSource,
-      line: 1,
-      column: 0,
-      content,
-    };
-  }
-
-  const normalizedSource = normalizePath(cleanSource);
-  const resolvedSource = path.isAbsolute(normalizedSource)
-    ? normalizedSource
-    : normalizePath(path.resolve(path.dirname(cleanId), normalizedSource));
-
-  return {
-    source: toBrowserSourcePath(resolvedSource, root),
-    line: 1,
-    column: 0,
-    content,
-  };
-}
-
-function createRemapper(
-  code: string,
-  cleanId: string,
-  root: string,
-  combinedMap: SourceMapInput | null,
-) {
-  const lineStarts = createLineStarts(code);
-  const rawMap = toRawSourceMap(combinedMap);
-
-  if (!rawMap?.mappings) {
-    return (span: OffsetSpan): SourceLocation => {
-      const position = offsetToPosition(lineStarts, span.start);
-      return {
-        source: toBrowserSourcePath(cleanId, root),
-        line: position.line,
-        column: position.column,
-        content: code,
-      };
-    };
-  }
-
-  const traceMap = new TraceMap(rawMap as EncodedSourceMap);
-  return (span: OffsetSpan): SourceLocation => {
-    const position = offsetToPosition(lineStarts, span.start);
-    const original = originalPositionFor(traceMap, position);
-
-    if (!original.source || original.line == null || original.column == null) {
-      return {
-        source: toBrowserSourcePath(cleanId, root),
-        line: position.line,
-        column: position.column,
-        content: code,
-      };
-    }
-
-    const sourceIndex = rawMap.sources?.indexOf(original.source) ?? -1;
-    const sourceContent = sourceIndex >= 0 ? (rawMap.sourcesContent?.[sourceIndex] ?? null) : null;
-    const resolvedSource = resolveOriginalSource(original.source, cleanId, root, sourceContent);
-
-    return {
-      source: resolvedSource.source,
-      line: original.line,
-      column: original.column,
-      content: resolvedSource.content,
-    };
-  };
-}
-
-function remapCssMetadata(
-  metadata: CssBlockMetadata[],
-  code: string,
-  cleanId: string,
-  root: string,
-  combinedMap: SourceMapInput | null,
-): RemappedCssBlock[] {
-  const remap = createRemapper(code, cleanId, root, combinedMap);
-
-  return metadata.map((block) => ({
-    index: block.index,
-    quasis: block.quasis.map(remap),
-    expressions: block.expressions.map(remap),
-  }));
 }
 
 function getExtractRuntimeSource() {
@@ -535,9 +392,12 @@ export function cssCompilePlugin(): Plugin {
       if (!/\.[jt]sx?$/.test(cleanId)) return null;
 
       const isEval = query?.includes("css-compile-eval");
+      const inputMap = this.getCombinedSourcemap();
       const result = rustTransform(code, {
         mode: isEval ? "compileTime" : "runtime",
         filename: cleanId,
+        inputMap: inputMap ? JSON.stringify(inputMap) : undefined,
+        root,
       });
 
       if (result.code === code) return null;
@@ -549,10 +409,8 @@ export function cssCompilePlugin(): Plugin {
         };
       }
 
-      const combinedMap = this.getCombinedSourcemap();
-      const metadata = result.meta ? (JSON.parse(result.meta) as CssBlockMetadata[]) : [];
-      const remappedBlocks = remapCssMetadata(metadata, code, cleanId, root, combinedMap);
-      const prelude = createCompileTimePrelude(remappedBlocks);
+      const blocks = result.meta ? (JSON.parse(result.meta) as RemappedCssBlock[]) : [];
+      const prelude = createCompileTimePrelude(blocks);
       const map = shiftSourcemap(
         result.map ? (JSON.parse(result.map) as SourceMapInput) : null,
         prelude,
@@ -584,7 +442,7 @@ export function cssCompilePlugin(): Plugin {
       const [, index, sourceId] = match;
       const normalizedAbsPath = normalizePath(decodeSourceId(sourceId));
       const evalId = `${normalizedAbsPath}?css-compile-eval`;
-      const server = devServer || (this as any).environment?.server;
+      const server = devServer || (this.environment as any).server;
 
       if (!server) return null;
 
@@ -605,7 +463,7 @@ export function cssCompilePlugin(): Plugin {
           map: buildCssSourcemap(cssFile, output.lineMappings),
           moduleType: "css",
         };
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error(`[Plugin] CSS Extraction failed for ${id}:`, err);
         return null;
       }
