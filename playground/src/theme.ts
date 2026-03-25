@@ -7,4 +7,7 @@ export const theme = {
 };
 
 // Also export a function to prove compile-time JS execution
-export const multiply = (a: number, b: number) => a * b;
+export const multiply = (a: number, b: number) => {
+  throw new Error("Test");
+  a * b;
+};

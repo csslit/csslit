@@ -12,7 +12,7 @@ use serde::Serialize;
 use std::path::Path;
 use sourcemap::SourceMap;
 
-const CSS_DERIVED_SUFFIX: &str = ".csslit-";
+const CSS_DERIVED_SUFFIX: &str = ".csslit.module.css";
 
 #[napi(object)]
 pub struct TransformOptions {
@@ -281,7 +281,7 @@ impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
 
 struct RuntimeTransformer {
     filename: String,
-    imports_to_add: Vec<(String, String)>,
+    import_to_add: Option<(String, String)>,
     index: u32,
 }
 
@@ -292,20 +292,20 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
                 if ident.name == "css" {
                     let index = self.index;
                     self.index += 1;
-                    let import_name = format!("__css_module_import_{}", index);
-                    let self_import = Path::new(&self.filename)
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(ToString::to_string)
-                        .unwrap_or_else(|| self.filename.clone());
-                    let virtual_path =
-                        format!("./{self_import}{CSS_DERIVED_SUFFIX}{index}.module.css");
-                    self.imports_to_add
-                        .push((import_name.clone(), virtual_path));
+                    let import_name = "__css_module_import";
+                    if self.import_to_add.is_none() {
+                        let self_import = Path::new(&self.filename)
+                            .file_name()
+                            .and_then(|name| name.to_str())
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| self.filename.clone());
+                        let virtual_path = format!("./{self_import}{CSS_DERIVED_SUFFIX}");
+                        self.import_to_add = Some((import_name.to_string(), virtual_path));
+                    }
 
                     let object = ctx
                         .ast
-                        .expression_identifier(SPAN, ctx.ast.atom(&import_name));
+                        .expression_identifier(SPAN, ctx.ast.atom(import_name));
                     let property = Expression::StringLiteral(ctx.ast.alloc(ctx.ast.string_literal(SPAN, ctx.ast.atom(&format!("css-{}", index)), None)));
                     *expr = Expression::from(
                         ctx.ast
@@ -340,7 +340,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
 
         let mut transformer = RuntimeTransformer {
             filename: source_filename.clone(),
-            imports_to_add: vec![],
+            import_to_add: None,
             index: 1,
         };
 
@@ -348,7 +348,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         traverse_mut(&mut transformer, &allocator, &mut program, scoping, state);
 
         let ast = AstBuilder::new(&allocator);
-        for (name, path) in transformer.imports_to_add.into_iter().rev() {
+        if let Some((name, path)) = transformer.import_to_add {
             let decl = ast.import_declaration(
                 SPAN,
                 Some({
@@ -459,26 +459,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
             ),
         );
 
-        // Arrow function: () => __csslit_extract_N`...`
-        // Signature: (span, expression, async, type_params, params, return_type, body)
-        let mut arrow = ast.arrow_function_expression(
-            SPAN,
-            true, // expression
-            false, // async
-            None::<TSTypeParameterDeclaration>,
-            ast.formal_parameters(SPAN, FormalParameterKind::ArrowFormalParameters, ast.vec(), None::<FormalParameterRest>),
-            None::<TSTypeAnnotation>,
-            ast.function_body(SPAN, ast.vec(), ast.vec()),
-        );
-        arrow.body.statements.clear();
-        arrow.body
-            .statements
-            .push(Statement::ExpressionStatement(ast.alloc(ast.expression_statement(
-                SPAN,
-                extraction_expression,
-            ))));
-
-        // Variable declaration: const __ext_css_N = arrow
+        // Variable declaration: const __ext_css_N = __csslit_extract_N`...`
         let var_decl = ast.variable_declaration(
             SPAN,
             VariableDeclarationKind::Const,
@@ -489,7 +470,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
                     VariableDeclarationKind::Const,
                     BindingPattern::BindingIdentifier(ast.alloc(ast.binding_identifier(SPAN, ast.atom(&export_name)))),
                     None::<TSTypeAnnotation>,
-                    Some(Expression::ArrowFunctionExpression(ast.alloc(arrow))),
+                    Some(extraction_expression),
                     false,
                 ));
                 decls
