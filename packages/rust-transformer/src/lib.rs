@@ -267,28 +267,17 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
 
     for block in &visitor.blocks {
         let export_name = format!("__ext_css_{}", block.metadata.index);
-        let mut arguments = ast.vec();
-        arguments.push(Argument::from(Expression::NumericLiteral(ast.alloc(
-            ast.numeric_literal(SPAN, block.metadata.index as f64, None, NumberBase::Decimal),
-        ))));
-
-        let call_expression = Expression::CallExpression(ast.alloc_call_expression(
-            SPAN,
-            ast.expression_identifier(SPAN, ast.atom("__csslit_extract__")),
-            None::<TSTypeParameterInstantiation>,
-            arguments,
-            false,
-        ));
+        let extractor_name = format!("__csslit_extract_{}", block.metadata.index);
         let extraction_expression = Expression::TaggedTemplateExpression(
             ast.alloc_tagged_template_expression(
                 SPAN,
-                call_expression,
+                ast.expression_identifier(SPAN, ast.atom(&extractor_name)),
                 None::<TSTypeParameterInstantiation>,
                 CloneIn::clone_in(&block.template, &allocator),
             ),
         );
 
-        // Arrow function: () => __csslit_extract__(n)`...`
+        // Arrow function: () => __csslit_extract_N`...`
         // Signature: (span, expression, async, type_params, params, return_type, body)
         let mut arrow = ast.arrow_function_expression(
             SPAN,

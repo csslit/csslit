@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@csslit/rust-transformer": "*",
+    "@jridgewell/gen-mapping": "^0.3.13",
     "@jridgewell/trace-mapping": "^0.3.31"
   },
   "devDependencies": {
