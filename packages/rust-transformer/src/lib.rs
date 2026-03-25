@@ -9,22 +9,22 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::{Atom, GetSpan, SourceType, SPAN};
 use oxc_traverse::{traverse_mut, Traverse, TraverseCtx};
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use sourcemap::SourceMap;
+
+const CSS_DERIVED_SUFFIX: &str = ".csslit-";
 
 #[napi(object)]
 pub struct TransformOptions {
     pub mode: String,
     pub filename: String,
     pub input_map: Option<String>,
-    pub root: Option<String>,
 }
 
 #[napi(object)]
 pub struct TransformResult {
     pub code: String,
     pub map: Option<String>,
-    pub meta: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -60,61 +60,6 @@ struct CssTemplateBlock<'a> {
     metadata: CssBlockMetadata,
 }
 
-fn normalized_source_filename(filename: &str) -> String {
-    filename
-        .split('?')
-        .next()
-        .unwrap_or(filename)
-        .replace('\\', "/")
-}
-
-fn normalize_path_string(path: &str) -> String {
-    path.replace('\\', "/")
-}
-
-fn normalize_path_buf(path: &Path) -> String {
-    normalize_path_string(path.to_string_lossy().as_ref())
-}
-
-fn is_within_root(path: &str, root: &str) -> bool {
-    path == root || path.starts_with(&format!("{root}/"))
-}
-
-fn to_browser_source_path(source: &str, root: &str) -> String {
-    let normalized_source = normalize_path_string(source);
-    if !Path::new(&normalized_source).is_absolute() {
-        return normalized_source;
-    }
-    if !is_within_root(&normalized_source, root) {
-        return normalized_source;
-    }
-
-    match Path::new(&normalized_source).strip_prefix(root) {
-        Ok(relative) => format!("/{}", normalize_path_buf(relative)),
-        Err(_) => normalized_source,
-    }
-}
-
-fn resolve_original_source(source: &str, clean_id: &str, root: &str) -> String {
-    let clean_source = source.split('?').next().unwrap_or(source);
-
-    if clean_source.starts_with('/') {
-        return clean_source.to_string();
-    }
-
-    let normalized_source = normalize_path_string(clean_source);
-    if Path::new(&normalized_source).is_absolute() {
-        return to_browser_source_path(&normalized_source, root);
-    }
-
-    let resolved = Path::new(clean_id)
-        .parent()
-        .map(|parent| parent.join(clean_source))
-        .unwrap_or_else(|| PathBuf::from(clean_source));
-
-    to_browser_source_path(&normalize_path_buf(&resolved), root)
-}
-
 fn create_line_starts(code: &str) -> Vec<u32> {
     let mut line_starts = vec![0];
     for (index, byte) in code.bytes().enumerate() {
@@ -140,7 +85,6 @@ fn trace_location(
     fallback_source: &str,
     fallback_content: &str,
     input_map: Option<&SourceMap>,
-    root: &str,
 ) -> SourceLocation {
     let (generated_line, generated_column) = offset_to_position(line_starts, span.start);
 
@@ -160,7 +104,7 @@ fn trace_location(
                     });
 
                 return SourceLocation {
-                    source: resolve_original_source(source, fallback_source, root),
+                    source: source.to_string(),
                     line: token.get_src_line() + 1,
                     column: token.get_src_col(),
                     content,
@@ -170,7 +114,7 @@ fn trace_location(
     }
 
     SourceLocation {
-        source: to_browser_source_path(fallback_source, root),
+        source: fallback_source.to_string(),
         line: generated_line + 1,
         column: generated_column,
         content: Some(fallback_content.to_string()),
@@ -181,7 +125,6 @@ fn remap_css_metadata(
     metadata: &[CssBlockMetadata],
     source_text: &str,
     clean_id: &str,
-    root: &str,
     input_map: Option<&SourceMap>,
 ) -> Vec<RemappedCssBlock> {
     let line_starts = create_line_starts(source_text);
@@ -193,12 +136,12 @@ fn remap_css_metadata(
             quasis: block
                 .quasis
                 .iter()
-                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map, root))
+                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map))
                 .collect(),
             expressions: block
                 .expressions
                 .iter()
-                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map, root))
+                .map(|span| trace_location(span, &line_starts, clean_id, source_text, input_map))
                 .collect(),
         })
         .collect()
@@ -225,6 +168,49 @@ fn collapse_sourcemap(
         (Some(output_map), _) => Some(sourcemap_to_json(&output_map)),
         (None, _) => None,
     }
+}
+
+fn shift_sourcemap(map: Option<String>, prefix: &str) -> Option<String> {
+    let prefix_lines = prefix.matches('\n').count();
+    if prefix_lines == 0 {
+        return map;
+    }
+
+    let mut raw_map: serde_json::Value = serde_json::from_str(&map?).ok()?;
+    let raw_object = raw_map.as_object_mut()?;
+    let mappings = raw_object.get("mappings")?.as_str()?;
+    raw_object.insert(
+        "mappings".to_string(),
+        serde_json::Value::String(format!("{}{}", ";".repeat(prefix_lines), mappings)),
+    );
+    Some(serde_json::to_string(&raw_map).unwrap())
+}
+
+fn create_compile_time_prelude(blocks: &[RemappedCssBlock]) -> String {
+    if blocks.is_empty() {
+        return String::new();
+    }
+
+    let mut prelude = String::from(
+        "function createCsslitExtractRuntime(block) {\n\
+  return (strings, ...values) => ({\n\
+    block,\n\
+    strings,\n\
+    values,\n\
+  });\n\
+}\n",
+    );
+
+    for block in blocks {
+        prelude.push_str(&format!(
+            "const __csslit_extract_{} = createCsslitExtractRuntime({});\n",
+            block.index,
+            serde_json::to_string(block).unwrap()
+        ));
+    }
+
+    prelude.push('\n');
+    prelude
 }
 
 fn is_relative_script_import(specifier: &str) -> bool {
@@ -307,10 +293,13 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
                     let index = self.index;
                     self.index += 1;
                     let import_name = format!("__css_module_import_{}", index);
-                    let virtual_path = format!(
-                        "virtual:css-compile/{}.module.css?source={}",
-                        index, self.filename
-                    );
+                    let self_import = Path::new(&self.filename)
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| self.filename.clone());
+                    let virtual_path =
+                        format!("./{self_import}{CSS_DERIVED_SUFFIX}{index}.module.css");
                     self.imports_to_add
                         .push((import_name.clone(), virtual_path));
 
@@ -331,12 +320,7 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
 #[napi]
 pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
     let allocator = Allocator::default();
-    let source_filename = normalized_source_filename(&options.filename);
-    let root = options
-        .root
-        .as_deref()
-        .map(normalized_source_filename)
-        .unwrap_or_else(String::new);
+    let source_filename = options.filename;
     let input_map = options
         .input_map
         .as_deref()
@@ -401,7 +385,6 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         return Ok(TransformResult {
             code: result.code,
             map,
-            meta: None,
         });
     }
 
@@ -460,10 +443,9 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
             .collect::<Vec<_>>(),
         &source_text,
         &source_filename,
-        &root,
         input_map.as_ref(),
     );
-    let metadata_json = serde_json::to_string(&remapped_metadata).unwrap();
+    let prelude = create_compile_time_prelude(&remapped_metadata);
 
     for block in &visitor.blocks {
         let export_name = format!("__ext_css_{}", block.metadata.index);
@@ -536,13 +518,17 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         .with_options(codegen_options)
         .with_source_text(&source_text)
         .build(&ret.program);
-    
-    Ok(TransformResult {
-        code: result.code,
-        map: collapse_sourcemap(
+
+    let map = shift_sourcemap(
+        collapse_sourcemap(
             result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
             input_map.as_ref(),
         ),
-        meta: Some(metadata_json),
+        &prelude,
+    );
+    
+    Ok(TransformResult {
+        code: format!("{prelude}{}", result.code),
+        map,
     })
 }

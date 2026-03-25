@@ -7,13 +7,11 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
-    "./extract-runtime": "./dist/extract-runtime.js",
     "./package.json": "./package.json"
   },
   "dependencies": {
     "@csslit/rust-transformer": "*",
-    "@jridgewell/gen-mapping": "^0.3.13",
-    "@jridgewell/trace-mapping": "^0.3.31"
+    "@jridgewell/gen-mapping": "^0.3.13"
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260322.1",

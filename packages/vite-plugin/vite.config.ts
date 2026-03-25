@@ -4,7 +4,6 @@ export default defineConfig({
   pack: {
     entry: {
       index: "src/index.ts",
-      "extract-runtime": "src/extract-runtime.ts",
     },
     dts: {
       tsgo: true,
