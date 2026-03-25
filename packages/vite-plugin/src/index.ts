@@ -44,13 +44,40 @@ type RunnableEnvironment = {
   };
 };
 
+function shouldGenerateJsSourcemap(config: {
+  command: "build" | "serve";
+  build: { sourcemap?: boolean | "inline" | "hidden" };
+  dev: { sourcemap?: boolean | { js?: boolean; css?: boolean } };
+}) {
+  if (config.command === "build") {
+    return !!config.build.sourcemap;
+  }
+
+  if (typeof config.dev.sourcemap === "boolean") {
+    return config.dev.sourcemap;
+  }
+
+  return config.dev.sourcemap?.js ?? true;
+}
+
+function shouldGenerateCssSourcemap(config: {
+  command: "build" | "serve";
+  build: { sourcemap?: boolean | "inline" | "hidden" };
+  css: { devSourcemap?: boolean };
+}) {
+  if (config.command === "build") {
+    return !!config.build.sourcemap;
+  }
+
+  return !!config.css.devSourcemap;
+}
+
 function getErrorLocation(error: Error) {
   for (const line of error.stack?.split("\n") ?? []) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("at ")) continue;
 
-    const match =
-      trimmed.match(/\((.+):(\d+):(\d+)\)$/) ?? trimmed.match(/^at (.+):(\d+):(\d+)$/);
+    const match = trimmed.match(/\((.+):(\d+):(\d+)\)$/) ?? trimmed.match(/^at (.+):(\d+):(\d+)$/);
 
     if (!match) continue;
 
@@ -253,7 +280,11 @@ export function cssCompilePlugin(): Plugin {
         if (!SCRIPT_ID_RE.test(id)) return null;
 
         const [cleanId, query] = id.split("?");
-        const root = normalizePath(this.environment.config.root);
+        const root = this.environment.config.root;
+        const isEval = query?.includes("css-compile-eval");
+        const sourcemap = isEval
+          ? shouldGenerateCssSourcemap(this.environment.config)
+          : shouldGenerateJsSourcemap(this.environment.config);
 
         if (
           id.startsWith("\0") ||
@@ -263,12 +294,11 @@ export function cssCompilePlugin(): Plugin {
           return null;
         }
 
-        const isEval = query?.includes("css-compile-eval");
-        const inputMap = this.getCombinedSourcemap();
         const result = rustTransform(code, {
           mode: isEval ? "compileTime" : "runtime",
           filename: cleanId,
-          inputMap: inputMap ? JSON.stringify(inputMap) : undefined,
+          inputMap: sourcemap ? JSON.stringify(this.getCombinedSourcemap()) : undefined,
+          sourcemap,
         });
 
         return {
@@ -285,17 +315,16 @@ export function cssCompilePlugin(): Plugin {
       handler(source, importer) {
         if (!CSS_DERIVED_ID_RE.test(source)) return null;
 
-        if (source.startsWith("/") || path.isAbsolute(source)) {
-          return {
-            id: normalizePath(source),
-            moduleType: "css",
-          };
-        }
+        const id = path.isAbsolute(source)
+          ? source
+          : importer
+            ? normalizePath(path.resolve(path.dirname(importer), source))
+            : null;
 
-        if (!importer) return null;
+        if (!id) return null;
 
         return {
-          id: normalizePath(path.resolve(path.dirname(importer), source)),
+          id,
           moduleType: "css",
         };
       },
@@ -310,7 +339,7 @@ export function cssCompilePlugin(): Plugin {
 
         const absPath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
         const evalId = `${absPath}?css-compile-eval`;
-        const root = normalizePath(this.environment.config.root);
+        const sourcemap = shouldGenerateCssSourcemap(this.environment.config);
 
         try {
           const mod = await evalEnvironment!.runner.import(evalId);
@@ -331,9 +360,10 @@ export function cssCompilePlugin(): Plugin {
               plugin: "vite-plugin-css-compile",
             });
           }
+
           return {
             code: buildCssCode(results),
-            map: buildCssSourcemap(id, results, root),
+            map: sourcemap ? buildCssSourcemap(id, results, this.environment.config.root) : null,
             moduleType: "css",
           };
         } catch (err: unknown) {

@@ -25,3 +25,8 @@ run tasks have dependsOn specified to build dependencies to the task first.
 
 > [!IMPORTANT]
 > Build commands (`vp run build`, `napi build`) may fail if there are active dev servers running due to file locks or port conflicts. If a build fails unexpectedly or a new dev server starts with a port other than 5173, check for running dev servers and ask the user to stop them if necessary.
+
+## Code Style
+
+- Prefer trusting established contracts between Vite/plugins/tooling instead of adding defensive fallback code for cases that should not happen. If another layer violates the contract, prefer surfacing it clearly and fixing or reporting it there.
+- Prefer straight-line code over abstractions unless there is a substantial piece of code reuse. Avoid introducing helpers or indirection for small one-off logic.

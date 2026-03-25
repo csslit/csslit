@@ -19,6 +19,7 @@ pub struct TransformOptions {
     pub mode: String,
     pub filename: String,
     pub input_map: Option<String>,
+    pub sourcemap: Option<bool>,
 }
 
 #[napi(object)]
@@ -186,8 +187,8 @@ fn shift_sourcemap(map: Option<String>, prefix: &str) -> Option<String> {
     Some(serde_json::to_string(&raw_map).unwrap())
 }
 
-fn create_compile_time_prelude(blocks: &[RemappedCssBlock]) -> String {
-    if blocks.is_empty() {
+fn create_compile_time_prelude(blocks: Option<&[RemappedCssBlock]>, block_count: usize) -> String {
+    if block_count == 0 {
         return String::new();
     }
 
@@ -201,12 +202,21 @@ fn create_compile_time_prelude(blocks: &[RemappedCssBlock]) -> String {
 }\n",
     );
 
-    for block in blocks {
-        prelude.push_str(&format!(
-            "const __csslit_extract_{} = createCsslitExtractRuntime({});\n",
-            block.index,
-            serde_json::to_string(block).unwrap()
-        ));
+    if let Some(blocks) = blocks {
+        for block in blocks {
+            prelude.push_str(&format!(
+                "const __csslit_extract_{} = createCsslitExtractRuntime({});\n",
+                block.index,
+                serde_json::to_string(block).unwrap()
+            ));
+        }
+    } else {
+        for index in 1..=block_count {
+            prelude.push_str(&format!(
+                "const __csslit_extract_{} = createCsslitExtractRuntime(null);\n",
+                index
+            ));
+        }
     }
 
     prelude.push('\n');
@@ -321,10 +331,15 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer {
 pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
     let allocator = Allocator::default();
     let source_filename = options.filename;
-    let input_map = options
-        .input_map
-        .as_deref()
-        .and_then(|map| SourceMap::from_slice(map.as_bytes()).ok());
+    let sourcemap_enabled = options.sourcemap.unwrap_or(false);
+    let input_map = if sourcemap_enabled {
+        options
+            .input_map
+            .as_deref()
+            .and_then(|map| SourceMap::from_slice(map.as_bytes()).ok())
+    } else {
+        None
+    };
     let source_type = SourceType::from_path(&source_filename)
         .unwrap_or_default()
         .with_typescript(true)
@@ -373,14 +388,18 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         }
 
         let codegen_options = CodegenOptions {
-            source_map_path: Some(source_filename.clone().into()),
+            source_map_path: sourcemap_enabled.then(|| source_filename.clone().into()),
             ..CodegenOptions::default()
         };
         let result = Codegen::new().with_options(codegen_options).build(&program);
-        let map = collapse_sourcemap(
-            result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
-            input_map.as_ref(),
-        );
+        let map = if sourcemap_enabled {
+            collapse_sourcemap(
+                result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
+                input_map.as_ref(),
+            )
+        } else {
+            None
+        };
 
         return Ok(TransformResult {
             code: result.code,
@@ -435,17 +454,21 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     let mut body = CloneIn::clone_in(&ret.program.body, &allocator);
 
     // Append the CSS exports without dropping the original module body.
-    let remapped_metadata = remap_css_metadata(
-        &visitor
-            .blocks
-            .iter()
-            .map(|block| block.metadata.clone())
-            .collect::<Vec<_>>(),
-        &source_text,
-        &source_filename,
-        input_map.as_ref(),
-    );
-    let prelude = create_compile_time_prelude(&remapped_metadata);
+    let remapped_metadata = if sourcemap_enabled {
+        Some(remap_css_metadata(
+            &visitor
+                .blocks
+                .iter()
+                .map(|block| block.metadata.clone())
+                .collect::<Vec<_>>(),
+            &source_text,
+            &source_filename,
+            input_map.as_ref(),
+        ))
+    } else {
+        None
+    };
+    let prelude = create_compile_time_prelude(remapped_metadata.as_deref(), visitor.blocks.len());
 
     for block in &visitor.blocks {
         let export_name = format!("__ext_css_{}", block.metadata.index);
@@ -492,7 +515,7 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
     ret.program.body = body;
 
     let codegen_options = CodegenOptions {
-        source_map_path: Some(source_filename.into()),
+        source_map_path: sourcemap_enabled.then(|| source_filename.clone().into()),
         ..CodegenOptions::default()
     };
     let result = Codegen::new()
@@ -500,13 +523,17 @@ pub fn transform(source_text: String, options: TransformOptions) -> napi::Result
         .with_source_text(&source_text)
         .build(&ret.program);
 
-    let map = shift_sourcemap(
-        collapse_sourcemap(
-            result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
-            input_map.as_ref(),
-        ),
-        &prelude,
-    );
+    let map = if sourcemap_enabled {
+        shift_sourcemap(
+            collapse_sourcemap(
+                result.map.map(|sm| parse_output_sourcemap(sm.to_json_string())),
+                input_map.as_ref(),
+            ),
+            &prelude,
+        )
+    } else {
+        None
+    };
     
     Ok(TransformResult {
         code: format!("{prelude}{}", result.code),
