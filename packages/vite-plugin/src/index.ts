@@ -1,13 +1,11 @@
-import { transform as rustTransform } from "@csslit/rust-transformer";
-import { GenMapping, maybeAddMapping, toEncodedMap } from "@jridgewell/gen-mapping";
+import { TransformMode, transform as rustTransform } from "@csslit/rust-transformer";
+import type { RawSourceMap } from "@csslit/rust-transformer";
+import { GenMapping, maybeAddMapping, setSourceContent, toEncodedMap } from "@jridgewell/gen-mapping";
 import path from "node:path";
 import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
-import {
-  createRunnableDevEnvironment,
-  type Plugin,
-  type ViteDevServer,
-  normalizePath,
-} from "vite-plus";
+import { createRunnableDevEnvironment, normalizePath } from 'vite-plus';
+import type { Plugin, ViteDevServer, RunnableDevEnvironment } from 'vite-plus';
+import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
 
 const CSS_DERIVED_SUFFIX = ".csslit.module.css";
 const SCRIPT_ID_RE = /\.[jt]sx?(?:$|\?)/;
@@ -17,11 +15,9 @@ type SourceLocation = {
   source: string;
   line: number;
   column: number;
-  content: string | null;
 };
 
 type RemappedCssBlock = {
-  index: number;
   quasis: SourceLocation[];
   expressions: SourceLocation[];
 };
@@ -32,17 +28,7 @@ type ExtractedCssResult = {
   values: unknown[];
 };
 
-type RunnableEnvironment = {
-  config: {
-    consumer: string;
-    root: string;
-  };
-  init(): Promise<void>;
-  close(): Promise<void>;
-  runner: {
-    import(id: string): Promise<Record<string, unknown>>;
-  };
-};
+type ExtractedSourceContent = [string, string | null];
 
 function shouldGenerateJsSourcemap(config: {
   command: "build" | "serve";
@@ -70,6 +56,10 @@ function shouldGenerateCssSourcemap(config: {
   }
 
   return !!config.css.devSourcemap;
+}
+
+function toRawSourceMap(map: SourceMapInput | null | undefined): RawSourceMap | undefined {
+  return map && typeof map !== "string" ? (map as RawSourceMap) : undefined;
 }
 
 function getErrorLocation(error: Error) {
@@ -122,7 +112,7 @@ function buildCssCode(results: ExtractedCssResult[]) {
 
   for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
     const result = results[resultIndex];
-    const className = `css-${result.block?.index ?? resultIndex + 1}`;
+    const className = `css-${resultIndex}`;
 
     if (resultIndex > 0) {
       css += "\n";
@@ -144,13 +134,39 @@ function buildCssCode(results: ExtractedCssResult[]) {
   return css;
 }
 
+function watchCssEvalDependencies(
+  addWatchFile: (id: string) => void,
+  evaluatedModules: EvaluatedModules,
+  evalId: string,
+) {
+  const start = evaluatedModules.getModuleByUrl(evalId);
+  const seen = new Set<string>();
+
+  const visit = (mod: EvaluatedModuleNode | undefined) => {
+    if (!mod || seen.has(mod.id)) {
+      return;
+    }
+    seen.add(mod.id);
+
+    addWatchFile(mod.file);
+
+    for (const importedId of mod.imports) {
+      visit(evaluatedModules.getModuleById(importedId));
+    }
+  };
+
+  visit(start);
+}
+
 function buildCssSourcemap(
   file: string,
   results: ExtractedCssResult[],
   root: string,
+  sourceContents: Map<string, string | null> | null,
 ): SourceMapInput {
   const map = new GenMapping({ file });
   const normalizedSources = new Map<string, string>();
+  const sourcesWithContent = new Set<string>();
   let currentLine = 1;
 
   function getSource(loc: SourceLocation | null) {
@@ -166,6 +182,12 @@ function buildCssSourcemap(
       }
       normalizedSources.set(loc.source, source);
     }
+
+    if (sourceContents?.has(loc.source) && !sourcesWithContent.has(source)) {
+      setSourceContent(map, source, sourceContents.get(loc.source) ?? null);
+      sourcesWithContent.add(source);
+    }
+
     return source;
   }
 
@@ -180,7 +202,6 @@ function buildCssSourcemap(
           generated: { line: currentLine, column: 0 },
           source,
           original: { line: startLoc.line, column: startLoc.column },
-          content: startLoc.content,
         });
       }
     }
@@ -207,7 +228,6 @@ function buildCssSourcemap(
               line: quasiLoc.line + Math.min(lineOffset, sourceLineCount - 1),
               column: lineOffset === 0 ? quasiLoc.column : 0,
             },
-            content: quasiLoc.content,
           });
         }
 
@@ -232,7 +252,6 @@ function buildCssSourcemap(
           generated: { line: currentLine + lineOffset, column: 0 },
           source,
           original: { line: expressionLoc.line, column: expressionLoc.column },
-          content: expressionLoc.content,
         });
       }
 
@@ -250,13 +269,13 @@ function buildCssSourcemap(
 }
 
 export function cssCompilePlugin(): Plugin {
-  let evalEnvironment: RunnableEnvironment | null = null;
+  let evalEnvironment: RunnableDevEnvironment | null = null;
 
   return {
     name: "vite-plugin-css-compile",
 
     configureServer(server: ViteDevServer) {
-      evalEnvironment = server.environments.ssr as unknown as RunnableEnvironment;
+      evalEnvironment = server.environments.ssr as RunnableDevEnvironment;
     },
 
     async configResolved(config) {
@@ -275,6 +294,7 @@ export function cssCompilePlugin(): Plugin {
     transform: {
       filter: {
         id: SCRIPT_ID_RE,
+        moduleType: ["js", "jsx", "ts", "tsx"],
       },
       async handler(code: string, id: string) {
         if (!SCRIPT_ID_RE.test(id)) return null;
@@ -295,15 +315,15 @@ export function cssCompilePlugin(): Plugin {
         }
 
         const result = rustTransform(code, {
-          mode: isEval ? "compileTime" : "runtime",
+          mode: isEval ? TransformMode.CompileTime : TransformMode.Runtime,
           filename: cleanId,
-          inputMap: sourcemap ? JSON.stringify(this.getCombinedSourcemap()) : undefined,
+          inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
           sourcemap,
         });
 
         return {
           code: result.code,
-          map: result.map ? (JSON.parse(result.map) as SourceMapInput) : null,
+          map: result.map ?? null,
         };
       },
     },
@@ -342,8 +362,17 @@ export function cssCompilePlugin(): Plugin {
         const sourcemap = shouldGenerateCssSourcemap(this.environment.config);
 
         try {
-          const mod = await evalEnvironment!.runner.import(evalId);
+          const runner = evalEnvironment!.runner;
+          const mod = await runner.import(evalId);
+          watchCssEvalDependencies(
+            (file) => this.addWatchFile(file),
+            runner.evaluatedModules,
+            evalId,
+          );
           const results: ExtractedCssResult[] = [];
+          const sourceContents = mod.__csslit_source_contents
+            ? new Map(mod.__csslit_source_contents as ExtractedSourceContent[])
+            : null;
 
           for (const [name, value] of Object.entries(mod)) {
             if (name.startsWith("__ext_css_") && value != null && typeof value === "object") {
@@ -363,7 +392,9 @@ export function cssCompilePlugin(): Plugin {
 
           return {
             code: buildCssCode(results),
-            map: sourcemap ? buildCssSourcemap(id, results, this.environment.config.root) : null,
+            map: sourcemap
+              ? buildCssSourcemap(id, results, this.environment.config.root, sourceContents)
+              : null,
             moduleType: "css",
           };
         } catch (err: unknown) {
