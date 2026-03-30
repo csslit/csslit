@@ -1,11 +1,8 @@
-use crate::{CompileTimeTransformOptions, RuntimeTransformOptions};
+use crate::{CompileTimeTransformOptions, RuntimeTransformOptions, quote_expr, quote_stmt};
 use oxc_allocator::{Allocator, CloneIn, Vec};
 use oxc_ast::{
   AstBuilder, NONE,
-  ast::{
-    ArrayExpressionElement, Expression, FormalParameterKind, ImportOrExportKind,
-    PropertyKind, Statement, TemplateLiteral, VariableDeclarationKind,
-  },
+  ast::{Expression, Statement, TemplateLiteral},
 };
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
@@ -13,7 +10,6 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_sourcemap::Token;
 use oxc_span::{Atom, GetSpan, SPAN, SourceType, format_atom};
-use oxc_syntax::number::NumberBase;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 use rolldown_sourcemap::{JSONSourceMap, SourceMap, collapse_sourcemaps};
 use std::{iter::once, path::Path};
@@ -196,18 +192,17 @@ impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
           ),
         },
       });
-      *expr = ctx.ast.expression_string_literal(SPAN, "", None);
+      *expr = quote_expr!(ctx.ast, "");
     }
   }
 }
 
-pub(crate) struct RuntimeTransformer<'a> {
-  pub(crate) derived_import_path: Atom<'a>,
+pub(crate) struct RuntimeTransformer {
   pub(crate) has_css: bool,
   pub(crate) index: u32,
 }
 
-impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
+impl<'a> Traverse<'a, ()> for RuntimeTransformer {
   fn enter_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a, ()>) {
     match expr {
       Expression::TaggedTemplateExpression(tagged) if matches!(&tagged.tag, Expression::Identifier(ident) if ident.name == "css") =>
@@ -215,17 +210,7 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
         let index = self.index;
         self.index += 1;
         self.has_css = true;
-        let object = ctx.ast.expression_identifier(SPAN, "__css_module_import");
-        let property = ctx.ast.expression_string_literal(
-          SPAN,
-          format_atom!(ctx.ast.allocator, "css-{index}"),
-          None,
-        );
-        *expr = Expression::from(
-          ctx
-            .ast
-            .member_expression_computed(SPAN, object, property, false),
-        );
+        *expr = quote_expr!(ctx.ast, __css_module_import[format!("css-{index}")]);
       }
       _ => {}
     }
@@ -252,8 +237,8 @@ pub(crate) fn transform_runtime(
     .file_name()
     .and_then(|name| name.to_str())
     .unwrap_or(&options.filename);
+
   let mut transformer = RuntimeTransformer {
-    derived_import_path: format_atom!(allocator, "./{self_import}{CSS_DERIVED_SUFFIX}"),
     has_css: false,
     index: 0,
   };
@@ -262,27 +247,18 @@ pub(crate) fn transform_runtime(
 
   if transformer.has_css {
     let ast = AstBuilder::new(allocator);
+    let derived_import_path = format_atom!(allocator, "./{self_import}{CSS_DERIVED_SUFFIX}");
     program.body.insert(
       0,
-      Statement::from(ast.module_declaration_import_declaration(
-        SPAN,
-        Some(
-          ast.vec1(ast.import_declaration_specifier_import_default_specifier(
-            SPAN,
-            ast.binding_identifier(SPAN, "__css_module_import"),
-          )),
-        ),
-        ast.string_literal(SPAN, transformer.derived_import_path, None),
-        None,
-        NONE,
-        ImportOrExportKind::Value,
-      )),
+      quote_stmt!(ast, import __css_module_import from {derived_import_path};),
     );
   }
 
   let result = Codegen::new()
     .with_options(CodegenOptions {
-      source_map_path: options.sourcemap.then(|| options.filename.to_string().into()),
+      source_map_path: options
+        .sourcemap
+        .then(|| options.filename.to_string().into()),
       ..CodegenOptions::default()
     })
     .with_source_text(&source_text)
@@ -327,222 +303,110 @@ pub(crate) fn transform_compile_time(
   let ast = AstBuilder::new(allocator);
 
   let original_body = ret.program.body;
+  ret.program.body = ast.vec_from_iter(
+    once(quote_stmt!(
+      ast,
+      const createCsslitExtractRuntime = (block => (strings, ...values) => ({
+        block,
+        strings,
+        values,
+      }));
+    ))
+    .chain(
+      original_body
+        .into_iter()
+        .filter(|statement| matches!(statement, Statement::ImportDeclaration(_))),
+    )
+    .chain(
+      visitor
+        .blocks
+        .into_iter()
+        .enumerate()
+        .map(|(index, block)| {
+          let create_csslit_extract_runtime = remap_context
+            .as_mut()
+            .map(|context| {
+              let quasis = ast.vec_from_iter(
+                block
+                  .metadata
+                  .quasis
+                  .iter()
+                  .map(|quasi| context.remap(quasi))
+                  .map(
+                    |SourceLocation {
+                       source,
+                       line,
+                       column,
+                     }| {
+                      quote_expr!(ast, {
+                        source: {source},
+                        line: {line},
+                        column: {column},
+                      })
+                    },
+                  ),
+              );
 
-  ret.program.body =
-    ast.vec_from_iter(
-      once(Statement::from(ast.declaration_variable(
-        SPAN,
-        VariableDeclarationKind::Const,
-        ast.vec1(ast.variable_declarator(
-          SPAN,
-          VariableDeclarationKind::Const,
-          ast.binding_pattern_binding_identifier(SPAN, "createCsslitExtractRuntime"),
-          NONE,
-          Some(ast.expression_arrow_function(
+              let expressions = ast.vec_from_iter(
+                block
+                  .metadata
+                  .expressions
+                  .iter()
+                  .map(|expression| context.remap(expression))
+                  .map(
+                    |SourceLocation {
+                       source,
+                       line,
+                       column,
+                     }| {
+                      quote_expr!(ast, {
+                        source: {source},
+                        line: {line},
+                        column: {column},
+                      })
+                    },
+                  ),
+              );
+
+              quote_expr!(ast, createCsslitExtractRuntime({
+                quasis: {quasis},
+                expressions: {expressions},
+              }))
+            })
+            .unwrap_or_else(|| quote_expr!(ast, createCsslitExtractRuntime()));
+
+          let export_name = format_atom!(allocator, "__ext_css_{index}");
+          let ext_css_value = ast.expression_tagged_template(
             SPAN,
-            false,
-            false,
+            create_csslit_extract_runtime,
             NONE,
-            ast.formal_parameters(
-              SPAN,
-              FormalParameterKind::ArrowFormalParameters,
-              ast.vec1(ast.formal_parameter(
-                SPAN,
-                ast.vec(),
-                ast.binding_pattern_binding_identifier(SPAN, "block"),
-                NONE,
-                NONE,
-                false,
-                None,
-                false,
-                false,
-              )),
-              NONE,
-            ),
-            NONE,
-            ast.function_body(
-              SPAN,
-              ast.vec(),
-              ast.vec1(ast.statement_return(
-                SPAN,
-                Some(ast.expression_arrow_function(
-                  SPAN,
-                  false,
-                  false,
-                  NONE,
-                  ast.formal_parameters(
-                    SPAN,
-                    FormalParameterKind::ArrowFormalParameters,
-                    ast.vec1(ast.formal_parameter(
-                      SPAN,
-                      ast.vec(),
-                      ast.binding_pattern_binding_identifier(SPAN, "strings"),
-                      NONE,
-                      NONE,
-                      false,
-                      None,
-                      false,
-                      false,
-                    )),
-                    Some(ast.formal_parameter_rest(
-                      SPAN,
-                      ast.vec(),
-                      ast.binding_rest_element(
-                        SPAN,
-                        ast.binding_pattern_binding_identifier(SPAN, "values"),
-                      ),
-                      NONE,
-                    )),
-                  ),
-                  NONE,
-                  ast.function_body(
-                    SPAN,
-                    ast.vec(),
-                    ast.vec1(ast.statement_return(
-                      SPAN,
-                      Some(ast.expression_object(
-                        SPAN,
-                        ast.vec_from_array([
-                          ast.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            ast.property_key_static_identifier(SPAN, "block"),
-                            ast.expression_identifier(SPAN, "block"),
-                            false,
-                            true,
-                            false,
-                          ),
-                          ast.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            ast.property_key_static_identifier(SPAN, "strings"),
-                            ast.expression_identifier(SPAN, "strings"),
-                            false,
-                            true,
-                            false,
-                          ),
-                          ast.object_property_kind_object_property(
-                            SPAN,
-                            PropertyKind::Init,
-                            ast.property_key_static_identifier(SPAN, "values"),
-                            ast.expression_identifier(SPAN, "values"),
-                            false,
-                            true,
-                            false,
-                          ),
-                        ]),
-                      )),
-                    )),
-                  ),
-                )),
-              )),
-            ),
-          )),
-          false,
-        )),
-        false,
-      )))
-      .chain(
-        original_body
-          .into_iter()
-          .filter(|statement| matches!(statement, Statement::ImportDeclaration(_))),
-      )
-      .chain(
-        visitor
-          .blocks
-          .into_iter()
-          .enumerate()
-          .map(|(index, block)| {
-            Statement::from(
-              ast.module_declaration_export_named_declaration(
-                SPAN,
-                Some(
-                  ast.declaration_variable(
-                    SPAN,
-                    VariableDeclarationKind::Const,
-                    ast.vec1(
-                      ast.variable_declarator(
-                        SPAN,
-                        VariableDeclarationKind::Const,
-                        ast.binding_pattern_binding_identifier(
-                          SPAN,
-                          format_atom!(allocator, "__ext_css_{index}"),
-                        ),
-                        NONE,
-                        Some(
-                          ast.expression_tagged_template(
-                            SPAN,
-                            ast.expression_call(
-                              SPAN,
-                              ast.expression_identifier(SPAN, "createCsslitExtractRuntime"),
-                              NONE,
-                              ast.vec_from_iter(remap_context.as_mut().map(|context| {
-                                create_metadata_object(ast, &block, context).into()
-                              })),
-                              false,
-                            ),
-                            NONE,
-                            block.template,
-                          ),
-                        ),
-                        false,
-                      ),
-                    ),
-                    false,
-                  ),
-                ),
-                ast.vec(),
-                None,
-                ImportOrExportKind::Value,
-                NONE,
-              ),
-            )
-          }),
-      ),
-    );
+            block.template,
+          );
+          quote_stmt!(ast, export const {export_name} = {ext_css_value};)
+        }),
+    ),
+  );
 
   if let Some(context) = remap_context.as_ref() {
-    ret.program.body.extend(once(Statement::from(
-      ast.module_declaration_export_named_declaration(
-        SPAN,
-        Some(ast.declaration_variable(
-          SPAN,
-          VariableDeclarationKind::Const,
-          ast.vec1(ast.variable_declarator(
-            SPAN,
-            VariableDeclarationKind::Const,
-            ast.binding_pattern_binding_identifier(SPAN, "__csslit_source_contents"),
-            NONE,
-            Some(ast.expression_array(
-              SPAN,
-              ast.vec_from_iter(context.source_contents().map(|(source, content)| {
-                ArrayExpressionElement::from(ast.expression_array(
-                  SPAN,
-                  ast.vec_from_array([
-                    ArrayExpressionElement::from(ast.expression_string_literal(SPAN, source, None)),
-                    ArrayExpressionElement::from(content.map_or_else(
-                      || ast.expression_null_literal(SPAN),
-                      |content| ast.expression_string_literal(SPAN, content, None),
-                    )),
-                  ]),
-                ))
-              })),
-            )),
-            false,
-          )),
-          false,
-        )),
-        ast.vec(),
-        None,
-        ImportOrExportKind::Value,
-        NONE,
-      ),
-    )));
+    let entries = ast.vec_from_iter(context.source_contents().map(|(source, content)| {
+      let content = content.map_or_else(
+        || quote_expr!(ast, null),
+        |content| quote_expr!(ast, { content }),
+      );
+      quote_expr!(ast, [{ source }, { content }])
+    }));
+
+    ret.program.body.push(quote_stmt!(
+      ast,
+      export const __csslit_source_contents = {entries};
+    ));
   }
 
   let result = Codegen::new()
     .with_options(CodegenOptions {
-      source_map_path: options.sourcemap.then(|| options.filename.to_string().into()),
+      source_map_path: options
+        .sourcemap
+        .then(|| options.filename.to_string().into()),
       ..CodegenOptions::default()
     })
     .with_source_text(&source_text)
@@ -550,133 +414,11 @@ pub(crate) fn transform_compile_time(
 
   TransformResult {
     code: result.code,
-    map: result.map.map(|transform_map| match options.input_map.as_ref() {
-      Some(input_map) => collapse_sourcemaps(&[input_map, &transform_map]).into(),
-      None => transform_map.into(),
-    }),
+    map: result
+      .map
+      .map(|transform_map| match options.input_map.as_ref() {
+        Some(input_map) => collapse_sourcemaps(&[input_map, &transform_map]).into(),
+        None => transform_map.into(),
+      }),
   }
-}
-
-fn create_metadata_object<'a>(
-  ast: AstBuilder<'a>,
-  block: &CssTemplateBlock<'a>,
-  context: &mut SourceRemapContext<'a>,
-) -> Expression<'a> {
-  ast.expression_object(
-    SPAN,
-    ast.vec_from_array([
-      ast.object_property_kind_object_property(
-        SPAN,
-        PropertyKind::Init,
-        ast.property_key_static_identifier(SPAN, "quasis"),
-        ast.expression_array(
-          SPAN,
-          ast.vec_from_iter(block.metadata.quasis.iter().map(|quasi| {
-            let quasi = context.remap(quasi);
-            ArrayExpressionElement::from(ast.expression_object(
-              SPAN,
-              ast.vec_from_array([
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "source"),
-                  ast.expression_string_literal(SPAN, quasi.source, None),
-                  false,
-                  false,
-                  false,
-                ),
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "line"),
-                  ast.expression_numeric_literal(
-                    SPAN,
-                    quasi.line.into(),
-                    None,
-                    NumberBase::Decimal,
-                  ),
-                  false,
-                  false,
-                  false,
-                ),
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "column"),
-                  ast.expression_numeric_literal(
-                    SPAN,
-                    quasi.column.into(),
-                    None,
-                    NumberBase::Decimal,
-                  ),
-                  false,
-                  false,
-                  false,
-                ),
-              ]),
-            ))
-          })),
-        ),
-        false,
-        false,
-        false,
-      ),
-      ast.object_property_kind_object_property(
-        SPAN,
-        PropertyKind::Init,
-        ast.property_key_static_identifier(SPAN, "expressions"),
-        ast.expression_array(
-          SPAN,
-          ast.vec_from_iter(block.metadata.expressions.iter().map(|expression| {
-            let expression = context.remap(expression);
-            ArrayExpressionElement::from(ast.expression_object(
-              SPAN,
-              ast.vec_from_array([
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "source"),
-                  ast.expression_string_literal(SPAN, expression.source, None),
-                  false,
-                  false,
-                  false,
-                ),
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "line"),
-                  ast.expression_numeric_literal(
-                    SPAN,
-                    expression.line.into(),
-                    None,
-                    NumberBase::Decimal,
-                  ),
-                  false,
-                  false,
-                  false,
-                ),
-                ast.object_property_kind_object_property(
-                  SPAN,
-                  PropertyKind::Init,
-                  ast.property_key_static_identifier(SPAN, "column"),
-                  ast.expression_numeric_literal(
-                    SPAN,
-                    expression.column.into(),
-                    None,
-                    NumberBase::Decimal,
-                  ),
-                  false,
-                  false,
-                  false,
-                ),
-              ]),
-            ))
-          })),
-        ),
-        false,
-        false,
-        false,
-      ),
-    ]),
-  )
 }

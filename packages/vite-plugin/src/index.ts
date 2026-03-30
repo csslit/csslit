@@ -1,7 +1,4 @@
-import {
-  transformCompileTimeJs,
-  transformRuntimeJs,
-} from "@csslit/rust-transformer";
+import { transformCompileTime, transformRuntime } from "@csslit/rust-transformer";
 import type { RawSourceMap } from "@csslit/rust-transformer";
 import {
   GenMapping,
@@ -286,7 +283,7 @@ export function cssCompilePlugin(): Plugin {
           const sourcemap =
             config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
-          const result = transformCompileTimeJs(code, {
+          const result = transformCompileTime(code, {
             filename: cleanId,
             inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
             sourcemap,
@@ -304,7 +301,7 @@ export function cssCompilePlugin(): Plugin {
                 ? config.dev.sourcemap
                 : (config.dev.sourcemap?.js ?? true);
 
-          const result = transformRuntimeJs(code, {
+          const result = transformRuntime(code, {
             filename: cleanId,
             sourcemap,
           });
