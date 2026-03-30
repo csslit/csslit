@@ -1,14 +1,23 @@
-import { TransformMode, transform as rustTransform } from "@csslit/rust-transformer";
+import {
+  transformCompileTimeJs,
+  transformRuntimeJs,
+} from "@csslit/rust-transformer";
 import type { RawSourceMap } from "@csslit/rust-transformer";
-import { GenMapping, maybeAddMapping, setSourceContent, toEncodedMap } from "@jridgewell/gen-mapping";
+import {
+  GenMapping,
+  maybeAddMapping,
+  setSourceContent,
+  toEncodedMap,
+} from "@jridgewell/gen-mapping";
 import path from "node:path";
 import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
-import { createRunnableDevEnvironment, normalizePath } from 'vite-plus';
-import type { Plugin, ViteDevServer, RunnableDevEnvironment } from 'vite-plus';
+import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
+import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
 
 const CSS_DERIVED_SUFFIX = ".csslit.module.css";
-const SCRIPT_ID_RE = /\.[jt]sx?(?:$|\?)/;
+const CSS_EVAL_QUERY = "csslit-eval";
+const SCRIPT_ID_RE = /\.(?:js|ts|jsx|tsx)?(?:$|\?)/;
 const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
 
 type SourceLocation = {
@@ -29,34 +38,6 @@ type ExtractedCssResult = {
 };
 
 type ExtractedSourceContent = [string, string | null];
-
-function shouldGenerateJsSourcemap(config: {
-  command: "build" | "serve";
-  build: { sourcemap?: boolean | "inline" | "hidden" };
-  dev: { sourcemap?: boolean | { js?: boolean; css?: boolean } };
-}) {
-  if (config.command === "build") {
-    return !!config.build.sourcemap;
-  }
-
-  if (typeof config.dev.sourcemap === "boolean") {
-    return config.dev.sourcemap;
-  }
-
-  return config.dev.sourcemap?.js ?? true;
-}
-
-function shouldGenerateCssSourcemap(config: {
-  command: "build" | "serve";
-  build: { sourcemap?: boolean | "inline" | "hidden" };
-  css: { devSourcemap?: boolean };
-}) {
-  if (config.command === "build") {
-    return !!config.build.sourcemap;
-  }
-
-  return !!config.css.devSourcemap;
-}
 
 function toRawSourceMap(map: SourceMapInput | null | undefined): RawSourceMap | undefined {
   return map && typeof map !== "string" ? (map as RawSourceMap) : undefined;
@@ -297,34 +278,42 @@ export function cssCompilePlugin(): Plugin {
         moduleType: ["js", "jsx", "ts", "tsx"],
       },
       async handler(code: string, id: string) {
-        if (!SCRIPT_ID_RE.test(id)) return null;
-
+        const config = this.environment.config;
         const [cleanId, query] = id.split("?");
-        const root = this.environment.config.root;
-        const isEval = query?.includes("css-compile-eval");
-        const sourcemap = isEval
-          ? shouldGenerateCssSourcemap(this.environment.config)
-          : shouldGenerateJsSourcemap(this.environment.config);
+        const isEval = query?.split("&").includes(CSS_EVAL_QUERY) ?? false;
 
-        if (
-          id.startsWith("\0") ||
-          cleanId.includes("/node_modules/") ||
-          !(cleanId === root || cleanId.startsWith(`${root}/`))
-        ) {
-          return null;
+        if (isEval) {
+          const sourcemap =
+            config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
+
+          const result = transformCompileTimeJs(code, {
+            filename: cleanId,
+            inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
+            sourcemap,
+          });
+
+          return {
+            code: result.code,
+            map: result.map ?? null,
+          };
+        } else {
+          const sourcemap =
+            config.command === "build"
+              ? !!config.build.sourcemap
+              : typeof config.dev.sourcemap === "boolean"
+                ? config.dev.sourcemap
+                : (config.dev.sourcemap?.js ?? true);
+
+          const result = transformRuntimeJs(code, {
+            filename: cleanId,
+            sourcemap,
+          });
+
+          return {
+            code: result.code,
+            map: result.map ?? null,
+          };
         }
-
-        const result = rustTransform(code, {
-          mode: isEval ? TransformMode.CompileTime : TransformMode.Runtime,
-          filename: cleanId,
-          inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
-          sourcemap,
-        });
-
-        return {
-          code: result.code,
-          map: result.map ?? null,
-        };
       },
     },
 
@@ -333,8 +322,6 @@ export function cssCompilePlugin(): Plugin {
         id: CSS_DERIVED_ID_RE,
       },
       handler(source, importer) {
-        if (!CSS_DERIVED_ID_RE.test(source)) return null;
-
         const id = path.isAbsolute(source)
           ? source
           : importer
@@ -355,11 +342,11 @@ export function cssCompilePlugin(): Plugin {
         id: CSS_DERIVED_ID_RE,
       },
       async handler(id) {
-        if (!CSS_DERIVED_ID_RE.test(id)) return null;
-
+        const config = this.environment.config;
         const absPath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
-        const evalId = `${absPath}?css-compile-eval`;
-        const sourcemap = shouldGenerateCssSourcemap(this.environment.config);
+        const evalId = `${absPath}?${CSS_EVAL_QUERY}`;
+        const sourcemap =
+          config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
         try {
           const runner = evalEnvironment!.runner;
@@ -392,9 +379,7 @@ export function cssCompilePlugin(): Plugin {
 
           return {
             code: buildCssCode(results),
-            map: sourcemap
-              ? buildCssSourcemap(id, results, this.environment.config.root, sourceContents)
-              : null,
+            map: sourcemap ? buildCssSourcemap(id, results, config.root, sourceContents) : null,
             moduleType: "css",
           };
         } catch (err: unknown) {

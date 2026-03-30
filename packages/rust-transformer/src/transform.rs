@@ -1,9 +1,9 @@
-use crate::TransformOptions;
+use crate::{CompileTimeTransformOptions, RuntimeTransformOptions};
 use oxc_allocator::{Allocator, CloneIn, Vec};
 use oxc_ast::{
   AstBuilder, NONE,
   ast::{
-    ArrayExpressionElement, Expression, FormalParameterKind, ImportOrExportKind, Program,
+    ArrayExpressionElement, Expression, FormalParameterKind, ImportOrExportKind,
     PropertyKind, Statement, TemplateLiteral, VariableDeclarationKind,
   },
 };
@@ -232,43 +232,14 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
   }
 }
 
-pub(crate) fn build_transform_result<'a>(
-  program: &Program<'a>,
-  source_text: &str,
-  source_filename: &str,
-  sourcemap_enabled: bool,
-  input_map: Option<&SourceMap>,
+pub(crate) fn transform_runtime(
+  source_text: String,
+  options: RuntimeTransformOptions,
 ) -> TransformResult {
-  let result = Codegen::new()
-    .with_options(CodegenOptions {
-      source_map_path: sourcemap_enabled.then(|| source_filename.to_string().into()),
-      ..CodegenOptions::default()
-    })
-    .with_source_text(source_text)
-    .build(program);
-
-  TransformResult {
-    code: result.code,
-    map: result.map.map(|transform_map| match input_map {
-      Some(input_map) => collapse_sourcemaps(&[&input_map, &transform_map]).into(),
-      None => transform_map.into(),
-    }),
-  }
-}
-
-pub(crate) fn transform_runtime(source_text: String, options: TransformOptions) -> TransformResult {
   let source_type = SourceType::from_path(&options.filename)
     .unwrap_or_default()
     .with_typescript(true)
     .with_jsx(true);
-
-  let input_map = if options.sourcemap
-    && let Some(input_map) = options.input_map
-  {
-    SourceMap::try_from(input_map).ok()
-  } else {
-    None
-  };
 
   let allocator = &Allocator::default();
 
@@ -309,31 +280,28 @@ pub(crate) fn transform_runtime(source_text: String, options: TransformOptions) 
     );
   }
 
-  build_transform_result(
-    &program,
-    &source_text,
-    &options.filename,
-    options.sourcemap,
-    input_map.as_ref(),
-  )
+  let result = Codegen::new()
+    .with_options(CodegenOptions {
+      source_map_path: options.sourcemap.then(|| options.filename.to_string().into()),
+      ..CodegenOptions::default()
+    })
+    .with_source_text(&source_text)
+    .build(&program);
+
+  TransformResult {
+    code: result.code,
+    map: result.map.map(Into::into),
+  }
 }
 
 pub(crate) fn transform_compile_time(
   source_text: String,
-  options: TransformOptions,
+  options: CompileTimeTransformOptions,
 ) -> TransformResult {
   let source_type = SourceType::from_path(&options.filename)
     .unwrap_or_default()
     .with_typescript(true)
     .with_jsx(true);
-
-  let input_map = if options.sourcemap
-    && let Some(input_map) = options.input_map
-  {
-    SourceMap::try_from(input_map).ok()
-  } else {
-    None
-  };
 
   let allocator = &Allocator::default();
 
@@ -352,7 +320,7 @@ pub(crate) fn transform_compile_time(
       allocator,
       &source_text,
       &options.filename,
-      input_map.as_ref(),
+      options.input_map.as_ref(),
     )
   });
 
@@ -572,13 +540,21 @@ pub(crate) fn transform_compile_time(
     )));
   }
 
-  build_transform_result(
-    &ret.program,
-    &source_text,
-    &options.filename,
-    options.sourcemap,
-    input_map.as_ref(),
-  )
+  let result = Codegen::new()
+    .with_options(CodegenOptions {
+      source_map_path: options.sourcemap.then(|| options.filename.to_string().into()),
+      ..CodegenOptions::default()
+    })
+    .with_source_text(&source_text)
+    .build(&ret.program);
+
+  TransformResult {
+    code: result.code,
+    map: result.map.map(|transform_map| match options.input_map.as_ref() {
+      Some(input_map) => collapse_sourcemaps(&[input_map, &transform_map]).into(),
+      None => transform_map.into(),
+    }),
+  }
 }
 
 fn create_metadata_object<'a>(

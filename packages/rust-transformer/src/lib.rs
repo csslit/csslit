@@ -1,21 +1,31 @@
 use napi_derive::napi;
+use rolldown_sourcemap::SourceMap;
 use crate::transform::{transform_compile_time, transform_runtime};
 
 mod transform;
 
+#[napi(object)]
+pub struct RuntimeTransformRequest {
+    pub filename: String,
+    pub sourcemap: bool,
+}
 
-#[napi(string_enum = "snake_case")]
-pub enum TransformMode {
-    Runtime,
-    CompileTime,
+pub(crate) struct RuntimeTransformOptions {
+    pub(crate) filename: String,
+    pub(crate) sourcemap: bool,
 }
 
 #[napi(object)]
-pub struct TransformOptions {
-    pub mode: TransformMode,
+pub struct CompileTimeTransformRequest {
     pub filename: String,
     pub input_map: Option<RawSourceMap>,
     pub sourcemap: bool,
+}
+
+pub(crate) struct CompileTimeTransformOptions {
+    pub(crate) filename: String,
+    pub(crate) sourcemap: bool,
+    pub(crate) input_map: Option<SourceMap>,
 }
 
 #[napi(object)]
@@ -41,15 +51,38 @@ pub struct RawSourceMap {
 
 
 #[napi]
-pub fn transform(source_text: String, options: TransformOptions) -> napi::Result<TransformResult> {
-    Ok(match options.mode {
-        TransformMode::Runtime => transform_runtime(
-            source_text,
-            options
-        ),
-        TransformMode::CompileTime => transform_compile_time(
-            source_text,
-            options
-        ),
-    })
+pub fn transform_runtime_js(
+    source_text: String,
+    options: RuntimeTransformRequest,
+) -> napi::Result<TransformResult> {
+    Ok(transform_runtime(
+        source_text,
+        RuntimeTransformOptions {
+            filename: options.filename,
+            sourcemap: options.sourcemap,
+        },
+    ))
+}
+
+#[napi]
+pub fn transform_compile_time_js(
+    source_text: String,
+    options: CompileTimeTransformRequest,
+) -> napi::Result<TransformResult> {
+    Ok(transform_compile_time(
+        source_text,
+        CompileTimeTransformOptions {
+            filename: options.filename,
+            sourcemap: options.sourcemap,
+            input_map: if options.sourcemap {
+                options
+                    .input_map
+                    .map(SourceMap::try_from)
+                    .transpose()
+                    .map_err(|err| napi::Error::from_reason(err.to_string()))?
+            } else {
+                None
+            },
+        },
+    ))
 }
