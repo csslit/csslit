@@ -90,7 +90,7 @@ function buildCssCode(results: ExtractedCssResult[]) {
 
   for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
     const result = results[resultIndex];
-    const className = `css-${resultIndex}`;
+    const className = `csslit_${resultIndex}`;
 
     if (resultIndex > 0) {
       css += "\n";

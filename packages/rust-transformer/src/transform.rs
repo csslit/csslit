@@ -2,7 +2,7 @@ use crate::{CompileTimeTransformOptions, RuntimeTransformOptions, quote_expr, qu
 use oxc_allocator::{Allocator, CloneIn, Vec};
 use oxc_ast::{
   AstBuilder, NONE,
-  ast::{Expression, Statement, TemplateLiteral},
+  ast::{Expression, ImportDeclarationSpecifier, Program, Statement, TemplateLiteral},
 };
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
@@ -10,13 +10,84 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_sourcemap::Token;
 use oxc_span::{Atom, GetSpan, SPAN, SourceType, format_atom};
+use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 use rolldown_sourcemap::{JSONSourceMap, SourceMap, collapse_sourcemaps};
-use std::{iter::once, path::Path};
+use std::path::Path;
 
 use super::{RawSourceMap, TransformResult};
 
 const CSS_DERIVED_SUFFIX: &str = ".csslit.module.css";
+
+struct CssImportSymbols<'a> {
+  named: Vec<'a, SymbolId>,
+  namespaces: Vec<'a, SymbolId>,
+}
+
+impl CssImportSymbols<'_> {
+  fn collect<'a>(allocator: &'a Allocator, program: &Program<'a>) -> CssImportSymbols<'a> {
+    let imports = program.body.iter().filter_map(|statement| {
+      if let Statement::ImportDeclaration(import) = statement
+        && import.source.value == "csslit"
+        && import.import_kind.is_value()
+      {
+        Some(import)
+      } else {
+        None
+      }
+    });
+
+    CssImportSymbols {
+      named: Vec::from_iter_in(
+        imports
+          .clone()
+          .flat_map(|import| import.specifiers.iter().flatten())
+          .filter_map(|specifier| match specifier {
+            ImportDeclarationSpecifier::ImportSpecifier(specifier)
+              if specifier.import_kind.is_value() && specifier.imported.name() == "css" =>
+            {
+              Some(specifier.local.symbol_id())
+            }
+            _ => None,
+          }),
+        allocator,
+      ),
+      namespaces: Vec::from_iter_in(
+        imports
+          .clone()
+          .flat_map(|import| import.specifiers.iter().flatten())
+          .filter_map(|specifier| match specifier {
+            ImportDeclarationSpecifier::ImportNamespaceSpecifier(specifier) => {
+              Some(specifier.local.symbol_id())
+            }
+            _ => None,
+          }),
+        allocator,
+      ),
+    }
+  }
+
+  fn is_css(&self, tag: &Expression<'_>, ctx: &TraverseCtx<'_, ()>) -> bool {
+    match tag {
+      Expression::Identifier(ident) => ctx
+        .scoping()
+        .get_reference(ident.reference_id())
+        .symbol_id()
+        .is_some_and(|symbol_id| self.named.contains(&symbol_id)),
+      Expression::StaticMemberExpression(member) if member.property.name == "css" => member
+        .object
+        .get_identifier_reference()
+        .and_then(|ident| {
+          ctx
+            .scoping()
+            .get_reference(ident.reference_id())
+            .symbol_id()
+        })
+        .is_some_and(|symbol_id| self.namespaces.contains(&symbol_id)),
+      _ => false,
+    }
+  }
+}
 
 impl TryFrom<RawSourceMap> for SourceMap {
   type Error = oxc_sourcemap::Error;
@@ -161,24 +232,23 @@ impl<'a> SourceRemapContext<'a> {
 }
 
 pub(crate) struct CompileTimeVisitor<'a> {
-  pub allocator: &'a Allocator,
   pub blocks: Vec<'a, CssTemplateBlock<'a>>,
+  css_import_symbols: CssImportSymbols<'a>,
 }
 
 impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
   fn enter_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a, ()>) {
     if let Expression::TaggedTemplateExpression(tagged) = expr
-      && let Expression::Identifier(ident) = &tagged.tag
-      && ident.name == "css"
+      && self.css_import_symbols.is_css(&tagged.tag, ctx)
     {
       self.blocks.push(CssTemplateBlock {
-        template: tagged.quasi.clone_in(self.allocator),
+        template: tagged.quasi.clone_in(ctx.ast.allocator),
         metadata: CssBlockMetadata {
           quasis: Vec::from_iter_in(
             tagged.quasi.quasis.iter().map(|quasi| OffsetSpan {
               start: quasi.span.start,
             }),
-            self.allocator,
+            ctx.ast.allocator,
           ),
           expressions: Vec::from_iter_in(
             tagged
@@ -188,7 +258,7 @@ impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
               .map(|expression| OffsetSpan {
                 start: expression.span().start,
               }),
-            self.allocator,
+            ctx.ast.allocator,
           ),
         },
       });
@@ -197,20 +267,23 @@ impl<'a> Traverse<'a, ()> for CompileTimeVisitor<'a> {
   }
 }
 
-pub(crate) struct RuntimeTransformer {
+pub(crate) struct RuntimeTransformer<'a> {
   pub(crate) has_css: bool,
   pub(crate) index: u32,
+  css_import_symbols: CssImportSymbols<'a>,
 }
 
-impl<'a> Traverse<'a, ()> for RuntimeTransformer {
+impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
   fn enter_expression(&mut self, expr: &mut Expression<'a>, ctx: &mut TraverseCtx<'a, ()>) {
     match expr {
-      Expression::TaggedTemplateExpression(tagged) if matches!(&tagged.tag, Expression::Identifier(ident) if ident.name == "css") =>
+      Expression::TaggedTemplateExpression(tagged)
+        if self.css_import_symbols.is_css(&tagged.tag, ctx) =>
       {
         let index = self.index;
+        let class_name = format_atom!(ctx.ast.allocator, "csslit_{index}");
         self.index += 1;
         self.has_css = true;
-        *expr = quote_expr!(ctx.ast, __css_module_import[format!("css-{index}")]);
+        *expr = quote_expr!(ctx.ast, __css_module_import.{class_name});
       }
       _ => {}
     }
@@ -232,6 +305,7 @@ pub(crate) fn transform_runtime(
   let mut program = ret.program;
 
   let semantic = SemanticBuilder::new().build(&program).semantic;
+  let css_import_symbols = CssImportSymbols::collect(allocator, &program);
   let scoping = semantic.into_scoping();
   let self_import = Path::new(&options.filename)
     .file_name()
@@ -241,6 +315,7 @@ pub(crate) fn transform_runtime(
   let mut transformer = RuntimeTransformer {
     has_css: false,
     index: 0,
+    css_import_symbols,
   };
 
   traverse_mut(&mut transformer, allocator, &mut program, scoping, ());
@@ -283,12 +358,14 @@ pub(crate) fn transform_compile_time(
 
   let mut ret = Parser::new(allocator, &source_text, source_type).parse();
   let semantic = SemanticBuilder::new().build(&ret.program).semantic;
+  let css_import_symbols = CssImportSymbols::collect(allocator, &ret.program);
   let scoping = semantic.into_scoping();
 
   let mut visitor = CompileTimeVisitor {
-    allocator,
     blocks: Vec::new_in(allocator),
+    css_import_symbols,
   };
+
   traverse_mut(&mut visitor, allocator, &mut ret.program, scoping, ());
 
   let mut remap_context = options.sourcemap.then(|| {
@@ -303,91 +380,98 @@ pub(crate) fn transform_compile_time(
   let ast = AstBuilder::new(allocator);
 
   let original_body = ret.program.body;
-  ret.program.body = ast.vec_from_iter(
-    once(quote_stmt!(
-      ast,
-      const createCsslitExtractRuntime = (block => (strings, ...values) => ({
-        block,
-        strings,
-        values,
-      }));
-    ))
-    .chain(
-      original_body
-        .into_iter()
-        .filter(|statement| matches!(statement, Statement::ImportDeclaration(_))),
-    )
-    .chain(
-      visitor
-        .blocks
-        .into_iter()
-        .enumerate()
-        .map(|(index, block)| {
-          let create_csslit_extract_runtime = remap_context
-            .as_mut()
-            .map(|context| {
-              let quasis = ast.vec_from_iter(
-                block
-                  .metadata
-                  .quasis
-                  .iter()
-                  .map(|quasi| context.remap(quasi))
-                  .map(
-                    |SourceLocation {
-                       source,
-                       line,
-                       column,
-                     }| {
-                      quote_expr!(ast, {
-                        source: {source},
-                        line: {line},
-                        column: {column},
-                      })
-                    },
-                  ),
-              );
 
-              let expressions = ast.vec_from_iter(
-                block
-                  .metadata
-                  .expressions
-                  .iter()
-                  .map(|expression| context.remap(expression))
-                  .map(
-                    |SourceLocation {
-                       source,
-                       line,
-                       column,
-                     }| {
-                      quote_expr!(ast, {
-                        source: {source},
-                        line: {line},
-                        column: {column},
-                      })
-                    },
-                  ),
-              );
-
-              quote_expr!(ast, createCsslitExtractRuntime({
-                quasis: {quasis},
-                expressions: {expressions},
-              }))
-            })
-            .unwrap_or_else(|| quote_expr!(ast, createCsslitExtractRuntime()));
-
-          let export_name = format_atom!(allocator, "__ext_css_{index}");
-          let ext_css_value = ast.expression_tagged_template(
-            SPAN,
-            create_csslit_extract_runtime,
-            NONE,
-            block.template,
-          );
-          quote_stmt!(ast, export const {export_name} = {ext_css_value};)
-        }),
-    ),
+  ret.program.body = ast.vec_with_capacity(
+    1 // runtime
+    + original_body
+      .iter()
+      .filter(|statement| matches!(statement, Statement::ImportDeclaration(_)))
+      .count()
+    + visitor.blocks.len()
+    + remap_context.is_some() as usize,
   );
 
-  if let Some(context) = remap_context.as_ref() {
+  ret.program.body.push(quote_stmt!(
+    ast,
+    const createCsslitExtractRuntime = (block => (strings, ...values) => ({
+      block,
+      strings,
+      values,
+    }));
+  ));
+
+  ret.program.body.extend(
+    original_body
+      .into_iter()
+      .filter(|statement| matches!(statement, Statement::ImportDeclaration(_))),
+  );
+
+  ret.program.body.extend(
+    visitor
+      .blocks
+      .into_iter()
+      .enumerate()
+      .map(|(index, block)| {
+        let create_csslit_extract_runtime = remap_context
+          .as_mut()
+          .map(|context| {
+            let quasis = ast.vec_from_iter(
+              block
+                .metadata
+                .quasis
+                .iter()
+                .map(|quasi| context.remap(quasi))
+                .map(
+                  |SourceLocation {
+                     source,
+                     line,
+                     column,
+                   }| {
+                    quote_expr!(ast, {
+                      source: {source},
+                      line: {line},
+                      column: {column},
+                    })
+                  },
+                ),
+            );
+
+            let expressions = ast.vec_from_iter(
+              block
+                .metadata
+                .expressions
+                .iter()
+                .map(|expression| context.remap(expression))
+                .map(
+                  |SourceLocation {
+                     source,
+                     line,
+                     column,
+                   }| {
+                    quote_expr!(ast, {
+                      source: {source},
+                      line: {line},
+                      column: {column},
+                    })
+                  },
+                ),
+            );
+
+            quote_expr!(ast, createCsslitExtractRuntime({
+              quasis: {quasis},
+              expressions: {expressions},
+            }))
+          })
+          .unwrap_or_else(|| quote_expr!(ast, createCsslitExtractRuntime()));
+
+        let export_name = format_atom!(allocator, "__ext_css_{index}");
+        let ext_css_value =
+          ast.expression_tagged_template(SPAN, create_csslit_extract_runtime, NONE, block.template);
+        quote_stmt!(ast, export const {export_name} = {ext_css_value};)
+      }),
+  );
+
+  ret.program.body.extend(remap_context.map(|context| {
     let entries = ast.vec_from_iter(context.source_contents().map(|(source, content)| {
       let content = content.map_or_else(
         || quote_expr!(ast, null),
@@ -396,11 +480,11 @@ pub(crate) fn transform_compile_time(
       quote_expr!(ast, [{ source }, { content }])
     }));
 
-    ret.program.body.push(quote_stmt!(
+    quote_stmt!(
       ast,
       export const __csslit_source_contents = {entries};
-    ));
-  }
+    )
+  }));
 
   let result = Codegen::new()
     .with_options(CodegenOptions {
