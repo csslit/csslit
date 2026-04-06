@@ -9,15 +9,13 @@ use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_sourcemap::Token;
-use oxc_span::{Atom, GetSpan, SPAN, SourceType, format_atom};
+use oxc_span::{GetSpan, SPAN, SourceType};
 use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 use rolldown_sourcemap::{JSONSourceMap, SourceMap, collapse_sourcemaps};
 use std::path::Path;
 
 use super::{RawSourceMap, TransformResult};
-
-const CSS_DERIVED_SUFFIX: &str = ".csslit.module.css";
 
 struct CssImportSymbols<'a> {
   named: Vec<'a, SymbolId>,
@@ -135,7 +133,7 @@ pub(crate) struct CssBlockMetadata<'a> {
 }
 
 pub(crate) struct SourceLocation<'a> {
-  pub(crate) source: Atom<'a>,
+  pub(crate) source: &'a str,
   pub(crate) line: u32,
   pub(crate) column: u32,
 }
@@ -179,7 +177,7 @@ impl<'a> SourceRemapContext<'a> {
     }
   }
 
-  pub(crate) fn remap(&mut self, span: &OffsetSpan) -> SourceLocation<'a> {
+  pub(crate) fn remap(&mut self, span: OffsetSpan) -> SourceLocation<'a> {
     let (line, column) = get_line_column(&self.source_rope, span.start, self.source_text);
 
     if let Some(map) = self.input_map
@@ -190,7 +188,7 @@ impl<'a> SourceRemapContext<'a> {
     {
       self.record_source_id(source_id);
       return SourceLocation {
-        source: source.as_ref().into(),
+        source: source.as_ref(),
         line: token.get_src_line() + 1,
         column: token.get_src_col(),
       };
@@ -198,13 +196,13 @@ impl<'a> SourceRemapContext<'a> {
 
     self.referenced_self_source = true;
     SourceLocation {
-      source: self.filename.into(),
+      source: self.filename,
       line: line + 1,
       column,
     }
   }
 
-  pub(crate) fn source_contents(&self) -> impl Iterator<Item = (Atom<'a>, Option<Atom<'a>>)> + '_ {
+  pub(crate) fn source_contents(&self) -> impl Iterator<Item = (&'a str, Option<&'a str>)> + '_ {
     self
       .input_map
       .into_iter()
@@ -215,10 +213,10 @@ impl<'a> SourceRemapContext<'a> {
           .filter_map(move |source_id| {
             map.get_source(*source_id).map(|source| {
               (
-                source.as_ref().into(),
+                source.as_ref(),
                 map
                   .get_source_content(*source_id)
-                  .map(|content| content.as_ref().into()),
+                  .map(|content| content.as_ref()),
               )
             })
           })
@@ -226,7 +224,7 @@ impl<'a> SourceRemapContext<'a> {
       .chain(
         self
           .referenced_self_source
-          .then_some((self.filename.into(), Some(self.source_text.into()))),
+          .then_some((self.filename, Some(self.source_text))),
       )
   }
 }
@@ -280,10 +278,9 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
         if self.css_import_symbols.is_css(&tagged.tag, ctx) =>
       {
         let index = self.index;
-        let class_name = format_atom!(ctx.ast.allocator, "csslit_{index}");
         self.index += 1;
         self.has_css = true;
-        *expr = quote_expr!(ctx.ast, __css_module_import.{class_name});
+        *expr = quote_expr!(ctx.ast, __css_module_import.@"csslit_{index}");
       }
       _ => {}
     }
@@ -322,10 +319,9 @@ pub(crate) fn transform_runtime(
 
   if transformer.has_css {
     let ast = AstBuilder::new(allocator);
-    let derived_import_path = format_atom!(allocator, "./{self_import}{CSS_DERIVED_SUFFIX}");
     program.body.insert(
       0,
-      quote_stmt!(ast, import __css_module_import from {derived_import_path};),
+      quote_stmt!(ast, import __css_module_import from @"./{self_import}.csslit.module.css";),
     );
   }
 
@@ -387,13 +383,12 @@ pub(crate) fn transform_compile_time(
       .iter()
       .filter(|statement| matches!(statement, Statement::ImportDeclaration(_)))
       .count()
-    + visitor.blocks.len()
-    + remap_context.is_some() as usize,
+      + 1, // export
   );
 
   ret.program.body.push(quote_stmt!(
     ast,
-    const createCsslitExtractRuntime = (block => (strings, ...values) => ({
+    const __csslit_extract = (block => (strings, ...values) => ({
       block,
       strings,
       values,
@@ -406,85 +401,91 @@ pub(crate) fn transform_compile_time(
       .filter(|statement| matches!(statement, Statement::ImportDeclaration(_))),
   );
 
-  ret.program.body.extend(
-    visitor
-      .blocks
-      .into_iter()
-      .enumerate()
-      .map(|(index, block)| {
-        let create_csslit_extract_runtime = remap_context
-          .as_mut()
-          .map(|context| {
-            let quasis = ast.vec_from_iter(
-              block
-                .metadata
-                .quasis
-                .iter()
-                .map(|quasi| context.remap(quasi))
-                .map(
-                  |SourceLocation {
-                     source,
-                     line,
-                     column,
-                   }| {
-                    quote_expr!(ast, {
-                      source: {source},
-                      line: {line},
-                      column: {column},
-                    })
-                  },
-                ),
-            );
+  let blocks = ast.vec_from_iter(visitor.blocks.into_iter().map(|block| {
+    let block_metadata = remap_context
+      .as_mut()
+      .map(|context| {
+        let quasis = ast.vec_from_iter(
+          block
+            .metadata
+            .quasis
+            .into_iter()
+            .map(|quasi| context.remap(quasi))
+            .map(
+              |SourceLocation {
+                 source,
+                 line,
+                 column,
+               }| {
+                quote_expr!(ast, {
+                  source: @{source},
+                  line: @{line},
+                  column: @{column},
+                })
+              },
+            ),
+        );
 
-            let expressions = ast.vec_from_iter(
-              block
-                .metadata
-                .expressions
-                .iter()
-                .map(|expression| context.remap(expression))
-                .map(
-                  |SourceLocation {
-                     source,
-                     line,
-                     column,
-                   }| {
-                    quote_expr!(ast, {
-                      source: {source},
-                      line: {line},
-                      column: {column},
-                    })
-                  },
-                ),
-            );
+        let expressions = ast.vec_from_iter(
+          block
+            .metadata
+            .expressions
+            .into_iter()
+            .map(|expression| context.remap(expression))
+            .map(
+              |SourceLocation {
+                 source,
+                 line,
+                 column,
+               }| {
+                quote_expr!(ast, {
+                  source: @{source},
+                  line: @{line},
+                  column: @{column},
+                })
+              },
+            ),
+        );
 
-            quote_expr!(ast, createCsslitExtractRuntime({
-              quasis: {quasis},
-              expressions: {expressions},
-            }))
-          })
-          .unwrap_or_else(|| quote_expr!(ast, createCsslitExtractRuntime()));
+        quote_expr!(ast, {
+          quasis: @{quasis},
+          expressions: @{expressions},
+        })
+      })
+      .unwrap_or_else(|| quote_expr!(ast, null));
 
-        let export_name = format_atom!(allocator, "__ext_css_{index}");
-        let ext_css_value =
-          ast.expression_tagged_template(SPAN, create_csslit_extract_runtime, NONE, block.template);
-        quote_stmt!(ast, export const {export_name} = {ext_css_value};)
-      }),
-  );
-
-  ret.program.body.extend(remap_context.map(|context| {
-    let entries = ast.vec_from_iter(context.source_contents().map(|(source, content)| {
-      let content = content.map_or_else(
-        || quote_expr!(ast, null),
-        |content| quote_expr!(ast, { content }),
-      );
-      quote_expr!(ast, [{ source }, { content }])
-    }));
-
-    quote_stmt!(
-      ast,
-      export const __csslit_source_contents = {entries};
+    ast.expression_tagged_template(
+      SPAN,
+      quote_expr!(ast, __csslit_extract(@{block_metadata})),
+      NONE,
+      block.template,
     )
   }));
+
+  let source_contents = match remap_context {
+    None => quote_expr!(ast, null),
+    Some(context) => {
+      let entries =
+        ast.vec_from_iter(
+          context
+            .source_contents()
+            .map(|(source, content)| match content {
+              None => quote_expr!(ast, [@{source}, null]),
+              Some(content) => quote_expr!(ast, [@{source}, @{content}]),
+            }),
+        );
+
+      quote_expr!(ast, @{entries})
+    }
+  };
+
+  ret.program.body.push(quote_stmt!(
+    ast,
+    export const __csslit_eval_result = ({
+      blocks: @{blocks},
+      source_contents: @{source_contents},
+    });
+  ));
 
   let result = Codegen::new()
     .with_options(CodegenOptions {

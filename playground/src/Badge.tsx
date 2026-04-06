@@ -6,10 +6,10 @@ export function Badge({ label }: { label: string }) {
     <span
       className={css`
         display: inline-block;
-        padding: 4px 12px;
+        padding: 10px 10px;
         background: ${theme.colors.secondary};
         color: white;
-        border-radius: 999px;
+        border-radius: 10px;
         font-size: 12px;
       `}
     >

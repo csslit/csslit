@@ -11,9 +11,9 @@ pub struct RuntimeTransformRequest {
   pub sourcemap: bool,
 }
 
-pub(crate) struct RuntimeTransformOptions {
-  pub(crate) filename: String,
-  pub(crate) sourcemap: bool,
+pub struct RuntimeTransformOptions {
+  pub filename: String,
+  pub sourcemap: bool,
 }
 
 #[napi(object)]
@@ -23,10 +23,10 @@ pub struct CompileTimeTransformRequest {
   pub sourcemap: bool,
 }
 
-pub(crate) struct CompileTimeTransformOptions {
-  pub(crate) filename: String,
-  pub(crate) sourcemap: bool,
-  pub(crate) input_map: Option<SourceMap>,
+pub struct CompileTimeTransformOptions {
+  pub filename: String,
+  pub sourcemap: bool,
+  pub input_map: Option<SourceMap>,
 }
 
 #[napi(object)]

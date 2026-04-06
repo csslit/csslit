@@ -7,13 +7,15 @@ import {
   toEncodedMap,
 } from "@jridgewell/gen-mapping";
 import path from "node:path";
-import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
 import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
+import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
 
 const CSS_DERIVED_SUFFIX = ".csslit.module.css";
 const CSS_EVAL_QUERY = "csslit-eval";
+const CSSLIT_EVAL_RESULT_EXPORT = "__csslit_eval_result";
+const CSSLIT_COMPTIME_ENVIRONMENT = "comptime";
 const SCRIPT_ID_RE = /\.(?:js|ts|jsx|tsx)?(?:$|\?)/;
 const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
 
@@ -35,6 +37,11 @@ type ExtractedCssResult = {
 };
 
 type ExtractedSourceContent = [string, string | null];
+
+type CsslitEvalResult = {
+  blocks: ExtractedCssResult[];
+  source_contents: ExtractedSourceContent[] | null;
+};
 
 function toRawSourceMap(map: SourceMapInput | null | undefined): RawSourceMap | undefined {
   return map && typeof map !== "string" ? (map as RawSourceMap) : undefined;
@@ -138,10 +145,11 @@ function watchCssEvalDependencies(
 
 function buildCssSourcemap(
   file: string,
-  results: ExtractedCssResult[],
   root: string,
-  sourceContents: Map<string, string | null> | null,
+  blocks: ExtractedCssResult[],
+  source_contents: ExtractedSourceContent[] | null,
 ): SourceMapInput {
+  const sourceContents = new Map(source_contents ?? []);
   const map = new GenMapping({ file });
   const normalizedSources = new Map<string, string>();
   const sourcesWithContent = new Set<string>();
@@ -161,7 +169,7 @@ function buildCssSourcemap(
       normalizedSources.set(loc.source, source);
     }
 
-    if (sourceContents?.has(loc.source) && !sourcesWithContent.has(source)) {
+    if (sourceContents.has(loc.source) && !sourcesWithContent.has(source)) {
       setSourceContent(map, source, sourceContents.get(loc.source) ?? null);
       sourcesWithContent.add(source);
     }
@@ -169,7 +177,7 @@ function buildCssSourcemap(
     return source;
   }
 
-  for (const result of results) {
+  for (const result of blocks) {
     const block = result.block;
 
     if (block?.quasis?.[0] || block?.expressions?.[0]) {
@@ -238,7 +246,7 @@ function buildCssSourcemap(
 
     currentLine += 1;
 
-    if (result !== results[results.length - 1]) {
+    if (result !== blocks[blocks.length - 1]) {
       currentLine += 1;
     }
   }
@@ -252,21 +260,25 @@ export function cssCompilePlugin(): Plugin {
   return {
     name: "vite-plugin-css-compile",
 
+    config(config) {
+      config.environments ??= {};
+      const comptime = (config.environments[CSSLIT_COMPTIME_ENVIRONMENT] ??= {});
+
+      comptime.consumer ??= "server";
+      comptime.resolve ??= {};
+      comptime.resolve.external ??= true;
+      comptime.resolve.noExternal ??= [];
+      comptime.dev ??= {};
+      comptime.dev.createEnvironment ??= (name, config) =>
+        createRunnableDevEnvironment(name, config, {
+          runnerOptions: {
+            hmr: false,
+          },
+        });
+    },
+
     configureServer(server: ViteDevServer) {
-      evalEnvironment = server.environments.ssr as RunnableDevEnvironment;
-    },
-
-    async configResolved(config) {
-      if (config.command !== "build") return;
-      evalEnvironment = createRunnableDevEnvironment("ssr", config);
-      await evalEnvironment.init();
-    },
-
-    async buildEnd() {
-      if (evalEnvironment) {
-        await evalEnvironment.close();
-        evalEnvironment = null;
-      }
+      evalEnvironment = server.environments[CSSLIT_COMPTIME_ENVIRONMENT] as RunnableDevEnvironment;
     },
 
     transform: {
@@ -339,44 +351,29 @@ export function cssCompilePlugin(): Plugin {
         id: CSS_DERIVED_ID_RE,
       },
       async handler(id) {
-        const config = this.environment.config;
         const absPath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
         const evalId = `${absPath}?${CSS_EVAL_QUERY}`;
-        const sourcemap =
-          config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
         try {
           const runner = evalEnvironment!.runner;
+          const evalModule = runner.evaluatedModules.getModuleByUrl(evalId);
+          if (evalModule) {
+            runner.evaluatedModules.invalidateModule(evalModule);
+          }
           const mod = await runner.import(evalId);
           watchCssEvalDependencies(
             (file) => this.addWatchFile(file),
             runner.evaluatedModules,
             evalId,
           );
-          const results: ExtractedCssResult[] = [];
-          const sourceContents = mod.__csslit_source_contents
-            ? new Map(mod.__csslit_source_contents as ExtractedSourceContent[])
-            : null;
-
-          for (const [name, value] of Object.entries(mod)) {
-            if (name.startsWith("__ext_css_") && value != null && typeof value === "object") {
-              results.push(value as ExtractedCssResult);
-            }
-          }
-
-          if (results.length === 0) {
-            this.error({
-              code: "CSS_EXTRACTION_ERROR",
-              hook: "load",
-              id: absPath,
-              message: `CSS extraction failed for ${absPath}: no __ext_css_ exports found in ${evalId}`,
-              plugin: "vite-plugin-css-compile",
-            });
-          }
+          const result = mod[CSSLIT_EVAL_RESULT_EXPORT] as CsslitEvalResult;
+          const code = buildCssCode(result.blocks);
+          const config = this.environment.config;
+          const sourcemap = config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
           return {
-            code: buildCssCode(results),
-            map: sourcemap ? buildCssSourcemap(id, results, config.root, sourceContents) : null,
+            code,
+            map: sourcemap ? buildCssSourcemap(id, config.root, result.blocks, result.source_contents) : null,
             moduleType: "css",
           };
         } catch (err: unknown) {
