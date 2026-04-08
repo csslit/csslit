@@ -3,6 +3,7 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   pack: {
     entry: {
+      "eval-runtime": "src/eval-runtime.ts",
       index: "src/index.ts",
     },
     dts: {
@@ -11,7 +12,9 @@ export default defineConfig({
     format: "esm",
     fixedExtension: false,
     sourcemap: true,
-    exports: true,
+    exports: {
+      exclude: ["eval-runtime"],
+    },
   },
   run: {
     tasks: {

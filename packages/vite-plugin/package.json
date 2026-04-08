@@ -10,8 +10,7 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@csslit/rust-transformer": "*",
-    "@jridgewell/gen-mapping": "^0.3.13"
+    "@csslit/rust-transformer": "*"
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260322.1",

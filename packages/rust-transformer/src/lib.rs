@@ -1,9 +1,27 @@
 use napi_derive::napi;
-use rolldown_sourcemap::SourceMap;
+use rolldown_sourcemap::{JSONSourceMap, SourceMap};
 
 #[doc(hidden)]
 pub mod quote;
-mod transform;
+mod transform {
+  mod compile_time;
+  mod runtime;
+  mod shared;
+
+  pub(crate) fn transform_runtime(
+    source_text: String,
+    options: crate::RuntimeTransformOptions,
+  ) -> crate::OxcTransformResult {
+    runtime::transform_runtime(source_text, options)
+  }
+
+  pub(crate) fn transform_compile_time(
+    source_text: String,
+    options: crate::CompileTimeTransformOptions,
+  ) -> crate::OxcTransformResult {
+    compile_time::transform_compile_time(source_text, options)
+  }
+}
 
 #[napi(object)]
 pub struct RuntimeTransformRequest {
@@ -11,22 +29,29 @@ pub struct RuntimeTransformRequest {
   pub sourcemap: bool,
 }
 
-pub struct RuntimeTransformOptions {
-  pub filename: String,
-  pub sourcemap: bool,
+struct RuntimeTransformOptions {
+  filename: String,
+  sourcemap: bool,
 }
 
 #[napi(object)]
 pub struct CompileTimeTransformRequest {
+  pub root: String,
   pub filename: String,
   pub input_map: Option<RawSourceMap>,
   pub sourcemap: bool,
 }
 
-pub struct CompileTimeTransformOptions {
-  pub filename: String,
-  pub sourcemap: bool,
-  pub input_map: Option<SourceMap>,
+struct CompileTimeTransformOptions {
+  root: String,
+  filename: String,
+  sourcemap: bool,
+  input_map: Option<SourceMap>,
+}
+
+struct OxcTransformResult {
+  code: String,
+  map: Option<SourceMap>,
 }
 
 #[napi(object)]
@@ -50,18 +75,58 @@ pub struct RawSourceMap {
   pub debug_id: Option<String>,
 }
 
+impl TryFrom<RawSourceMap> for SourceMap {
+  type Error = oxc_sourcemap::Error;
+
+  fn try_from(map: RawSourceMap) -> Result<Self, Self::Error> {
+    SourceMap::from_json(JSONSourceMap {
+      version: map.version,
+      file: map.file,
+      mappings: map.mappings,
+      source_root: map.source_root,
+      sources: map.sources,
+      sources_content: map.sources_content,
+      names: map.names,
+      debug_id: map.debug_id,
+      x_google_ignore_list: map.x_google_ignore_list,
+    })
+  }
+}
+
+impl From<SourceMap> for RawSourceMap {
+  fn from(map: SourceMap) -> Self {
+    let json = map.to_json();
+    Self {
+      file: json.file,
+      mappings: json.mappings,
+      names: json.names,
+      source_root: json.source_root,
+      sources: json.sources,
+      sources_content: json.sources_content,
+      version: json.version,
+      x_google_ignore_list: json.x_google_ignore_list,
+      debug_id: json.debug_id,
+    }
+  }
+}
+
 #[napi]
 pub fn transform_runtime(
   source_text: String,
   options: RuntimeTransformRequest,
 ) -> napi::Result<TransformResult> {
-  Ok(transform::transform_runtime(
+  let result = transform::transform_runtime(
     source_text,
     RuntimeTransformOptions {
       filename: options.filename,
       sourcemap: options.sourcemap,
     },
-  ))
+  );
+
+  Ok(TransformResult {
+    code: result.code,
+    map: result.map.map(Into::into),
+  })
 }
 
 #[napi]
@@ -69,9 +134,10 @@ pub fn transform_compile_time(
   source_text: String,
   options: CompileTimeTransformRequest,
 ) -> napi::Result<TransformResult> {
-  Ok(transform::transform_compile_time(
+  let result = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
+      root: options.root,
       filename: options.filename,
       sourcemap: options.sourcemap,
       input_map: if options.sourcemap {
@@ -84,5 +150,10 @@ pub fn transform_compile_time(
         None
       },
     },
-  ))
+  );
+
+  Ok(TransformResult {
+    code: result.code,
+    map: result.map.map(Into::into),
+  })
 }

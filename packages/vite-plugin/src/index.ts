@@ -1,11 +1,6 @@
 import { transformCompileTime, transformRuntime } from "@csslit/rust-transformer";
 import type { RawSourceMap } from "@csslit/rust-transformer";
-import {
-  GenMapping,
-  maybeAddMapping,
-  setSourceContent,
-  toEncodedMap,
-} from "@jridgewell/gen-mapping";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
@@ -16,32 +11,17 @@ const CSS_DERIVED_SUFFIX = ".csslit.module.css";
 const CSS_EVAL_QUERY = "csslit-eval";
 const CSSLIT_EVAL_RESULT_EXPORT = "__csslit_eval_result";
 const CSSLIT_COMPTIME_ENVIRONMENT = "comptime";
+const CSSLIT_EVAL_RUNTIME_ID = "virtual:csslit-eval-runtime";
+const RESOLVED_CSSLIT_EVAL_RUNTIME_ID = "\0virtual:csslit-eval-runtime";
 const SCRIPT_ID_RE = /\.(?:js|ts|jsx|tsx)?(?:$|\?)/;
 const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
 
-type SourceLocation = {
-  source: string;
-  line: number;
-  column: number;
-};
-
-type RemappedCssBlock = {
-  quasis: SourceLocation[];
-  expressions: SourceLocation[];
-};
-
-type ExtractedCssResult = {
-  block: RemappedCssBlock | null;
-  strings: TemplateStringsArray;
-  values: unknown[];
-};
-
-type ExtractedSourceContent = [string, string | null];
-
 type CsslitEvalResult = {
-  blocks: ExtractedCssResult[];
-  source_contents: ExtractedSourceContent[] | null;
+  code: string;
+  map: SourceMapInput | null;
 };
+
+const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
 
 function toRawSourceMap(map: SourceMapInput | null | undefined): RawSourceMap | undefined {
   return map && typeof map !== "string" ? (map as RawSourceMap) : undefined;
@@ -92,33 +72,6 @@ function formatCssEvaluationStack(error: Error) {
   return stack.join("\n");
 }
 
-function buildCssCode(results: ExtractedCssResult[]) {
-  let css = "";
-
-  for (let resultIndex = 0; resultIndex < results.length; resultIndex += 1) {
-    const result = results[resultIndex];
-    const className = `csslit_${resultIndex}`;
-
-    if (resultIndex > 0) {
-      css += "\n";
-    }
-
-    css += `.${className} {\n`;
-
-    for (let index = 0; index < result.strings.length; index += 1) {
-      css += result.strings[index] ?? "";
-      if (index < result.values.length) {
-        // oxlint-disable-next-line typescript/no-base-to-string
-        css += String(result.values[index]);
-      }
-    }
-
-    css += "\n}";
-  }
-
-  return css;
-}
-
 function watchCssEvalDependencies(
   addWatchFile: (id: string) => void,
   evaluatedModules: EvaluatedModules,
@@ -141,117 +94,6 @@ function watchCssEvalDependencies(
   };
 
   visit(start);
-}
-
-function buildCssSourcemap(
-  file: string,
-  root: string,
-  blocks: ExtractedCssResult[],
-  source_contents: ExtractedSourceContent[] | null,
-): SourceMapInput {
-  const sourceContents = new Map(source_contents ?? []);
-  const map = new GenMapping({ file });
-  const normalizedSources = new Map<string, string>();
-  const sourcesWithContent = new Set<string>();
-  let currentLine = 1;
-
-  function getSource(loc: SourceLocation | null) {
-    if (!loc?.source) return null;
-    let source = normalizedSources.get(loc.source);
-    if (!source) {
-      const cleanSource = normalizePath(loc.source.split("?")[0] ?? loc.source);
-      if (path.isAbsolute(cleanSource)) {
-        const relativeSource = normalizePath(path.relative(root, cleanSource));
-        source = relativeSource.startsWith("..") ? cleanSource : `/${relativeSource}`;
-      } else {
-        source = cleanSource;
-      }
-      normalizedSources.set(loc.source, source);
-    }
-
-    if (sourceContents.has(loc.source) && !sourcesWithContent.has(source)) {
-      setSourceContent(map, source, sourceContents.get(loc.source) ?? null);
-      sourcesWithContent.add(source);
-    }
-
-    return source;
-  }
-
-  for (const result of blocks) {
-    const block = result.block;
-
-    if (block?.quasis?.[0] || block?.expressions?.[0]) {
-      const startLoc = block?.quasis?.[0] ?? block?.expressions?.[0] ?? null;
-      const source = getSource(startLoc);
-      if (source) {
-        maybeAddMapping(map, {
-          generated: { line: currentLine, column: 0 },
-          source,
-          original: { line: startLoc.line, column: startLoc.column },
-        });
-      }
-    }
-
-    currentLine += 1;
-
-    for (let index = 0; index < result.strings.length; index += 1) {
-      const cooked = result.strings[index] ?? "";
-      const raw = result.strings.raw[index] ?? "";
-      const quasiLoc = block?.quasis?.[index] ?? null;
-
-      if (cooked.length > 0) {
-        const generatedLineCount = (cooked.match(/\r\n?|\n/g)?.length ?? 0) + 1;
-        const sourceLineCount = raw.split("\n").length;
-
-        for (let lineOffset = 0; lineOffset < generatedLineCount; lineOffset += 1) {
-          if (!quasiLoc) continue;
-          const source = getSource(quasiLoc);
-          if (!source) continue;
-          maybeAddMapping(map, {
-            generated: { line: currentLine + lineOffset, column: 0 },
-            source,
-            original: {
-              line: quasiLoc.line + Math.min(lineOffset, sourceLineCount - 1),
-              column: lineOffset === 0 ? quasiLoc.column : 0,
-            },
-          });
-        }
-
-        currentLine += generatedLineCount - 1;
-      }
-
-      if (index >= result.values.length) continue;
-
-      // oxlint-disable-next-line typescript/no-base-to-string
-      const value = String(result.values[index]);
-      const expressionLoc = block?.expressions?.[index] ?? null;
-
-      if (value.length === 0) continue;
-
-      const generatedLineCount = (value.match(/\r\n?|\n/g)?.length ?? 0) + 1;
-
-      for (let lineOffset = 0; lineOffset < generatedLineCount; lineOffset += 1) {
-        if (!expressionLoc) continue;
-        const source = getSource(expressionLoc);
-        if (!source) continue;
-        maybeAddMapping(map, {
-          generated: { line: currentLine + lineOffset, column: 0 },
-          source,
-          original: { line: expressionLoc.line, column: expressionLoc.column },
-        });
-      }
-
-      currentLine += generatedLineCount - 1;
-    }
-
-    currentLine += 1;
-
-    if (result !== blocks[blocks.length - 1]) {
-      currentLine += 1;
-    }
-  }
-
-  return toEncodedMap(map) as SourceMapInput;
 }
 
 export function cssCompilePlugin(): Plugin {
@@ -298,6 +140,7 @@ export function cssCompilePlugin(): Plugin {
           const result = transformCompileTime(code, {
             filename: cleanId,
             inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
+            root: config.root,
             sourcemap,
           });
 
@@ -327,10 +170,15 @@ export function cssCompilePlugin(): Plugin {
     },
 
     resolveId: {
-      filter: {
-        id: CSS_DERIVED_ID_RE,
-      },
-      handler(source, importer) {
+      async handler(source, importer) {
+        if (source === CSSLIT_EVAL_RUNTIME_ID) {
+          return RESOLVED_CSSLIT_EVAL_RUNTIME_ID;
+        }
+
+        if (!CSS_DERIVED_ID_RE.test(source)) {
+          return null;
+        }
+
         const id = path.isAbsolute(source)
           ? source
           : importer
@@ -347,10 +195,15 @@ export function cssCompilePlugin(): Plugin {
     },
 
     load: {
-      filter: {
-        id: CSS_DERIVED_ID_RE,
-      },
       async handler(id) {
+        if (id === RESOLVED_CSSLIT_EVAL_RUNTIME_ID) {
+          return csslitEvalRuntimeCode;
+        }
+
+        if (!CSS_DERIVED_ID_RE.test(id)) {
+          return null;
+        }
+
         const absPath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
         const evalId = `${absPath}?${CSS_EVAL_QUERY}`;
 
@@ -367,13 +220,10 @@ export function cssCompilePlugin(): Plugin {
             evalId,
           );
           const result = mod[CSSLIT_EVAL_RESULT_EXPORT] as CsslitEvalResult;
-          const code = buildCssCode(result.blocks);
-          const config = this.environment.config;
-          const sourcemap = config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
           return {
-            code,
-            map: sourcemap ? buildCssSourcemap(id, config.root, result.blocks, result.source_contents) : null,
+            code: result.code,
+            map: result.map ?? null,
             moduleType: "css",
           };
         } catch (err: unknown) {
@@ -395,5 +245,6 @@ export function cssCompilePlugin(): Plugin {
         }
       },
     },
+
   };
 }
