@@ -1,4 +1,4 @@
-use oxc_allocator::{FromIn, Vec};
+use oxc_allocator::{AllocatorAccessor, FromIn, Vec};
 use oxc_ast::{
   AstBuilder, NONE,
   ast::{
@@ -6,42 +6,77 @@ use oxc_ast::{
     Statement, StringLiteral, VariableDeclarationKind,
   },
 };
-use oxc_span::{Atom, SPAN};
+use oxc_span::Span;
+use oxc_str::{Ident, Str};
 use oxc_syntax::number::NumberBase;
 
 #[doc(hidden)]
 pub trait QuoteLiteral<'a> {
-  fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a>;
+  fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a>;
 }
 
 #[doc(hidden)]
-pub fn quote_literal<'a, T>(ast: AstBuilder<'a>, value: T) -> Expression<'a>
+pub fn quote_literal<'a, T>(ast: AstBuilder<'a>, span: Span, value: T) -> Expression<'a>
 where
   T: QuoteLiteral<'a>,
 {
-  value.into_quoted_expression(ast)
+  value.into_quoted_expression(ast, span)
 }
 
 #[doc(hidden)]
 pub trait QuoteInterpolation<'a> {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a>;
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a>;
 }
 
 #[doc(hidden)]
-pub fn quote_interpolation<'a, T>(ast: AstBuilder<'a>, value: T) -> Expression<'a>
+pub fn quote_interpolation<'a, T>(ast: AstBuilder<'a>, span: Span, value: T) -> Expression<'a>
 where
   T: QuoteInterpolation<'a>,
 {
-  value.into_quoted_interpolation(ast)
+  value.into_quoted_interpolation(ast, span)
+}
+
+#[doc(hidden)]
+pub trait QuoteArrayElements<'a> {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>>;
+}
+
+#[doc(hidden)]
+pub fn quote_array_elements<'a, T>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  value: T,
+) -> Vec<'a, ArrayExpressionElement<'a>>
+where
+  T: QuoteArrayElements<'a>,
+{
+  value.into_quoted_array_elements(ast, span)
+}
+
+#[doc(hidden)]
+pub trait QuoteStatements<'a> {
+  fn into_quoted_statements(self, ast: AstBuilder<'a>, span: Span) -> Vec<'a, Statement<'a>>;
+}
+
+#[doc(hidden)]
+pub fn quote_statements<'a, T>(ast: AstBuilder<'a>, span: Span, value: T) -> Vec<'a, Statement<'a>>
+where
+  T: QuoteStatements<'a>,
+{
+  value.into_quoted_statements(ast, span)
 }
 
 #[doc(hidden)]
 pub trait QuoteBindingName<'a> {
-  fn into_quoted_binding_name(self, ast: AstBuilder<'a>) -> Atom<'a>;
+  fn into_quoted_binding_name(self, ast: AstBuilder<'a>) -> Ident<'a>;
 }
 
 #[doc(hidden)]
-pub fn quote_binding_name<'a, T>(ast: AstBuilder<'a>, value: T) -> Atom<'a>
+pub fn quote_binding_name<'a, T>(ast: AstBuilder<'a>, value: T) -> Ident<'a>
 where
   T: QuoteBindingName<'a>,
 {
@@ -50,74 +85,82 @@ where
 
 #[doc(hidden)]
 pub trait QuoteModuleSource<'a> {
-  fn into_quoted_module_source(self, ast: AstBuilder<'a>) -> StringLiteral<'a>;
+  fn into_quoted_module_source(self, ast: AstBuilder<'a>, span: Span) -> StringLiteral<'a>;
 }
 
 #[doc(hidden)]
-pub fn quote_module_source<'a, T>(ast: AstBuilder<'a>, value: T) -> StringLiteral<'a>
+pub fn quote_module_source<'a, T>(ast: AstBuilder<'a>, span: Span, value: T) -> StringLiteral<'a>
 where
   T: QuoteModuleSource<'a>,
 {
-  value.into_quoted_module_source(ast)
+  value.into_quoted_module_source(ast, span)
+}
+
+#[doc(hidden)]
+pub fn quote_ast_builder<'a, T>(accessor: T) -> AstBuilder<'a>
+where
+  T: AllocatorAccessor<'a>,
+{
+  AstBuilder::new(accessor.allocator())
 }
 
 impl<'a> QuoteLiteral<'a> for &'a str {
-  fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    ast.expression_string_literal(SPAN, self, None)
+  fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_string_literal(span, self, None)
   }
 }
 
 impl<'a> QuoteLiteral<'a> for String {
-  fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    ast.expression_string_literal(SPAN, Atom::from_in(self, ast.allocator), None)
+  fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_string_literal(span, Str::from_in(self, ast.allocator), None)
   }
 }
 
-impl<'a> QuoteLiteral<'a> for Atom<'a> {
-  fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    ast.expression_string_literal(SPAN, self, None)
+impl<'a> QuoteLiteral<'a> for Str<'a> {
+  fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_string_literal(span, self, None)
   }
 }
 
 impl<'a> QuoteBindingName<'a> for &'a str {
-  fn into_quoted_binding_name(self, _ast: AstBuilder<'a>) -> Atom<'a> {
-    Atom::from(self)
+  fn into_quoted_binding_name(self, _ast: AstBuilder<'a>) -> Ident<'a> {
+    Ident::from(self)
   }
 }
 
 impl<'a> QuoteBindingName<'a> for String {
-  fn into_quoted_binding_name(self, ast: AstBuilder<'a>) -> Atom<'a> {
-    Atom::from_in(self, ast.allocator)
+  fn into_quoted_binding_name(self, ast: AstBuilder<'a>) -> Ident<'a> {
+    Ident::from_in(self, ast.allocator)
   }
 }
 
-impl<'a> QuoteBindingName<'a> for Atom<'a> {
-  fn into_quoted_binding_name(self, _ast: AstBuilder<'a>) -> Atom<'a> {
+impl<'a> QuoteBindingName<'a> for Ident<'a> {
+  fn into_quoted_binding_name(self, _ast: AstBuilder<'a>) -> Ident<'a> {
     self
   }
 }
 
 impl<'a> QuoteModuleSource<'a> for &'a str {
-  fn into_quoted_module_source(self, ast: AstBuilder<'a>) -> StringLiteral<'a> {
-    ast.string_literal(SPAN, self, None)
+  fn into_quoted_module_source(self, ast: AstBuilder<'a>, span: Span) -> StringLiteral<'a> {
+    ast.string_literal(span, self, None)
   }
 }
 
 impl<'a> QuoteModuleSource<'a> for String {
-  fn into_quoted_module_source(self, ast: AstBuilder<'a>) -> StringLiteral<'a> {
-    ast.string_literal(SPAN, Atom::from_in(self, ast.allocator), None)
+  fn into_quoted_module_source(self, ast: AstBuilder<'a>, span: Span) -> StringLiteral<'a> {
+    ast.string_literal(span, Str::from_in(self, ast.allocator), None)
   }
 }
 
-impl<'a> QuoteModuleSource<'a> for Atom<'a> {
-  fn into_quoted_module_source(self, ast: AstBuilder<'a>) -> StringLiteral<'a> {
-    ast.string_literal(SPAN, self, None)
+impl<'a> QuoteModuleSource<'a> for Str<'a> {
+  fn into_quoted_module_source(self, ast: AstBuilder<'a>, span: Span) -> StringLiteral<'a> {
+    ast.string_literal(span, self, None)
   }
 }
 
 impl<'a> QuoteLiteral<'a> for bool {
-  fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    ast.expression_boolean_literal(SPAN, self)
+  fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_boolean_literal(span, self)
   }
 }
 
@@ -125,8 +168,8 @@ macro_rules! impl_quote_numeric_literal {
   ($($ty:ty),* $(,)?) => {
     $(
       impl<'a> QuoteLiteral<'a> for $ty {
-        fn into_quoted_expression(self, ast: AstBuilder<'a>) -> Expression<'a> {
-          ast.expression_numeric_literal(SPAN, self as f64, None, NumberBase::Decimal)
+        fn into_quoted_expression(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+          ast.expression_numeric_literal(span, self as f64, None, NumberBase::Decimal)
         }
       }
     )*
@@ -136,32 +179,100 @@ macro_rules! impl_quote_numeric_literal {
 impl_quote_numeric_literal!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 
 impl<'a> QuoteInterpolation<'a> for Expression<'a> {
-  fn into_quoted_interpolation(self, _ast: AstBuilder<'a>) -> Expression<'a> {
+  fn into_quoted_interpolation(self, _ast: AstBuilder<'a>, _span: Span) -> Expression<'a> {
     self
   }
 }
 
+impl<'a> QuoteArrayElements<'a> for Expression<'a> {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    _span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(self))
+  }
+}
+
 impl<'a> QuoteInterpolation<'a> for &'a str {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    quote_literal(ast, self)
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    quote_literal(ast, span, self)
+  }
+}
+
+impl<'a> QuoteArrayElements<'a> for &'a str {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
   }
 }
 
 impl<'a> QuoteInterpolation<'a> for String {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    quote_literal(ast, self)
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    quote_literal(ast, span, self)
   }
 }
 
-impl<'a> QuoteInterpolation<'a> for Atom<'a> {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    quote_literal(ast, self)
+impl<'a> QuoteArrayElements<'a> for String {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
+  }
+}
+
+impl<'a> QuoteInterpolation<'a> for Str<'a> {
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    quote_literal(ast, span, self)
+  }
+}
+
+impl<'a> QuoteArrayElements<'a> for Str<'a> {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
+  }
+}
+
+impl<'a> QuoteInterpolation<'a> for Ident<'a> {
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_identifier(span, self)
+  }
+}
+
+impl<'a> QuoteArrayElements<'a> for Ident<'a> {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(
+      ast.expression_identifier(span, self),
+    ))
   }
 }
 
 impl<'a> QuoteInterpolation<'a> for bool {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    quote_literal(ast, self)
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    quote_literal(ast, span, self)
+  }
+}
+
+impl<'a> QuoteArrayElements<'a> for bool {
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
   }
 }
 
@@ -169,8 +280,8 @@ macro_rules! impl_quote_numeric_interpolation {
   ($($ty:ty),* $(,)?) => {
     $(
       impl<'a> QuoteInterpolation<'a> for $ty {
-        fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-          quote_literal(ast, self)
+        fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+          quote_literal(ast, span, self)
         }
       }
     )*
@@ -179,18 +290,60 @@ macro_rules! impl_quote_numeric_interpolation {
 
 impl_quote_numeric_interpolation!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 
+macro_rules! impl_quote_numeric_array_elements {
+  ($($ty:ty),* $(,)?) => {
+    $(
+      impl<'a> QuoteArrayElements<'a> for $ty {
+        fn into_quoted_array_elements(
+          self,
+          ast: AstBuilder<'a>,
+          span: Span,
+        ) -> Vec<'a, ArrayExpressionElement<'a>> {
+          ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
+        }
+      }
+    )*
+  };
+}
+
+impl_quote_numeric_array_elements!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
+
 impl<'a, T> QuoteInterpolation<'a> for Vec<'a, T>
 where
   T: Into<ArrayExpressionElement<'a>>,
 {
-  fn into_quoted_interpolation(self, ast: AstBuilder<'a>) -> Expression<'a> {
-    ast.expression_array(SPAN, ast.vec_from_iter(self.into_iter().map(Into::into)))
+  fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
+    ast.expression_array(span, ast.vec_from_iter(self.into_iter().map(Into::into)))
+  }
+}
+
+impl<'a, T> QuoteArrayElements<'a> for Vec<'a, T>
+where
+  T: QuoteInterpolation<'a>,
+{
+  fn into_quoted_array_elements(
+    self,
+    ast: AstBuilder<'a>,
+    span: Span,
+  ) -> Vec<'a, ArrayExpressionElement<'a>> {
+    ast.vec_from_iter(
+      self
+        .into_iter()
+        .map(|value| ArrayExpressionElement::from(quote_interpolation(ast, span, value))),
+    )
+  }
+}
+
+impl<'a> QuoteStatements<'a> for Vec<'a, Statement<'a>> {
+  fn into_quoted_statements(self, _ast: AstBuilder<'a>, _span: Span) -> Vec<'a, Statement<'a>> {
+    self
   }
 }
 
 #[doc(hidden)]
 pub fn quote_const_statement<'a, T>(
   ast: AstBuilder<'a>,
+  span: Span,
   name: T,
   init: Expression<'a>,
 ) -> Statement<'a>
@@ -198,12 +351,37 @@ where
   T: QuoteBindingName<'a>,
 {
   Statement::from(ast.declaration_variable(
-    SPAN,
+    span,
     VariableDeclarationKind::Const,
     ast.vec1(ast.variable_declarator(
-      SPAN,
+      span,
       VariableDeclarationKind::Const,
-      ast.binding_pattern_binding_identifier(SPAN, quote_binding_name(ast, name)),
+      ast.binding_pattern_binding_identifier(span, quote_binding_name(ast, name)),
+      NONE,
+      Some(init),
+      false,
+    )),
+    false,
+  ))
+}
+
+#[doc(hidden)]
+pub fn quote_var_statement<'a, T>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  name: T,
+  init: Expression<'a>,
+) -> Statement<'a>
+where
+  T: QuoteBindingName<'a>,
+{
+  Statement::from(ast.declaration_variable(
+    span,
+    VariableDeclarationKind::Var,
+    ast.vec1(ast.variable_declarator(
+      span,
+      VariableDeclarationKind::Var,
+      ast.binding_pattern_binding_identifier(span, quote_binding_name(ast, name)),
       NONE,
       Some(init),
       false,
@@ -215,6 +393,7 @@ where
 #[doc(hidden)]
 pub fn quote_export_const_statement<'a, T>(
   ast: AstBuilder<'a>,
+  span: Span,
   name: T,
   init: Expression<'a>,
 ) -> Statement<'a>
@@ -222,14 +401,14 @@ where
   T: QuoteBindingName<'a>,
 {
   Statement::from(ast.module_declaration_export_named_declaration(
-    SPAN,
+    span,
     Some(ast.declaration_variable(
-      SPAN,
+      span,
       VariableDeclarationKind::Const,
       ast.vec1(ast.variable_declarator(
-        SPAN,
+        span,
         VariableDeclarationKind::Const,
-        ast.binding_pattern_binding_identifier(SPAN, quote_binding_name(ast, name)),
+        ast.binding_pattern_binding_identifier(span, quote_binding_name(ast, name)),
         NONE,
         Some(init),
         false,
@@ -246,6 +425,7 @@ where
 #[doc(hidden)]
 pub fn quote_import_default_statement<'a, T>(
   ast: AstBuilder<'a>,
+  span: Span,
   local_name: impl QuoteBindingName<'a>,
   source: T,
 ) -> Statement<'a>
@@ -253,14 +433,14 @@ where
   T: QuoteModuleSource<'a>,
 {
   Statement::from(ast.module_declaration_import_declaration(
-    SPAN,
+    span,
     Some(
       ast.vec1(ast.import_declaration_specifier_import_default_specifier(
-        SPAN,
-        ast.binding_identifier(SPAN, quote_binding_name(ast, local_name)),
+        span,
+        ast.binding_identifier(span, quote_binding_name(ast, local_name)),
       )),
     ),
-    quote_module_source(ast, source),
+    quote_module_source(ast, span, source),
     None,
     NONE,
     ImportOrExportKind::Value,
@@ -270,6 +450,7 @@ where
 #[doc(hidden)]
 pub fn quote_import_namespace_statement<'a, T>(
   ast: AstBuilder<'a>,
+  span: Span,
   local_name: impl QuoteBindingName<'a>,
   source: T,
 ) -> Statement<'a>
@@ -277,14 +458,14 @@ where
   T: QuoteModuleSource<'a>,
 {
   Statement::from(ast.module_declaration_import_declaration(
-    SPAN,
+    span,
     Some(
       ast.vec1(ast.import_declaration_specifier_import_namespace_specifier(
-        SPAN,
-        ast.binding_identifier(SPAN, quote_binding_name(ast, local_name)),
+        span,
+        ast.binding_identifier(span, quote_binding_name(ast, local_name)),
       )),
     ),
-    quote_module_source(ast, source),
+    quote_module_source(ast, span, source),
     None,
     NONE,
     ImportOrExportKind::Value,
@@ -294,14 +475,15 @@ where
 #[doc(hidden)]
 pub fn quote_object_property_shorthand<'a>(
   ast: AstBuilder<'a>,
+  span: Span,
   name: impl QuoteBindingName<'a>,
 ) -> oxc_ast::ast::ObjectPropertyKind<'a> {
   let name = quote_binding_name(ast, name);
   ast.object_property_kind_object_property(
-    SPAN,
+    span,
     oxc_ast::ast::PropertyKind::Init,
-    ast.property_key_static_identifier(SPAN, name),
-    ast.expression_identifier(SPAN, name),
+    ast.property_key_static_identifier(span, name),
+    ast.expression_identifier(span, name),
     false,
     true,
     false,
@@ -311,13 +493,14 @@ pub fn quote_object_property_shorthand<'a>(
 #[doc(hidden)]
 pub fn quote_object_property_named<'a>(
   ast: AstBuilder<'a>,
+  span: Span,
   key: impl QuoteBindingName<'a>,
   value: Expression<'a>,
 ) -> oxc_ast::ast::ObjectPropertyKind<'a> {
   ast.object_property_kind_object_property(
-    SPAN,
+    span,
     oxc_ast::ast::PropertyKind::Init,
-    ast.property_key_static_identifier(SPAN, quote_binding_name(ast, key)),
+    ast.property_key_static_identifier(span, quote_binding_name(ast, key)),
     value,
     false,
     false,
@@ -333,7 +516,7 @@ macro_rules! __quote_module_source {
   };
   ($ast:expr, @$literal:literal) => {{
     let __ast = $ast;
-    oxc_span::format_atom!(__ast.allocator, $literal)
+    oxc_str::format_str!(__ast.allocator, $literal)
   }};
   ($ast:expr, $literal:literal) => {
     $literal
@@ -348,7 +531,7 @@ macro_rules! __quote_binding_name {
   };
   ($ast:expr, @$literal:literal) => {{
     let __ast = $ast;
-    oxc_span::format_atom!(__ast.allocator, $literal)
+    oxc_str::format_ident!(__ast.allocator, $literal)
   }};
   ($ast:expr, $ident:ident) => {
     stringify!($ident)
@@ -358,65 +541,73 @@ macro_rules! __quote_binding_name {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_array_element {
-  ($ast:expr, $($value:tt)+) => {
-    oxc_ast::ast::ArrayExpressionElement::from($crate::quote_expr!($ast, $($value)+))
+  ($ast:expr, $span:ident, $($value:tt)+) => {
+    oxc_ast::ast::ArrayExpressionElement::from($crate::quote_expr!($ast, $span, $($value)+))
   };
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_object_property {
-  ($ast:expr, @{$key:ident}) => {{
+  ($ast:expr, $span:ident, @{$key:ident}) => {{
     let __ast = $ast;
-    $crate::quote::quote_object_property_shorthand(__ast, $key)
+    let __span = $span;
+    $crate::quote::quote_object_property_shorthand(__ast, __span, $key)
   }};
-  ($ast:expr, @{$key:ident} : $($value:tt)+) => {{
+  ($ast:expr, $span:ident, @{$key:ident} : $($value:tt)+) => {{
     let __ast = $ast;
+    let __span = $span;
     $crate::quote::quote_object_property_named(
       __ast,
+      __span,
       $key,
-      $crate::quote_expr!(__ast, $($value)+),
+      $crate::quote_expr!(__ast, __span, $($value)+),
     )
   }};
-  ($ast:expr, $key:ident) => {{
+  ($ast:expr, $span:ident, $key:ident) => {{
     let __ast = $ast;
-    $crate::quote::quote_object_property_shorthand(__ast, stringify!($key))
+    let __span = $span;
+    $crate::quote::quote_object_property_shorthand(__ast, __span, stringify!($key))
   }};
-  ($ast:expr, $key:ident : $($value:tt)+) => {{
+  ($ast:expr, $span:ident, $key:ident : $($value:tt)+) => {{
     let __ast = $ast;
+    let __span = $span;
     $crate::quote::quote_object_property_named(
       __ast,
+      __span,
       stringify!($key),
-      $crate::quote_expr!(__ast, $($value)+),
+      $crate::quote_expr!(__ast, __span, $($value)+),
     )
   }};
-  ($ast:expr, $key:literal : $($value:tt)+) => {{
+  ($ast:expr, $span:ident, $key:literal : $($value:tt)+) => {{
     let __ast = $ast;
+    let __span = $span;
     __ast.object_property_kind_object_property(
-      oxc_span::SPAN,
+      __span,
       oxc_ast::ast::PropertyKind::Init,
       oxc_ast::ast::PropertyKey::StringLiteral(__ast.alloc_string_literal(
-        oxc_span::SPAN,
+        __span,
         $key,
         None,
       )),
-      $crate::quote_expr!(__ast, $($value)+),
+      $crate::quote_expr!(__ast, __span, $($value)+),
       false,
       false,
       false,
     )
   }};
-  ($ast:expr, @$key:literal : $($value:tt)+) => {{
+  ($ast:expr, $span:ident, @$key:literal : $($value:tt)+) => {{
     let __ast = $ast;
+    let __span = $span;
     __ast.object_property_kind_object_property(
-      oxc_span::SPAN,
+      __span,
       oxc_ast::ast::PropertyKind::Init,
       oxc_ast::ast::PropertyKey::StringLiteral(__ast.alloc_string_literal(
-        oxc_span::SPAN,
-        oxc_span::format_atom!(__ast.allocator, $key),
+        __span,
+        oxc_str::format_str!(__ast.allocator, $key),
         None,
       )),
-      $crate::quote_expr!(__ast, $($value)+),
+      $crate::quote_expr!(__ast, __span, $($value)+),
       false,
       false,
       false,
@@ -427,29 +618,31 @@ macro_rules! __quote_object_property {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_array_elements_array {
-  ($ast:expr; [$($elements:expr,)*] ; [] ; ) => {
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [] ; ) => {
     [$($elements,)*]
   };
-  ($ast:expr; [$($elements:expr,)*] ; [$($current:tt)+] ; ) => {
-    [$($elements,)* $crate::__quote_array_element!($ast, $($current)+),]
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [$($current:tt)+] ; ) => {
+    [$($elements,)* $crate::__quote_array_element!($ast, $span, $($current)+),]
   };
-  ($ast:expr; [$($elements:expr,)*] ; [] ; ,) => {
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [] ; ,) => {
     [$($elements,)*]
   };
-  ($ast:expr; [$($elements:expr,)*] ; [$($current:tt)+] ; ,) => {
-    [$($elements,)* $crate::__quote_array_element!($ast, $($current)+),]
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [$($current:tt)+] ; ,) => {
+    [$($elements,)* $crate::__quote_array_element!($ast, $span, $($current)+),]
   };
-  ($ast:expr; [$($elements:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
     $crate::__quote_array_elements_array!(
       $ast;
-      [$($elements,)* $crate::__quote_array_element!($ast, $($current)+),];
+      $span;
+      [$($elements,)* $crate::__quote_array_element!($ast, $span, $($current)+),];
       [];
       $($rest)*
     )
   };
-  ($ast:expr; [$($elements:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($elements:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
     $crate::__quote_array_elements_array!(
       $ast;
+      $span;
       [$($elements,)*];
       [$($current)* $next];
       $($rest)*
@@ -460,29 +653,31 @@ macro_rules! __quote_array_elements_array {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_call_arguments_array {
-  ($ast:expr; [$($arguments:expr,)*] ; [] ; ) => {
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [] ; ) => {
     [$($arguments,)*]
   };
-  ($ast:expr; [$($arguments:expr,)*] ; [$($current:tt)+] ; ) => {
-    [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $($current)+)),]
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [$($current:tt)+] ; ) => {
+    [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $span, $($current)+)),]
   };
-  ($ast:expr; [$($arguments:expr,)*] ; [] ; ,) => {
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [] ; ,) => {
     [$($arguments,)*]
   };
-  ($ast:expr; [$($arguments:expr,)*] ; [$($current:tt)+] ; ,) => {
-    [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $($current)+)),]
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [$($current:tt)+] ; ,) => {
+    [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $span, $($current)+)),]
   };
-  ($ast:expr; [$($arguments:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
     $crate::__quote_call_arguments_array!(
       $ast;
-      [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $($current)+)),];
+      $span;
+      [$($arguments,)* oxc_ast::ast::Argument::from($crate::quote_expr!($ast, $span, $($current)+)),];
       [];
       $($rest)*
     )
   };
-  ($ast:expr; [$($arguments:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($arguments:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
     $crate::__quote_call_arguments_array!(
       $ast;
+      $span;
       [$($arguments,)*];
       [$($current)* $next];
       $($rest)*
@@ -493,29 +688,31 @@ macro_rules! __quote_call_arguments_array {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_object_properties_array {
-  ($ast:expr; [$($properties:expr,)*] ; [] ; ) => {
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [] ; ) => {
     [$($properties,)*]
   };
-  ($ast:expr; [$($properties:expr,)*] ; [$($current:tt)+] ; ) => {
-    [$($properties,)* $crate::__quote_object_property!($ast, $($current)+),]
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [$($current:tt)+] ; ) => {
+    [$($properties,)* $crate::__quote_object_property!($ast, $span, $($current)+),]
   };
-  ($ast:expr; [$($properties:expr,)*] ; [] ; ,) => {
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [] ; ,) => {
     [$($properties,)*]
   };
-  ($ast:expr; [$($properties:expr,)*] ; [$($current:tt)+] ; ,) => {
-    [$($properties,)* $crate::__quote_object_property!($ast, $($current)+),]
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [$($current:tt)+] ; ,) => {
+    [$($properties,)* $crate::__quote_object_property!($ast, $span, $($current)+),]
   };
-  ($ast:expr; [$($properties:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [$($current:tt)+] ; , $($rest:tt)*) => {
     $crate::__quote_object_properties_array!(
       $ast;
-      [$($properties,)* $crate::__quote_object_property!($ast, $($current)+),];
+      $span;
+      [$($properties,)* $crate::__quote_object_property!($ast, $span, $($current)+),];
       [];
       $($rest)*
     )
   };
-  ($ast:expr; [$($properties:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
+  ($ast:expr; $span:ident; [$($properties:expr,)*] ; [$($current:tt)*] ; $next:tt $($rest:tt)*) => {
     $crate::__quote_object_properties_array!(
       $ast;
+      $span;
       [$($properties,)*];
       [$($current)* $next];
       $($rest)*
@@ -526,11 +723,11 @@ macro_rules! __quote_object_properties_array {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_arrow_parameters {
-  ($ast:expr; [$($params:expr,)*] ; ) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; ) => {{
     let __ast = $ast;
     (__ast.vec_from_array([$($params,)*]), None)
   }};
-  ($ast:expr; [$($params:expr,)*] ; ...@{$rest:ident} $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; ...@{$rest:ident} $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([$($params,)*]),
@@ -540,7 +737,7 @@ macro_rules! __quote_arrow_parameters {
       )),
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; ...@$rest:literal $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; ...@$rest:literal $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([$($params,)*]),
@@ -550,7 +747,7 @@ macro_rules! __quote_arrow_parameters {
       )),
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; ...$rest:tt $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; ...$rest:tt $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([$($params,)*]),
@@ -560,27 +757,29 @@ macro_rules! __quote_arrow_parameters {
       )),
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; @{$param:ident}, $($rest:tt)*) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; @{$param:ident}, $($rest:tt)*) => {{
     let __ast = $ast;
     $crate::__quote_arrow_parameters!(
       __ast;
+      $span;
       [$(
         $params,
       )* $crate::quote::quote_binding_name(__ast, $crate::__quote_binding_name!(__ast, @{$param})),];
       $($rest)*
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; $param:tt, $($rest:tt)*) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; $param:tt, $($rest:tt)*) => {{
     let __ast = $ast;
     $crate::__quote_arrow_parameters!(
       __ast;
+      $span;
       [$(
         $params,
       )* $crate::quote::quote_binding_name(__ast, $crate::__quote_binding_name!(__ast, $param)),];
       $($rest)*
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; @{$param:ident} $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; @{$param:ident} $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([
@@ -590,7 +789,7 @@ macro_rules! __quote_arrow_parameters {
       None,
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; @$param:literal $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; @$param:literal $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([
@@ -600,7 +799,7 @@ macro_rules! __quote_arrow_parameters {
       None,
     )
   }};
-  ($ast:expr; [$($params:expr,)*] ; $param:tt $(,)?) => {{
+  ($ast:expr; $span:ident; [$($params:expr,)*] ; $param:tt $(,)?) => {{
     let __ast = $ast;
     (
       __ast.vec_from_array([
@@ -615,13 +814,14 @@ macro_rules! __quote_arrow_parameters {
 #[doc(hidden)]
 pub fn quote_static_member_expression<'a>(
   ast: AstBuilder<'a>,
+  span: Span,
   object: Expression<'a>,
   property: impl QuoteBindingName<'a>,
 ) -> Expression<'a> {
   Expression::from(ast.member_expression_static(
-    SPAN,
+    span,
     object,
-    ast.identifier_name(SPAN, quote_binding_name(ast, property)),
+    ast.identifier_name(span, quote_binding_name(ast, property)),
     false,
   ))
 }
@@ -629,44 +829,47 @@ pub fn quote_static_member_expression<'a>(
 #[doc(hidden)]
 pub fn quote_computed_member_expression<'a>(
   ast: AstBuilder<'a>,
+  span: Span,
   object: Expression<'a>,
   property: Expression<'a>,
 ) -> Expression<'a> {
-  Expression::from(ast.member_expression_computed(SPAN, object, property, false))
+  Expression::from(ast.member_expression_computed(span, object, property, false))
 }
 
 #[doc(hidden)]
 pub fn quote_call_expression<'a>(
   ast: AstBuilder<'a>,
+  span: Span,
   callee: Expression<'a>,
   arguments: Vec<'a, Argument<'a>>,
 ) -> Expression<'a> {
-  ast.expression_call(SPAN, callee, NONE, arguments, false)
+  ast.expression_call(span, callee, NONE, arguments, false)
 }
 
 #[doc(hidden)]
 pub fn quote_arrow_function_expression<'a, I>(
   ast: AstBuilder<'a>,
+  span: Span,
   parameters: I,
-  rest_parameter: Option<Atom<'a>>,
+  rest_parameter: Option<Ident<'a>>,
   body: Expression<'a>,
 ) -> Expression<'a>
 where
-  I: IntoIterator<Item = Atom<'a>>,
+  I: IntoIterator<Item = Ident<'a>>,
 {
   ast.expression_arrow_function(
-    SPAN,
-    false,
+    span,
+    true,
     false,
     NONE,
     ast.formal_parameters(
-      SPAN,
+      span,
       FormalParameterKind::ArrowFormalParameters,
       ast.vec_from_iter(parameters.into_iter().map(|name| {
         ast.formal_parameter(
-          SPAN,
+          span,
           ast.vec(),
-          ast.binding_pattern_binding_identifier(SPAN, name),
+          ast.binding_pattern_binding_identifier(span, name),
           NONE,
           NONE,
           false,
@@ -677,656 +880,677 @@ where
       })),
       rest_parameter.map(|name| {
         ast.formal_parameter_rest(
-          SPAN,
+          span,
           ast.vec(),
-          ast.binding_rest_element(SPAN, ast.binding_pattern_binding_identifier(SPAN, name)),
+          ast.binding_rest_element(span, ast.binding_pattern_binding_identifier(span, name)),
           NONE,
         )
       }),
     ),
     NONE,
     ast.function_body(
-      SPAN,
+      span,
       ast.vec(),
-      ast.vec1(ast.statement_return(SPAN, Some(body))),
+      ast.vec1(ast.statement_expression(span, body)),
     ),
   )
 }
 
 #[doc(hidden)]
+pub fn quote_arrow_function_block_expression<'a, I>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  parameters: I,
+  rest_parameter: Option<Ident<'a>>,
+  body: Vec<'a, Statement<'a>>,
+) -> Expression<'a>
+where
+  I: IntoIterator<Item = Ident<'a>>,
+{
+  ast.expression_arrow_function(
+    span,
+    false,
+    false,
+    NONE,
+    ast.formal_parameters(
+      span,
+      FormalParameterKind::ArrowFormalParameters,
+      ast.vec_from_iter(parameters.into_iter().map(|name| {
+        ast.formal_parameter(
+          span,
+          ast.vec(),
+          ast.binding_pattern_binding_identifier(span, name),
+          NONE,
+          NONE,
+          false,
+          None,
+          false,
+          false,
+        )
+      })),
+      rest_parameter.map(|name| {
+        ast.formal_parameter_rest(
+          span,
+          ast.vec(),
+          ast.binding_rest_element(span, ast.binding_pattern_binding_identifier(span, name)),
+          NONE,
+        )
+      }),
+    ),
+    NONE,
+    ast.function_body(span, ast.vec(), body),
+  )
+}
+
+#[doc(hidden)]
+pub fn quote_expression_statement<'a>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  expression: Expression<'a>,
+) -> Statement<'a> {
+  ast.statement_expression(span, expression)
+}
+
+#[doc(hidden)]
+pub fn quote_block_statement<'a>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  body: Vec<'a, Statement<'a>>,
+) -> Statement<'a> {
+  ast.statement_block(span, body)
+}
+
+#[doc(hidden)]
+pub fn quote_return_statement<'a>(
+  ast: AstBuilder<'a>,
+  span: Span,
+  argument: Option<Expression<'a>>,
+) -> Statement<'a> {
+  ast.statement_return(span, argument)
+}
+
+#[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_expr_atom {
-  ($ast:expr, format!($format:literal)) => {{
+  ($ast:expr, $span:ident, format!($format:literal)) => {{
     let __ast = $ast;
-    let __value = oxc_span::format_atom!(__ast.allocator, $format);
-    $crate::quote::quote_literal(__ast, __value)
+    let __span = $span;
+    let __value = oxc_str::format_str!(__ast.allocator, $format);
+    $crate::quote::quote_literal(__ast, __span, __value)
   }};
-  ($ast:expr, @$literal:literal) => {{
+  ($ast:expr, $span:ident, @$literal:literal) => {{
     let __ast = $ast;
-    let __value = oxc_span::format_atom!(__ast.allocator, $literal);
-    $crate::quote::quote_literal(__ast, __value)
+    let __span = $span;
+    let __value = oxc_str::format_str!(__ast.allocator, $literal);
+    $crate::quote::quote_literal(__ast, __span, __value)
   }};
-  ($ast:expr, [$($items:tt)*]) => {{
+  ($ast:expr, $span:ident, [@{$items:ident}]) => {{
     let __ast = $ast;
+    let __span = $span;
     __ast.expression_array(
-      oxc_span::SPAN,
-      __ast.vec_from_array($crate::__quote_array_elements_array!(__ast; []; []; $($items)*)),
+      __span,
+      $crate::quote::quote_array_elements(__ast, __span, $items),
     )
   }};
-  ($ast:expr, @{$ident:ident}) => {{
+  ($ast:expr, $span:ident, [$($items:tt)*]) => {{
     let __ast = $ast;
-    $crate::quote::quote_interpolation(__ast, $ident)
+    let __span = $span;
+    __ast.expression_array(
+      __span,
+      __ast.vec_from_array($crate::__quote_array_elements_array!(__ast; __span; []; []; $($items)*)),
+    )
   }};
-  ($ast:expr, {$($props:tt)*}) => {{
+  ($ast:expr, $span:ident, @{$ident:ident}) => {{
     let __ast = $ast;
+    let __span = $span;
+    $crate::quote::quote_interpolation(__ast, __span, $ident)
+  }};
+  ($ast:expr, $span:ident, {$($props:tt)*}) => {{
+    let __ast = $ast;
+    let __span = $span;
     __ast.expression_object(
-      oxc_span::SPAN,
-      __ast.vec_from_array($crate::__quote_object_properties_array!(__ast; []; []; $($props)*)),
+      __span,
+      __ast.vec_from_array($crate::__quote_object_properties_array!(__ast; __span; []; []; $($props)*)),
     )
   }};
-  ($ast:expr, ($($value:tt)*)) => {{
+  ($ast:expr, $span:ident, ($($value:tt)*)) => {{
     let __ast = $ast;
-    __ast.expression_parenthesized(oxc_span::SPAN, $crate::quote_expr!(__ast, $($value)*))
+    let __span = $span;
+    __ast.expression_parenthesized(__span, $crate::quote_expr!(__ast, __span, $($value)*))
   }};
-  ($ast:expr, null) => {{
+  ($ast:expr, $span:ident, null) => {{
     let __ast = $ast;
-    __ast.expression_null_literal(oxc_span::SPAN)
+    let __span = $span;
+    __ast.expression_null_literal(__span)
   }};
-  ($ast:expr, undefined) => {{
+  ($ast:expr, $span:ident, undefined) => {{
     let __ast = $ast;
-    __ast.expression_identifier(oxc_span::SPAN, "undefined")
+    let __span = $span;
+    __ast.expression_identifier(__span, "undefined")
   }};
-  ($ast:expr, $literal:literal) => {{
+  ($ast:expr, $span:ident, $literal:literal) => {{
     let __ast = $ast;
-    $crate::quote::quote_literal(__ast, $literal)
+    let __span = $span;
+    $crate::quote::quote_literal(__ast, __span, $literal)
   }};
-  ($ast:expr, $ident:ident) => {{
+  ($ast:expr, $span:ident, $ident:ident) => {{
     let __ast = $ast;
-    __ast.expression_identifier(oxc_span::SPAN, stringify!($ident))
+    let __span = $span;
+    __ast.expression_identifier(__span, stringify!($ident))
   }};
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_expr_postfix {
-  ($ast:expr, $expr:expr,) => {
+  ($ast:expr, $span:ident, $expr:expr,) => {
     $expr
   };
-  ($ast:expr, $expr:expr, . @$property:literal $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $expr:expr, . @$property:literal $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::quote::quote_static_member_expression(__ast, $expr, $crate::__quote_binding_name!(__ast, @$property));
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::quote::quote_static_member_expression(__ast, __span, $expr, $crate::__quote_binding_name!(__ast, @$property));
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $expr:expr, . @{$property:ident} $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $expr:expr, . @{$property:ident} $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::quote::quote_static_member_expression(__ast, $expr, $property);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::quote::quote_static_member_expression(__ast, __span, $expr, $property);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $expr:expr, . $property:ident $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $expr:expr, . $property:ident $($rest:tt)*) => {{
     let __ast = $ast;
+    let __span = $span;
     let __expr =
-      $crate::quote::quote_static_member_expression(__ast, $expr, stringify!($property));
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+      $crate::quote::quote_static_member_expression(__ast, __span, $expr, stringify!($property));
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $expr:expr, [ $($property:tt)* ] $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $expr:expr, [ $($property:tt)* ] $($rest:tt)*) => {{
     let __ast = $ast;
+    let __span = $span;
     let __expr = $crate::quote::quote_computed_member_expression(
       __ast,
+      __span,
       $expr,
-      $crate::quote_expr!(__ast, $($property)*),
+      $crate::quote_expr!(__ast, __span, $($property)*),
     );
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $expr:expr, ( $($arguments:tt)* ) $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $expr:expr, ( $($arguments:tt)* ) $($rest:tt)*) => {{
     let __ast = $ast;
+    let __span = $span;
     let __expr = $crate::quote::quote_call_expression(
       __ast,
+      __span,
       $expr,
-      __ast.vec_from_array($crate::__quote_call_arguments_array!(__ast; []; []; $($arguments)*)),
+      __ast.vec_from_array($crate::__quote_call_arguments_array!(__ast; __span; []; []; $($arguments)*)),
     );
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
 }
 
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __quote_expr_parse {
-  ($ast:expr, ($($params:tt)*) => $($body:tt)+) => {{
+  ($ast:expr, $span:ident, ($($params:tt)*) => { @{$body:ident} }) => {{
     let __ast = $ast;
-    let (__params, __rest) = $crate::__quote_arrow_parameters!(__ast; []; $($params)*);
-    $crate::quote::quote_arrow_function_expression(
+    let __span = $span;
+    let (__params, __rest) = $crate::__quote_arrow_parameters!(__ast; __span; []; $($params)*);
+    $crate::quote::quote_arrow_function_block_expression(
       __ast,
+      __span,
       __params,
       __rest,
-      $crate::quote_expr!(__ast, $($body)+),
+      $crate::quote::quote_statements(__ast, __span, $body),
     )
   }};
-  ($ast:expr, @{$param:ident} => $($body:tt)+) => {{
+  ($ast:expr, $span:ident, ($($params:tt)*) => $($body:tt)+) => {{
     let __ast = $ast;
+    let __span = $span;
+    let (__params, __rest) = $crate::__quote_arrow_parameters!(__ast; __span; []; $($params)*);
     $crate::quote::quote_arrow_function_expression(
       __ast,
-      [oxc_span::Atom::from($crate::__quote_binding_name!(__ast, @{$param}))],
-      None,
-      $crate::quote_expr!(__ast, $($body)+),
+      __span,
+      __params,
+      __rest,
+      $crate::quote_expr!(__ast, __span, $($body)+),
     )
   }};
-  ($ast:expr, $param:tt => $($body:tt)+) => {{
+  ($ast:expr, $span:ident, @{$param:ident} => { @{$body:ident} }) => {{
     let __ast = $ast;
+    let __span = $span;
+    $crate::quote::quote_arrow_function_block_expression(
+      __ast,
+      __span,
+      [$crate::__quote_binding_name!(__ast, @{$param})],
+      None,
+      $crate::quote::quote_statements(__ast, __span, $body),
+    )
+  }};
+  ($ast:expr, $span:ident, @{$param:ident} => $($body:tt)+) => {{
+    let __ast = $ast;
+    let __span = $span;
     $crate::quote::quote_arrow_function_expression(
       __ast,
-      [oxc_span::Atom::from($crate::__quote_binding_name!(__ast, $param))],
+      __span,
+      [$crate::__quote_binding_name!(__ast, @{$param})],
       None,
-      $crate::quote_expr!(__ast, $($body)+),
+      $crate::quote_expr!(__ast, __span, $($body)+),
     )
   }};
-  ($ast:expr, format!($format:literal) $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $param:tt => { @{$body:ident} }) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, format!($format));
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    $crate::quote::quote_arrow_function_block_expression(
+      __ast,
+      __span,
+      [$crate::quote::quote_binding_name(__ast, $crate::__quote_binding_name!(__ast, $param))],
+      None,
+      $crate::quote::quote_statements(__ast, __span, $body),
+    )
   }};
-  ($ast:expr, @$literal:literal $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, $param:tt => $($body:tt)+) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, @$literal);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    $crate::quote::quote_arrow_function_expression(
+      __ast,
+      __span,
+      [$crate::quote::quote_binding_name(__ast, $crate::__quote_binding_name!(__ast, $param))],
+      None,
+      $crate::quote_expr!(__ast, __span, $($body)+),
+    )
   }};
-  ($ast:expr, [$($items:tt)*] $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, format!($format:literal) $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, [$($items)*]);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, format!($format));
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, @{$ident:ident} $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, @$literal:literal $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, @{$ident});
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, @$literal);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, {$($props:tt)*} $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, [$($items:tt)*] $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, {$($props)*});
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, [$($items)*]);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, ($($value:tt)*) $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, @{$ident:ident} $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, ($($value)*));
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, @{$ident});
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, null $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, {$($props:tt)*} $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, null);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, {$($props)*});
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, undefined $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, ($($value:tt)*) $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, undefined);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, ($($value)*));
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $literal:literal $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, null $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, $literal);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, null);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
-  ($ast:expr, $ident:ident $($rest:tt)*) => {{
+  ($ast:expr, $span:ident, undefined $($rest:tt)*) => {{
     let __ast = $ast;
-    let __expr = $crate::__quote_expr_atom!(__ast, $ident);
-    $crate::__quote_expr_postfix!(__ast, __expr, $($rest)*)
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, undefined);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
+  }};
+  ($ast:expr, $span:ident, $literal:literal $($rest:tt)*) => {{
+    let __ast = $ast;
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, $literal);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
+  }};
+  ($ast:expr, $span:ident, $ident:ident $($rest:tt)*) => {{
+    let __ast = $ast;
+    let __span = $span;
+    let __expr = $crate::__quote_expr_atom!(__ast, __span, $ident);
+    $crate::__quote_expr_postfix!(__ast, __span, __expr, $($rest)*)
   }};
 }
 
 #[macro_export]
 macro_rules! quote_expr {
-  ($ast:expr, $($value:tt)+) => {
-    $crate::__quote_expr_parse!($ast, $($value)+)
-  };
+  ($allocator:expr, $span:ident, $($value:tt)+) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    $crate::__quote_expr_parse!(__ast, $span, $($value)+)
+  }};
+  ($allocator:expr, $($value:tt)+) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    const SPAN: oxc_span::Span = oxc_span::SPAN;
+    $crate::__quote_expr_parse!(__ast, SPAN, $($value)+)
+  }};
+}
+
+#[macro_export]
+macro_rules! __quote_decl_statement {
+  ($ast:expr, $span:ident, $builder:path, $name:expr, ($($value:tt)+)) => {{
+    let __ast = $ast;
+    let __span = $span;
+    $builder(__ast, __span, $name, $crate::quote_expr!(__ast, __span, $($value)+))
+  }};
 }
 
 #[macro_export]
 macro_rules! quote_stmt {
-  ($ast:expr, import * as @$local:literal from @$source:literal;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, { @{$body:ident} }) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_block_statement(
+      __ast,
+      __span,
+      $crate::quote::quote_statements(__ast, __span, $body),
+    )
+  }};
+  ($allocator:expr, $span:ident, ($($expr:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_expression_statement(
+      __ast,
+      __span,
+      $crate::quote_expr!(__ast, __span, $($expr)+),
+    )
+  }};
+  ($allocator:expr, $span:ident, import * as @$local:literal from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $crate::__quote_module_source!(__ast, @$source),
     )
   }};
-  ($ast:expr, import * as @$local:literal from @{$source:ident};) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as @$local:literal from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $source,
     )
   }};
-  ($ast:expr, import * as @$local:literal from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as @$local:literal from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, import * as @{$local:ident} from @$source:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_import_namespace_statement(__ast, $local, $crate::__quote_module_source!(__ast, @$source))
-  }};
-  ($ast:expr, import * as $local:tt from @$source:literal;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as @{$local:ident} from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
+      $local,
+      $crate::__quote_module_source!(__ast, @$source),
+    )
+  }};
+  ($allocator:expr, $span:ident, import * as $local:tt from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_namespace_statement(
+      __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $crate::__quote_module_source!(__ast, @$source),
     )
   }};
-  ($ast:expr, import * as @{$local:ident} from @{$source:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_import_namespace_statement(__ast, $local, $source)
+  ($allocator:expr, $span:ident, import * as @{$local:ident} from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_namespace_statement(__ast, __span, $local, $source)
   }};
-  ($ast:expr, import * as @{$local:ident} from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as @{$local:ident} from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $local,
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, import * as $local:tt from @{$source:ident};) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as $local:tt from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $source,
     )
   }};
-  ($ast:expr, import * as $local:tt from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import * as $local:tt from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_namespace_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, import @$local:literal from @$source:literal;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import @$local:literal from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $crate::__quote_module_source!(__ast, @$source),
     )
   }};
-  ($ast:expr, import @$local:literal from @{$source:ident};) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import @$local:literal from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $source,
     )
   }};
-  ($ast:expr, import @$local:literal from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import @$local:literal from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, @$local),
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, import @{$local:ident} from @$source:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_import_default_statement(__ast, $local, $crate::__quote_module_source!(__ast, @$source))
-  }};
-  ($ast:expr, import $local:tt from @$source:literal;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import @{$local:ident} from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
+      $local,
+      $crate::__quote_module_source!(__ast, @$source),
+    )
+  }};
+  ($allocator:expr, $span:ident, import $local:tt from @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_default_statement(
+      __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $crate::__quote_module_source!(__ast, @$source),
     )
   }};
-  ($ast:expr, import @{$local:ident} from @{$source:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_import_default_statement(__ast, $local, $source)
+  ($allocator:expr, $span:ident, import @{$local:ident} from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_default_statement(__ast, __span, $local, $source)
   }};
-  ($ast:expr, import @{$local:ident} from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import @{$local:ident} from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $local,
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, import $local:tt from @{$source:ident};) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import $local:tt from @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $source,
     )
   }};
-  ($ast:expr, import $local:tt from $source:tt;) => {{
-    let __ast = $ast;
+  ($allocator:expr, $span:ident, import $local:tt from $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
     $crate::quote::quote_import_default_statement(
       __ast,
+      __span,
       $crate::__quote_binding_name!(__ast, $local),
       $crate::__quote_module_source!(__ast, $source),
     )
   }};
-  ($ast:expr, const @$name:literal = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::quote_expr!(__ast, $($value)+))
-  }};
-  ($ast:expr, const @$name:literal = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, format!($format)))
-  }};
-  ($ast:expr, const @$name:literal = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, [$($value)*]))
-  }};
-  ($ast:expr, const @$name:literal = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, @{$ident}))
-  }};
-  ($ast:expr, const @$name:literal = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, {$($value)*}))
-  }};
-  ($ast:expr, const @$name:literal = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, null))
-  }};
-  ($ast:expr, const @$name:literal = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, undefined))
-  }};
-  ($ast:expr, const @$name:literal = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, $literal))
-  }};
-  ($ast:expr, const @$name:literal = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, $ident))
-  }};
-  ($ast:expr, const @$name:literal = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::quote_expr!(__ast, $value))
-  }};
-  ($ast:expr, const @{$name:ident} = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::quote_expr!(__ast, $($value)+))
-  }};
-  ($ast:expr, const @{$name:ident} = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, format!($format)))
-  }};
-  ($ast:expr, const @{$name:ident} = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, [$($value)*]))
-  }};
-  ($ast:expr, const @{$name:ident} = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, @{$ident}))
-  }};
-  ($ast:expr, const @{$name:ident} = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, {$($value)*}))
-  }};
-  ($ast:expr, const @{$name:ident} = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, null))
-  }};
-  ($ast:expr, const @{$name:ident} = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, undefined))
-  }};
-  ($ast:expr, const @{$name:ident} = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, $literal))
-  }};
-  ($ast:expr, const @{$name:ident} = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, $ident))
-  }};
-  ($ast:expr, const @{$name:ident} = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(__ast, $name, $crate::quote_expr!(__ast, $value))
-  }};
-  ($ast:expr, const $name:ident = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, const @$name:literal = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::quote_expr!(__ast, $($value)+),
+      __span,
+      $crate::quote::quote_const_statement,
+      $crate::__quote_binding_name!(__ast, @$name),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, const @{$name:ident} = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, format!($format)),
+      __span,
+      $crate::quote::quote_const_statement,
+      $name,
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, const $name:ident = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
+      __span,
+      $crate::quote::quote_const_statement,
       $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, [$($value)*]),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, var @$name:literal = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, @{$ident}),
+      __span,
+      $crate::quote::quote_var_statement,
+      $crate::__quote_binding_name!(__ast, @$name),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, var @{$name:ident} = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, {$($value)*}),
+      __span,
+      $crate::quote::quote_var_statement,
+      $name,
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, var $name:ident = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
+      __span,
+      $crate::quote::quote_var_statement,
       $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, null),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, export const @$name:literal = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, undefined),
+      __span,
+      $crate::quote::quote_export_const_statement,
+      $crate::__quote_binding_name!(__ast, @$name),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, export const @{$name:ident} = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, $literal),
+      __span,
+      $crate::quote::quote_export_const_statement,
+      $name,
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, export const $name:ident = ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::__quote_decl_statement!(
       __ast,
+      __span,
+      $crate::quote::quote_export_const_statement,
       $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, $ident),
+      ($($value)+)
     )
   }};
-  ($ast:expr, const $name:tt = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_const_statement(
+  ($allocator:expr, $span:ident, return;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_return_statement(__ast, __span, None)
+  }};
+  ($allocator:expr, $span:ident, return ($($value:tt)+);) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_return_statement(
       __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::quote_expr!(__ast, $value),
+      __span,
+      Some($crate::quote_expr!(__ast, __span, $($value)+)),
     )
   }};
-  ($ast:expr, export const @$name:literal = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::quote_expr!(__ast, $($value)+))
-  }};
-  ($ast:expr, export const @$name:literal = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, format!($format)))
-  }};
-  ($ast:expr, export const @$name:literal = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, [$($value)*]))
-  }};
-  ($ast:expr, export const @$name:literal = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, @{$ident}))
-  }};
-  ($ast:expr, export const @$name:literal = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, {$($value)*}))
-  }};
-  ($ast:expr, export const @$name:literal = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, null))
-  }};
-  ($ast:expr, export const @$name:literal = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, undefined))
-  }};
-  ($ast:expr, export const @$name:literal = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, $literal))
-  }};
-  ($ast:expr, export const @$name:literal = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::__quote_expr_atom!(__ast, $ident))
-  }};
-  ($ast:expr, export const @$name:literal = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $crate::__quote_binding_name!(__ast, @$name), $crate::quote_expr!(__ast, $value))
-  }};
-  ($ast:expr, export const @{$name:ident} = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::quote_expr!(__ast, $($value)+))
-  }};
-  ($ast:expr, export const @{$name:ident} = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, format!($format)))
-  }};
-  ($ast:expr, export const @{$name:ident} = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, [$($value)*]))
-  }};
-  ($ast:expr, export const @{$name:ident} = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, @{$ident}))
-  }};
-  ($ast:expr, export const @{$name:ident} = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, {$($value)*}))
-  }};
-  ($ast:expr, export const @{$name:ident} = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, null))
-  }};
-  ($ast:expr, export const @{$name:ident} = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, undefined))
-  }};
-  ($ast:expr, export const @{$name:ident} = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, $literal))
-  }};
-  ($ast:expr, export const @{$name:ident} = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::__quote_expr_atom!(__ast, $ident))
-  }};
-  ($ast:expr, export const @{$name:ident} = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(__ast, $name, $crate::quote_expr!(__ast, $value))
-  }};
-  ($ast:expr, export const $name:tt = ($($value:tt)+);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::quote_expr!(__ast, $($value)+),
-    )
-  }};
-  ($ast:expr, export const $name:tt = format!($format:literal);) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, format!($format)),
-    )
-  }};
-  ($ast:expr, export const $name:tt = [$($value:tt)*];) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, [$($value)*]),
-    )
-  }};
-  ($ast:expr, export const $name:tt = @{$ident:ident};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, @{$ident}),
-    )
-  }};
-  ($ast:expr, export const $name:tt = {$($value:tt)*};) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, {$($value)*}),
-    )
-  }};
-  ($ast:expr, export const $name:tt = null;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, null),
-    )
-  }};
-  ($ast:expr, export const $name:tt = undefined;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, undefined),
-    )
-  }};
-  ($ast:expr, export const $name:tt = $literal:literal;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, $literal),
-    )
-  }};
-  ($ast:expr, export const $name:tt = $ident:ident;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::__quote_expr_atom!(__ast, $ident),
-    )
-  }};
-  ($ast:expr, export const $name:tt = $value:tt;) => {{
-    let __ast = $ast;
-    $crate::quote::quote_export_const_statement(
-      __ast,
-      $crate::__quote_binding_name!(__ast, $name),
-      $crate::quote_expr!(__ast, $value),
-    )
+  ($allocator:expr, $($value:tt)+) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    const SPAN: oxc_span::Span = oxc_span::SPAN;
+    $crate::quote_stmt!(__ast, SPAN, $($value)+)
   }};
 }
 
@@ -1337,20 +1561,21 @@ mod tests {
     AstBuilder,
     ast::{ArrayExpressionElement, Expression, ObjectPropertyKind, PropertyKey, Statement},
   };
-  use oxc_span::Atom;
+  use oxc_span::{SPAN, Span};
+  use oxc_str::{Ident, Str};
 
   #[test]
   fn quote_builds_nested_literals_and_interpolations() {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
     let value = ast.expression_identifier(oxc_span::SPAN, "value");
-    let label: Atom = "label".into();
-    let dynamic_key: Atom = "dynamicKey".into();
+    let label: Str = "label".into();
+    let dynamic_key: Ident = "dynamicKey".into();
     let count = 3u32;
     let values = ast.vec_from_iter(
       [1u32, 2u32]
         .into_iter()
-        .map(|value| ArrayExpressionElement::from(crate::quote::quote_literal(ast, value))),
+        .map(|value| ArrayExpressionElement::from(crate::quote::quote_literal(ast, SPAN, value))),
     );
 
     let quoted = crate::quote_expr!(ast, {
@@ -1456,8 +1681,8 @@ mod tests {
     let ast = AstBuilder::new(&allocator);
     let call_value = ast.expression_identifier(oxc_span::SPAN, "value");
     let nested_value = ast.expression_identifier(oxc_span::SPAN, "value");
-    let key: Atom = "key".into();
-    let property: Atom = "primary".into();
+    let key: Str = "key".into();
+    let property: Ident = "primary".into();
 
     let member = crate::quote_expr!(ast, theme.colors.primary);
     let formatted_member = crate::quote_expr!(ast, theme.colors.@"color-{key}");
@@ -1472,7 +1697,10 @@ mod tests {
     });
 
     assert!(matches!(member, Expression::StaticMemberExpression(_)));
-    assert!(matches!(formatted_member, Expression::StaticMemberExpression(_)));
+    assert!(matches!(
+      formatted_member,
+      Expression::StaticMemberExpression(_)
+    ));
     assert!(matches!(
       interpolated_member,
       Expression::StaticMemberExpression(_)
@@ -1486,15 +1714,18 @@ mod tests {
   fn quote_builds_arrow_functions() {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let param: Atom = "value".into();
-    let first: Atom = "first".into();
-    let rest: Atom = "rest".into();
+    let param: Ident = "value".into();
+    let first: Ident = "first".into();
+    let rest: Ident = "rest".into();
+    let block_value = ast.expression_identifier(oxc_span::SPAN, "blockValue");
+    let block_body = ast.vec1(crate::quote_stmt!(ast, (@{block_value});));
 
     let single = crate::quote_expr!(ast, value => value);
     let multi = crate::quote_expr!(ast, (first, second, ...rest) => first);
     let only_rest = crate::quote_expr!(ast, (...rest) => rest);
     let interpolated_single = crate::quote_expr!(ast, @{param} => @{param});
     let interpolated_multi = crate::quote_expr!(ast, (@{first}, second, ...@{rest}) => @{first});
+    let block = crate::quote_expr!(ast, () => { @{block_body} });
 
     let Expression::ArrowFunctionExpression(single) = single else {
       panic!("expected single-parameter arrow function");
@@ -1524,17 +1755,29 @@ mod tests {
     };
     assert_eq!(interpolated_multi.params.items.len(), 2);
     assert!(interpolated_multi.params.rest.is_some());
+
+    let Expression::ArrowFunctionExpression(block) = block else {
+      panic!("expected block-body arrow function");
+    };
+    assert_eq!(block.params.items.len(), 0);
+    assert_eq!(block.body.statements.len(), 1);
   }
 
   #[test]
   fn quote_builds_basic_statements() {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
-    let source: Atom = "./styles.css".into();
-    let export_name: Atom = "dynamicStyles".into();
-    let import_name: Atom = "dynamicImport".into();
+    let source: Str = "./styles.css".into();
+    let export_name: Ident = "dynamicStyles".into();
+    let import_name: Ident = "dynamicImport".into();
     let value = ast.expression_identifier(oxc_span::SPAN, "value");
+    let single_array_value = ast.expression_identifier(oxc_span::SPAN, "value");
     let paren_value = ast.expression_identifier(oxc_span::SPAN, "value");
+    let return_value = ast.expression_identifier(oxc_span::SPAN, "returnValue");
+    let statement_value = ast.expression_identifier(oxc_span::SPAN, "statementValue");
+    let block_value = ast.expression_identifier(oxc_span::SPAN, "blockValue");
+    let block_body = ast.vec1(crate::quote_stmt!(ast, (@{block_value});));
+    let lines = ast.vec_from_array([1u32, 2u32, 3u32]);
     let index = 3u32;
 
     let import = crate::quote_stmt!(ast, import styles from @{source};);
@@ -1545,20 +1788,30 @@ mod tests {
     let interpolated_import = crate::quote_stmt!(ast, import @{import_name} from @{source};);
     let interpolated_namespace_import =
       crate::quote_stmt!(ast, import * as @{import_name} from @{source};);
-    let const_decl = crate::quote_stmt!(ast, const styles = @{value};);
-    let interpolated_const_decl = crate::quote_stmt!(ast, const @{export_name} = "ok";);
+    let const_decl = crate::quote_stmt!(ast, const styles = (@{value}););
+    let interpolated_const_decl = crate::quote_stmt!(ast, const @{export_name} = ("ok"););
     let paren_const_decl =
       crate::quote_stmt!(ast, const styles = (theme.colors.getPrimary(@{paren_value})););
-    let array_const_decl = crate::quote_stmt!(ast, const styles = [1, "two"];);
-    let export_decl = crate::quote_stmt!(ast, export const styles = "ok";);
-    let interpolated_export_decl = crate::quote_stmt!(ast, export const @{export_name} = "ok";);
-    let formatted_export_decl = crate::quote_stmt!(ast, export const @"styles_{index}" = "ok";);
+    let array_const_decl = crate::quote_stmt!(ast, const styles = ([1, "two"]););
+    let export_decl = crate::quote_stmt!(ast, export const styles = ("ok"););
+    let interpolated_export_decl = crate::quote_stmt!(ast, export const @{export_name} = ("ok"););
+    let formatted_export_decl = crate::quote_stmt!(ast, export const @"styles_{index}" = ("ok"););
     let paren_export_decl = crate::quote_stmt!(ast, export const styles = (theme.colors.primary););
-    let format_export_decl = crate::quote_stmt!(ast, export const styles = format!("css-{index}"););
+    let format_export_decl =
+      crate::quote_stmt!(ast, export const styles = (format!("css-{index}")););
+    let return_stmt = crate::quote_stmt!(ast, return (@{return_value}););
+    let empty_return_stmt = crate::quote_stmt!(ast, return;);
+    let expression_stmt = crate::quote_stmt!(ast, (@{statement_value}););
+    let block_stmt = crate::quote_stmt!(ast, { @{block_body} });
+    let single_array_splice = crate::quote_expr!(ast, [@{single_array_value}]);
+    let array_splice = crate::quote_expr!(ast, [@{lines}]);
 
     assert!(matches!(import, Statement::ImportDeclaration(_)));
     assert!(matches!(formatted_import, Statement::ImportDeclaration(_)));
-    assert!(matches!(formatted_binding_import, Statement::ImportDeclaration(_)));
+    assert!(matches!(
+      formatted_binding_import,
+      Statement::ImportDeclaration(_)
+    ));
     assert!(matches!(namespace_import, Statement::ImportDeclaration(_)));
     assert!(matches!(
       interpolated_import,
@@ -1598,5 +1851,49 @@ mod tests {
       format_export_decl,
       Statement::ExportNamedDeclaration(_)
     ));
+    assert!(matches!(return_stmt, Statement::ReturnStatement(_)));
+    assert!(matches!(empty_return_stmt, Statement::ReturnStatement(_)));
+    assert!(matches!(expression_stmt, Statement::ExpressionStatement(_)));
+    assert!(matches!(block_stmt, Statement::BlockStatement(_)));
+    assert!(matches!(
+      single_array_splice,
+      Expression::ArrayExpression(_)
+    ));
+    assert!(matches!(array_splice, Expression::ArrayExpression(_)));
+  }
+
+  #[test]
+  fn quote_applies_custom_spans() {
+    let allocator = Allocator::default();
+    let span = Span::new(10, 20);
+
+    let expr = crate::quote_expr!(&allocator, span, { values: [1, "two"] });
+    let stmt = crate::quote_stmt!(&allocator, span, import styles from @"./styles.css";);
+
+    let Expression::ObjectExpression(object) = expr else {
+      panic!("expected object expression");
+    };
+    assert_eq!(object.span, span);
+
+    let ObjectPropertyKind::ObjectProperty(values) = &object.properties[0] else {
+      panic!("expected object property");
+    };
+    assert_eq!(values.span, span);
+
+    let Expression::ArrayExpression(array) = &values.value else {
+      panic!("expected array expression");
+    };
+    assert_eq!(array.span, span);
+
+    let ArrayExpressionElement::NumericLiteral(number) = &array.elements[0] else {
+      panic!("expected numeric literal");
+    };
+    assert_eq!(number.span, span);
+
+    let Statement::ImportDeclaration(import) = stmt else {
+      panic!("expected import declaration");
+    };
+    assert_eq!(import.span, span);
+    assert_eq!(import.source.span, span);
   }
 }

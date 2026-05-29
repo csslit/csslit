@@ -1,75 +1,103 @@
 import { transformCompileTime, transformRuntime } from "@csslit/rust-transformer";
-import type { RawSourceMap } from "@csslit/rust-transformer";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
 import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
+import { buildCsslitError, getThrownValueInfo, trimModuleRunnerStack } from "./eval-error";
+import type { CsslitEvalError } from "./eval-error";
 
 const CSS_DERIVED_SUFFIX = ".csslit.module.css";
-const CSS_EVAL_QUERY = "csslit-eval";
 const CSSLIT_EVAL_RESULT_EXPORT = "__csslit_eval_result";
 const CSSLIT_COMPTIME_ENVIRONMENT = "comptime";
 const CSSLIT_EVAL_RUNTIME_ID = "virtual:csslit-eval-runtime";
 const RESOLVED_CSSLIT_EVAL_RUNTIME_ID = "\0virtual:csslit-eval-runtime";
-const SCRIPT_ID_RE = /\.(?:js|ts|jsx|tsx)?(?:$|\?)/;
+const CSSLIT_EVAL_ID_PREFIX = "virtual:csslit-eval:";
+const CSSLIT_EVAL_STACK_ID_RE = /virtual:csslit-eval:[^)\s]+?(?=:\d+:\d+\)?|$|\s)/g;
+const TRANSFORM_ID_RE = /^(?:virtual:csslit-eval:|.*\.(?:js|ts|jsx|tsx)(?:$|\?))/;
 const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
+
+function normalizeLocationFile(file: string) {
+  return normalizePath(file);
+}
 
 type CsslitEvalResult = {
   code: string;
+  errors: CsslitEvalError[];
   map: SourceMapInput | null;
 };
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
 
-function toRawSourceMap(map: SourceMapInput | null | undefined): RawSourceMap | undefined {
-  return map && typeof map !== "string" ? (map as RawSourceMap) : undefined;
+const csslitErrorResolutionOptions = {
+  ignoreStackFrameFile(file: string) {
+    return file.includes("/node_modules/") || file.includes("virtual:csslit-eval-runtime");
+  },
+  normalizeFile: normalizeLocationFile,
+  normalizeStackText(stackText: string | undefined) {
+    const normalized = stackText?.replace(
+      CSSLIT_EVAL_STACK_ID_RE,
+      (id) => parseCssEvalId(id) ?? id,
+    );
+    return trimModuleRunnerStack(normalized);
+  },
+};
+
+function parseCssEvalId(id: string) {
+  return id.startsWith(CSSLIT_EVAL_ID_PREFIX)
+    ? decodeURIComponent(id.slice(CSSLIT_EVAL_ID_PREFIX.length))
+    : null;
 }
 
-function getErrorLocation(error: Error) {
-  for (const line of error.stack?.split("\n") ?? []) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("at ")) continue;
+function buildWarning(error: unknown, fallbackFile?: string) {
+  return buildCsslitError(error, {
+    ...csslitErrorResolutionOptions,
+    fallbackFile,
+    readSource(file) {
+      try {
+        return readFileSync(file, "utf8");
+      } catch {
+        return undefined;
+      }
+    },
+  });
+}
 
-    const match = trimmed.match(/\((.+):(\d+):(\d+)\)$/) ?? trimmed.match(/^at (.+):(\d+):(\d+)$/);
+function parseLocationFromStack(stack: string | undefined) {
+  if (!stack) {
+    return undefined;
+  }
 
-    if (!match) continue;
+  const locationRe = /\(?((?:[A-Za-z]:[\\/]|\/|file:\/\/\/)[^:\n)]+):(\d+):(\d+)\)?/u;
+  const lines = stack.split(/\r?\n/u);
 
-    const file = normalizePath(match[1] ?? "");
-    if (!file || file.includes("/node_modules/")) continue;
+  for (const line of lines) {
+    if (line.includes("/node_modules/") || line.includes("\\node_modules\\")) {
+      continue;
+    }
+
+    const match = locationRe.exec(line);
+    if (!match) {
+      continue;
+    }
+
+    const file = normalizeLocationFile(match[1]!.replace(/^file:\/\//u, ""));
+    const lineNumber = Number.parseInt(match[2]!, 10);
+    const columnNumber = Number.parseInt(match[3]!, 10);
+
+    if (!Number.isFinite(lineNumber) || !Number.isFinite(columnNumber)) {
+      continue;
+    }
 
     return {
       file,
-      line: Number(match[2]),
-      column: Number(match[3]),
+      line: lineNumber,
+      column: columnNumber,
     };
   }
 
-  return null;
-}
-
-function formatCssEvaluationStack(error: Error) {
-  const lines = error.stack?.split("\n");
-  if (!lines || lines.length === 0) return error.stack;
-
-  const header = lines[0] ?? `${error.name}: ${error.message}`;
-  const stack: string[] = [header];
-
-  for (let index = 1; index < lines.length; index += 1) {
-    const line = lines[index] ?? "";
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("at ")) continue;
-
-    if (trimmed.startsWith("at eval (") || trimmed.startsWith("at async eval (")) {
-      stack.push(line.replace(/\beval\b/, "css eval"));
-      break;
-    }
-
-    stack.push(line);
-  }
-
-  return stack.join("\n");
+  return undefined;
 }
 
 function watchCssEvalDependencies(
@@ -101,6 +129,7 @@ export function cssCompilePlugin(): Plugin {
 
   return {
     name: "vite-plugin-css-compile",
+    enforce: "pre",
 
     config(config) {
       config.environments ??= {};
@@ -125,40 +154,44 @@ export function cssCompilePlugin(): Plugin {
 
     transform: {
       filter: {
-        id: SCRIPT_ID_RE,
+        id: TRANSFORM_ID_RE,
         moduleType: ["js", "jsx", "ts", "tsx"],
       },
       async handler(code: string, id: string) {
         const config = this.environment.config;
-        const [cleanId, query] = id.split("?");
-        const isEval = query?.split("&").includes(CSS_EVAL_QUERY) ?? false;
+        const queryIndex = id.indexOf("?");
+        const cleanId = queryIndex === -1 ? id : id.slice(0, queryIndex);
+        const evalSourceId = parseCssEvalId(cleanId);
+        const jsSourcemap =
+          config.command === "build"
+            ? !!config.build.sourcemap
+            : typeof config.dev.sourcemap === "boolean"
+              ? config.dev.sourcemap
+              : (config.dev.sourcemap?.js ?? true);
+        const cssSourcemap =
+          config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
-        if (isEval) {
-          const sourcemap =
-            config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
+        if (evalSourceId) {
+          const filename = evalSourceId.startsWith(`${config.root}/`)
+            ? evalSourceId.slice(config.root.length)
+            : evalSourceId;
 
           const result = transformCompileTime(code, {
-            filename: cleanId,
-            inputMap: sourcemap ? toRawSourceMap(this.getCombinedSourcemap()) : undefined,
-            root: config.root,
-            sourcemap,
+            cssFilename: filename,
+            cssSourcemap,
+            filename: evalSourceId,
+            sourcemap: jsSourcemap,
           });
 
           return {
             code: result.code,
             map: result.map ?? null,
+            moduleType: "js",
           };
         } else {
-          const sourcemap =
-            config.command === "build"
-              ? !!config.build.sourcemap
-              : typeof config.dev.sourcemap === "boolean"
-                ? config.dev.sourcemap
-                : (config.dev.sourcemap?.js ?? true);
-
           const result = transformRuntime(code, {
             filename: cleanId,
-            sourcemap,
+            sourcemap: jsSourcemap,
           });
 
           return {
@@ -175,20 +208,38 @@ export function cssCompilePlugin(): Plugin {
           return RESOLVED_CSSLIT_EVAL_RUNTIME_ID;
         }
 
+        const importerId = importer ? (parseCssEvalId(importer) ?? importer) : null;
+
+        if (
+          importerId &&
+          (source.startsWith("./") || source.startsWith("../")) &&
+          !source.startsWith(CSSLIT_EVAL_ID_PREFIX)
+        ) {
+          return normalizePath(path.resolve(path.dirname(importerId), source));
+        }
+
+        if (source.startsWith(CSSLIT_EVAL_ID_PREFIX)) {
+          return {
+            id: source,
+            moduleType: "js",
+          };
+        }
+
         if (!CSS_DERIVED_ID_RE.test(source)) {
           return null;
         }
 
-        const id = path.isAbsolute(source)
-          ? source
-          : importer
-            ? normalizePath(path.resolve(path.dirname(importer), source))
-            : null;
+        if (path.isAbsolute(source)) {
+          return {
+            id: normalizePath(source),
+            moduleType: "css",
+          };
+        }
 
-        if (!id) return null;
+        if (!importerId) return null;
 
         return {
-          id,
+          id: normalizePath(path.resolve(path.dirname(importerId), source)),
           moduleType: "css",
         };
       },
@@ -200,51 +251,95 @@ export function cssCompilePlugin(): Plugin {
           return csslitEvalRuntimeCode;
         }
 
+        const evalSourceId = parseCssEvalId(id);
+        if (evalSourceId) {
+          return {
+            code: readFileSync(evalSourceId, "utf8"),
+            moduleType: evalSourceId.endsWith(".tsx")
+              ? "tsx"
+              : evalSourceId.endsWith(".ts")
+                ? "ts"
+                : evalSourceId.endsWith(".jsx")
+                  ? "jsx"
+                  : "js",
+          };
+        }
+
         if (!CSS_DERIVED_ID_RE.test(id)) {
           return null;
         }
 
-        const absPath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
-        const evalId = `${absPath}?${CSS_EVAL_QUERY}`;
+        const sourcePath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
+        const sourceId = path.isAbsolute(sourcePath)
+          ? normalizePath(sourcePath)
+          : normalizePath(path.resolve(this.environment.config.root, `.${sourcePath}`));
+        const evalId = `${CSSLIT_EVAL_ID_PREFIX}${encodeURIComponent(sourceId)}`;
+        let result: CsslitEvalResult;
 
+        this.addWatchFile(sourceId);
+        const runner = evalEnvironment!.runner;
+        const evalModule = runner.evaluatedModules.getModuleByUrl(evalId);
+        if (evalModule) {
+          runner.evaluatedModules.invalidateModule(evalModule);
+        }
+        const comptimeModule = evalEnvironment!.moduleGraph.getModuleById(evalId);
+        if (comptimeModule) {
+          evalEnvironment!.moduleGraph.invalidateModule(comptimeModule);
+        }
+        let mod: Record<string, unknown>;
         try {
-          const runner = evalEnvironment!.runner;
-          const evalModule = runner.evaluatedModules.getModuleByUrl(evalId);
-          if (evalModule) {
-            runner.evaluatedModules.invalidateModule(evalModule);
-          }
-          const mod = await runner.import(evalId);
-          watchCssEvalDependencies(
-            (file) => this.addWatchFile(file),
-            runner.evaluatedModules,
-            evalId,
-          );
-          const result = mod[CSSLIT_EVAL_RESULT_EXPORT] as CsslitEvalResult;
-
-          return {
-            code: result.code,
-            map: result.map ?? null,
-            moduleType: "css",
-          };
+          mod = await runner.import(evalId);
         } catch (err: unknown) {
-          const loc = err instanceof Error ? getErrorLocation(err) : null;
+          const { stack, thrownValue } = getThrownValueInfo(err);
+          const trimedStack = trimModuleRunnerStack(stack);
+          const loc = parseLocationFromStack(trimedStack);
 
           this.error({
             cause: err,
-            code: "CSS_EXTRACTION_ERROR",
+            code: "CSS_EVALUATION_ERROR",
             hook: "load",
-            id: absPath,
-            loc: loc ?? undefined,
-            message: `CSS extraction failed for ${absPath}: ${
-              err instanceof Error ? err.message : String(err)
-            }`,
-            name: err instanceof Error ? err.name : undefined,
-            plugin: "vite-plugin-css-compile",
-            stack: err instanceof Error ? formatCssEvaluationStack(err) : undefined,
+            id: sourceId,
+            loc,
+            message: `CSS literal evaluation failed while evaluating ${sourceId}.\n` + thrownValue,
+            stack: trimedStack,
           });
         }
+        watchCssEvalDependencies(
+          (file) => this.addWatchFile(file),
+          runner.evaluatedModules,
+          evalId,
+        );
+        result = mod[CSSLIT_EVAL_RESULT_EXPORT] as CsslitEvalResult;
+
+        if (result.errors.length > 0) {
+          if (this.environment.name !== CSSLIT_COMPTIME_ENVIRONMENT) {
+            for (const error of result.errors) {
+              const warning = buildWarning(error, sourceId);
+
+              this.warn({
+                cause: error,
+                frame: warning.kind === "csslit" ? warning.frame : undefined,
+                id: sourceId,
+                loc: warning.loc
+                  ? {
+                      file: warning.loc.file,
+                      line: warning.loc.line,
+                      column: warning.loc.column,
+                    }
+                  : undefined,
+                message: warning.message,
+                stack: warning.stack,
+              });
+            }
+          }
+        }
+
+        return {
+          code: result.code,
+          map: result.map ?? null,
+          moduleType: "css",
+        };
       },
     },
-
   };
 }

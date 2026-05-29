@@ -1,6 +1,10 @@
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
+  test: {
+    include: [],
+    projects: ["./tests"],
+  },
   lint: {
     plugins: ["import"],
     options: {

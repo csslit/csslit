@@ -9,3 +9,7 @@ export function css(_strings: TemplateStringsArray, ..._values: unknown[]): stri
       "Please ensure the plugin is added to your vite.config.ts plugins array.",
   );
 }
+
+export function comptime<T>(value: T): T {
+  return value;
+}

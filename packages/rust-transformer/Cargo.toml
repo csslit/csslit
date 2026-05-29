@@ -7,19 +7,25 @@ version = "0.0.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3.8.3", features = ["napi10"] }
-napi-derive = "3.5.2"
-oxc_allocator = "0.122.0"
-oxc_parser = "0.122.0"
-oxc_ast = "0.122.0"
-oxc_traverse = "0.122.0"
-oxc_span = "0.122.0"
-oxc_codegen = "0.122.0"
-oxc_semantic = "0.122.0"
-oxc_syntax = "0.122.0"
-oxc_data_structures = { version = "0.122.0", features = ["rope"] }
+napi = { version = "3.9.0", features = ["napi10"] }
+napi-derive = "3.5.6"
+oxc_allocator = "0.130.0"
+oxc_parser = "0.130.0"
+oxc_ast = "0.130.0"
+oxc_ast_visit = "0.130.0"
+oxc_traverse = "0.130.0"
+oxc_span = "0.130.0"
+oxc_str = "0.130.0"
+oxc_codegen = "0.130.0"
+oxc_semantic = "0.130.0"
+oxc_syntax = "0.130.0"
+oxc_data_structures = { version = "0.130.0", features = ["rope"] }
+oxc_index = "4.1.0"
 rolldown_sourcemap = "0.1.0"
 oxc_sourcemap = "6.1.1"
 
 [build-dependencies]
-napi-build = "2.3.1"
+napi-build = "2.3.2"
+
+[dev-dependencies]
+expect-test = "1.5.1"

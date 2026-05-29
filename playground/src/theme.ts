@@ -1,5 +1,3 @@
-console.log("theme");
-
 export const theme = {
   colors: {
     primary: "blue",

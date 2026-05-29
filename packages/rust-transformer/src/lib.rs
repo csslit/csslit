@@ -36,16 +36,18 @@ struct RuntimeTransformOptions {
 
 #[napi(object)]
 pub struct CompileTimeTransformRequest {
-  pub root: String,
   pub filename: String,
+  pub css_filename: String,
   pub input_map: Option<RawSourceMap>,
   pub sourcemap: bool,
+  pub css_sourcemap: Option<bool>,
 }
 
 struct CompileTimeTransformOptions {
-  root: String,
   filename: String,
+  css_filename: String,
   sourcemap: bool,
+  css_sourcemap: bool,
   input_map: Option<SourceMap>,
 }
 
@@ -134,13 +136,15 @@ pub fn transform_compile_time(
   source_text: String,
   options: CompileTimeTransformRequest,
 ) -> napi::Result<TransformResult> {
+  let css_sourcemap = options.css_sourcemap.unwrap_or(options.sourcemap);
   let result = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
-      root: options.root,
+      css_filename: options.css_filename,
       filename: options.filename,
       sourcemap: options.sourcemap,
-      input_map: if options.sourcemap {
+      css_sourcemap,
+      input_map: if options.sourcemap || css_sourcemap {
         options
           .input_map
           .map(SourceMap::try_from)

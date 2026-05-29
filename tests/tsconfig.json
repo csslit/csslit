@@ -1,11 +1,14 @@
 {
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "target": "ESNext",
     "module": "ESNext",
     "moduleResolution": "bundler",
+    "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,
+    "types": ["node"]
   },
-  "include": ["src"],
+  "include": ["src"]
 }

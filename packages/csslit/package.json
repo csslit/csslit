@@ -10,7 +10,7 @@
     "./package.json": "./package.json"
   },
   "devDependencies": {
-    "@typescript/native-preview": "^7.0.0-dev.20260322.1",
-    "vite-plus": "^0.1.13"
+    "@typescript/native-preview": "^7.0.0-dev.20260510.1",
+    "vite-plus": "^0.1.21"
   }
 }

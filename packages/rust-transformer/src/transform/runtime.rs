@@ -42,7 +42,7 @@ pub(super) fn transform_runtime(
   let ret = Parser::new(
     allocator,
     &source_text,
-    SourceType::from_path(&options.filename).unwrap_or_default(),
+    SourceType::from_path(&options.filename).unwrap(),
   )
   .parse();
 
