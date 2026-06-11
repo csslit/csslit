@@ -1,27 +1,8 @@
 use napi_derive::napi;
 use rolldown_sourcemap::{JSONSourceMap, SourceMap};
 
-#[doc(hidden)]
-pub mod quote;
-mod transform {
-  mod compile_time;
-  mod runtime;
-  mod shared;
-
-  pub(crate) fn transform_runtime(
-    source_text: String,
-    options: crate::RuntimeTransformOptions,
-  ) -> crate::OxcTransformResult {
-    runtime::transform_runtime(source_text, options)
-  }
-
-  pub(crate) fn transform_compile_time(
-    source_text: String,
-    options: crate::CompileTimeTransformOptions,
-  ) -> crate::OxcTransformResult {
-    compile_time::transform_compile_time(source_text, options)
-  }
-}
+mod quote;
+mod transform;
 
 #[napi(object)]
 pub struct RuntimeTransformRequest {

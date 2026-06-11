@@ -33,7 +33,7 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
   }
 }
 
-pub(super) fn transform_runtime(
+pub(crate) fn transform_runtime(
   source_text: String,
   options: RuntimeTransformOptions,
 ) -> OxcTransformResult {

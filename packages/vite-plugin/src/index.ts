@@ -5,8 +5,8 @@ import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
 import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
-import { buildCsslitError, getThrownValueInfo, trimModuleRunnerStack } from "./eval-error";
-import type { CsslitEvalError } from "./eval-error";
+import { buildCsslitError, buildCsslitEvaluationError, trimModuleRunnerStack } from "./eval-error";
+import type { EvalDiagnostic } from "./eval-error";
 
 const CSS_DERIVED_SUFFIX = ".csslit.module.css";
 const CSSLIT_EVAL_RESULT_EXPORT = "__csslit_eval_result";
@@ -18,29 +18,27 @@ const CSSLIT_EVAL_STACK_ID_RE = /virtual:csslit-eval:[^)\s]+?(?=:\d+:\d+\)?|$|\s
 const TRANSFORM_ID_RE = /^(?:virtual:csslit-eval:|.*\.(?:js|ts|jsx|tsx)(?:$|\?))/;
 const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
 
-function normalizeLocationFile(file: string) {
-  return normalizePath(file);
-}
-
-type CsslitEvalResult = {
+interface EvalResult {
   code: string;
-  errors: CsslitEvalError[];
+  errors: EvalDiagnostic[];
   map: SourceMapInput | null;
-};
+}
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
 
 const csslitErrorResolutionOptions = {
-  ignoreStackFrameFile(file: string) {
-    return file.includes("/node_modules/") || file.includes("virtual:csslit-eval-runtime");
+  normalizeFile(file: string) {
+    return normalizePath(file);
   },
-  normalizeFile: normalizeLocationFile,
-  normalizeStackText(stackText: string | undefined) {
-    const normalized = stackText?.replace(
-      CSSLIT_EVAL_STACK_ID_RE,
-      (id) => parseCssEvalId(id) ?? id,
-    );
+  normalizeStackText(stackText: string) {
+    const normalized = stackText.replace(CSSLIT_EVAL_STACK_ID_RE, (id) => parseCssEvalId(id) ?? id);
     return trimModuleRunnerStack(normalized);
+  },
+  stopStackTraceAtFile(file: string) {
+    return file.includes("virtual:csslit-eval-runtime");
+  },
+  readSource(file: string) {
+    return readFileSync(file, "utf8");
   },
 };
 
@@ -48,56 +46,6 @@ function parseCssEvalId(id: string) {
   return id.startsWith(CSSLIT_EVAL_ID_PREFIX)
     ? decodeURIComponent(id.slice(CSSLIT_EVAL_ID_PREFIX.length))
     : null;
-}
-
-function buildWarning(error: unknown, fallbackFile?: string) {
-  return buildCsslitError(error, {
-    ...csslitErrorResolutionOptions,
-    fallbackFile,
-    readSource(file) {
-      try {
-        return readFileSync(file, "utf8");
-      } catch {
-        return undefined;
-      }
-    },
-  });
-}
-
-function parseLocationFromStack(stack: string | undefined) {
-  if (!stack) {
-    return undefined;
-  }
-
-  const locationRe = /\(?((?:[A-Za-z]:[\\/]|\/|file:\/\/\/)[^:\n)]+):(\d+):(\d+)\)?/u;
-  const lines = stack.split(/\r?\n/u);
-
-  for (const line of lines) {
-    if (line.includes("/node_modules/") || line.includes("\\node_modules\\")) {
-      continue;
-    }
-
-    const match = locationRe.exec(line);
-    if (!match) {
-      continue;
-    }
-
-    const file = normalizeLocationFile(match[1]!.replace(/^file:\/\//u, ""));
-    const lineNumber = Number.parseInt(match[2]!, 10);
-    const columnNumber = Number.parseInt(match[3]!, 10);
-
-    if (!Number.isFinite(lineNumber) || !Number.isFinite(columnNumber)) {
-      continue;
-    }
-
-    return {
-      file,
-      line: lineNumber,
-      column: columnNumber,
-    };
-  }
-
-  return undefined;
 }
 
 function watchCssEvalDependencies(
@@ -273,8 +221,9 @@ export function cssCompilePlugin(): Plugin {
         const sourceId = path.isAbsolute(sourcePath)
           ? normalizePath(sourcePath)
           : normalizePath(path.resolve(this.environment.config.root, `.${sourcePath}`));
+        const sourceFile = csslitErrorResolutionOptions.normalizeFile(sourceId);
         const evalId = `${CSSLIT_EVAL_ID_PREFIX}${encodeURIComponent(sourceId)}`;
-        let result: CsslitEvalResult;
+        let result: EvalResult;
 
         this.addWatchFile(sourceId);
         const runner = evalEnvironment!.runner;
@@ -290,18 +239,16 @@ export function cssCompilePlugin(): Plugin {
         try {
           mod = await runner.import(evalId);
         } catch (err: unknown) {
-          const { stack, thrownValue } = getThrownValueInfo(err);
-          const trimedStack = trimModuleRunnerStack(stack);
-          const loc = parseLocationFromStack(trimedStack);
+          const error = buildCsslitEvaluationError(err, sourceFile, csslitErrorResolutionOptions);
 
           this.error({
             cause: err,
             code: "CSS_EVALUATION_ERROR",
             hook: "load",
             id: sourceId,
-            loc,
-            message: `CSS literal evaluation failed while evaluating ${sourceId}.\n` + thrownValue,
-            stack: trimedStack,
+            loc: error.loc,
+            message: error.message,
+            stack: error.stack,
           });
         }
         watchCssEvalDependencies(
@@ -309,26 +256,22 @@ export function cssCompilePlugin(): Plugin {
           runner.evaluatedModules,
           evalId,
         );
-        result = mod[CSSLIT_EVAL_RESULT_EXPORT] as CsslitEvalResult;
+        result = mod[CSSLIT_EVAL_RESULT_EXPORT] as EvalResult;
 
         if (result.errors.length > 0) {
           if (this.environment.name !== CSSLIT_COMPTIME_ENVIRONMENT) {
             for (const error of result.errors) {
-              const warning = buildWarning(error, sourceId);
+              const warning = buildCsslitError(error, {
+                ...csslitErrorResolutionOptions,
+                sourceFile,
+              });
 
               this.warn({
                 cause: error,
-                frame: warning.kind === "csslit" ? warning.frame : undefined,
+                frame: warning.frame,
                 id: sourceId,
-                loc: warning.loc
-                  ? {
-                      file: warning.loc.file,
-                      line: warning.loc.line,
-                      column: warning.loc.column,
-                    }
-                  : undefined,
+                loc: warning.loc,
                 message: warning.message,
-                stack: warning.stack,
               });
             }
           }

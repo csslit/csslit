@@ -1,4 +1,3 @@
 {
-  "js/ts.experimental.useTsgo": true,
-  "oxc.typeAware": true,
+  "oxc.typeAware": true
 }

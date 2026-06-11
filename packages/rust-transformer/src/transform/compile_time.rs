@@ -1,4 +1,4 @@
-use std::{borrow::Cow, iter::chain};
+use std::borrow::Cow;
 
 use crate::{CompileTimeTransformOptions, OxcTransformResult, quote_expr, quote_stmt};
 use oxc_allocator::{Allocator, Box, CloneIn, StringBuilder, TakeIn, Vec};
@@ -57,7 +57,6 @@ enum PredicateCode {
   UnknownLocalBindingKind,
   NotValueBinding,
   NotExtractedScope,
-  Unsupported,
 }
 
 impl PredicateCode {
@@ -79,7 +78,6 @@ impl PredicateCode {
       Self::UnknownLocalBindingKind => "unknown-local-binding-kind",
       Self::NotValueBinding => "not-value-binding",
       Self::NotExtractedScope => "not-extracted-scope",
-      Self::Unsupported => "unsupported",
     }
   }
 }
@@ -687,25 +685,6 @@ fn get_non_declarator_binding_predicate(flags: SymbolFlags) -> PredicateCode {
   PredicateCode::UnknownLocalBindingKind
 }
 
-fn build_issue_expression<'alloc>(
-  allocator: &'alloc Allocator,
-  issue: Issue<'alloc>,
-) -> Expression<'alloc> {
-  let span = issue.span();
-  match issue {
-    Issue::Variable {
-      name, predicate, ..
-    } => {
-      let predicate_text = predicate.as_code();
-      quote_expr!(allocator, span, ({ kind: "variable", name: @{name}, predicate: @{predicate_text} }))
-    }
-    Issue::Expression { code, .. } => {
-      let code_text = code.as_code();
-      quote_expr!(allocator, span, ({ kind: "expression", code: @{code_text} }))
-    }
-  }
-}
-
 struct TemplateDiscoveryVisitor<'ast, 'alloc> {
   allocator: &'alloc Allocator,
   css_import_symbols: &'ast CssImportSymbols<'alloc>,
@@ -923,7 +902,7 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
         let location =
           build_runtime_location_expression(self.allocator, init_span, self.location_context);
         let expression =
-          quote_expr!(self.allocator, init_span, __csslit.memo(@{name}, @{location}, @{arrow}));
+          quote_expr!(self.allocator, init_span, __csslit.cell(@{name}, @{location}, @{arrow}));
 
         if matches!(state, SymbolState::AllowedCallMemo { .. }) {
           quote_stmt!(self.allocator, var @{name} = (@{expression});)
@@ -941,14 +920,26 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     match &self.symbol_states[symbol_id] {
       state @ (SymbolState::RejectedThunk(info) | SymbolState::RejectedCallMemo(info)) => {
         let span = info.issue.span();
-        let issue_expr = build_issue_expression(self.allocator, info.issue);
         let location_expr =
           build_runtime_location_expression(self.allocator, span, self.location_context);
-        let expression = quote_expr!(
-          self.allocator,
-          span,
-          __csslit.memoErr(@{name}, @{issue_expr}, @{location_expr})
-        );
+        let expression = match info.issue {
+          Issue::Variable { predicate, .. } => {
+            let predicate_text = predicate.as_code();
+            quote_expr!(
+              self.allocator,
+              span,
+              __csslit.cellVarErr(@{name}, @{predicate_text}, @{location_expr})
+            )
+          }
+          Issue::Expression { code, .. } => {
+            let code_text = code.as_code();
+            quote_expr!(
+              self.allocator,
+              span,
+              __csslit.cellExprErr(@{name}, @{code_text}, @{location_expr})
+            )
+          }
+        };
 
         if matches!(state, SymbolState::RejectedCallMemo(_)) {
           quote_stmt!(self.allocator, var @{name} = (@{expression});)
@@ -972,21 +963,15 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     let identifier = function.id.as_ref().unwrap();
     let name = identifier.name;
     let span = identifier.span;
-    let issue_expr = build_issue_expression(
-      self.allocator,
-      variable_issue(
-        name.as_str().clone_in(self.allocator),
-        PredicateCode::FunctionBinding,
-        span,
-      ),
-    );
     let use_location_expr = quote_expr!(self.allocator, span, arguments[0]);
     let location_expr =
       build_runtime_location_expression(self.allocator, span, self.location_context);
+    let predicate_text = PredicateCode::FunctionBinding.as_code();
+    let name_text = name.as_str();
     let err_expr = quote_expr!(
       self.allocator,
       span,
-      __csslit.err(@{issue_expr}, @{use_location_expr}, @{location_expr})
+      __csslit.varErr(@{name_text}, @{predicate_text}, @{use_location_expr}, @{location_expr})
     );
     let return_statement = quote_stmt!(self.allocator, span, return (@{err_expr}););
 
@@ -1086,12 +1071,24 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         }
         Err(issue) => {
           let span = issue.span();
-          let issue_expr = build_issue_expression(self.allocator, issue);
-
           let location_expr =
             build_runtime_location_expression(self.allocator, span, self.location_context);
-          let expression =
-            quote_expr!(self.allocator, span, __csslit.err(@{issue_expr}, @{location_expr}));
+          let expression = match issue {
+            Issue::Variable {
+              name, predicate, ..
+            } => {
+              let predicate_text = predicate.as_code();
+              quote_expr!(
+                self.allocator,
+                span,
+                __csslit.varErr(@{name}, @{predicate_text}, @{location_expr})
+              )
+            }
+            Issue::Expression { code, .. } => {
+              let code_text = code.as_code();
+              quote_expr!(self.allocator, span, __csslit.exprErr(@{code_text}, @{location_expr}))
+            }
+          };
 
           rewritten_expression = expression;
           true
@@ -1225,7 +1222,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
   }
 }
 
-pub(super) fn transform_compile_time(
+pub(crate) fn transform_compile_time(
   source_text: String,
   options: CompileTimeTransformOptions,
 ) -> OxcTransformResult {
@@ -1846,7 +1843,7 @@ fn rewrite_local_references<'alloc>(
           quote_expr!(
             allocator,
             use_span,
-            __csslit.callMemo(@{name}, @{callee}, @{use_location}, @{init_location})
+            __csslit.readCell(@{name}, @{callee}, @{use_location}, @{init_location})
           )
         }
       };
@@ -2329,7 +2326,7 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
-        const tone = __csslit.memo("tone", "4:21:4:35", () => color ?? "red");
+        const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
         __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2358,7 +2355,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         const outer = 1;
         __csslit.defer(() => {
-          const param = __csslit.memoErr("param", "runtime-parameter", "5:22:5:35");
+          const param = __csslit.cellVarErr("param", "runtime-parameter", "5:22:5:35");
           const local = outer + 1;
           __csslit.css({ patch_lines: [1, 1] })`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
         });
@@ -2385,7 +2382,7 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
-        const tone = __csslit.memo("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
+        const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
         __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2412,8 +2409,8 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        const tone = __csslit.memoErr("tone", "reassigned", "5:8:5:12");
-        const border = __csslit.memoErr("border", "destructured", "7:14:7:32");
+        const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
+        const border = __csslit.cellVarErr("border", "destructured", "7:14:7:32");
         __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2421,7 +2418,7 @@ mod tests {
   }
 
   #[test]
-  fn supports_var_bindings_via_call_memo() {
+  fn supports_var_bindings_via_read_cell() {
     let output = compile(
       r#"
         import { css } from "csslit";
@@ -2438,16 +2435,16 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        var legacy = __csslit.memo("legacy", "3:21:3:26", () => "red");
+        var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
-        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("6:21:6:27", () => __csslit.callMemo("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
+        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
   }
 
   #[test]
-  fn supports_var_reads_before_initializer_via_call_memo() {
+  fn supports_var_reads_before_initializer_via_read_cell() {
     let output = compile(
       r#"
         import { css } from "csslit";
@@ -2462,8 +2459,8 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:27", () => __csslit.callMemo("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
-        var legacy = __csslit.memo("legacy", "4:21:4:26", () => "red");
+        __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
+        var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2540,10 +2537,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
         function pick() {
-          return __csslit.err({
-            code: "variable",
-            name: "pick"
-          }, "function-binding", arguments[0], undefined, "5:17:5:21");
+          return __csslit.varErr("pick", "function-binding", arguments[0], "5:17:5:21");
         }
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2551,7 +2545,7 @@ mod tests {
   }
 
   #[test]
-  fn class_bindings_throw_via_memo_err() {
+  fn class_bindings_throw_via_cell_var_err() {
     let output = compile(
       r#"
         import { css } from "csslit";
@@ -2570,7 +2564,7 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
-        const Theme = __csslit.memoErr("Theme", "class-binding", "5:14:5:19");
+        const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );

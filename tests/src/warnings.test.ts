@@ -765,14 +765,14 @@ test("delete expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains a delete expression.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{delete globalThis.theme.color};';
-          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ a delete expression
+          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains a delete expression
     "
   `);
 });
@@ -793,20 +793,14 @@ test("assignment expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains an assignment expression.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | css'color: #{(tone = "blue")};';
-          |              ^^^^^^^^^^^^^^^
-
-      Root cause:
-        at <root>/src/entry.ts:5:15
-        4 | 
-        5 | css'color: #{(tone = "blue")};';
-          |               ^^^^^^^^^^^^^ an assignment expression
+          |              ^^^^^^^^^^^^^^^ contains an assignment expression
     "
   `);
 });
@@ -825,14 +819,14 @@ test("new expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains a new expression.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{new String("hotpink")};';
-          |              ^^^^^^^^^^^^^^^^^^^^^ a new expression
+          |              ^^^^^^^^^^^^^^^^^^^^^ contains a new expression
     "
   `);
 });
@@ -851,20 +845,14 @@ test("sequence expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains a sequence expression.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{(0, "hotpink")};';
-          |              ^^^^^^^^^^^^^^
-
-      Root cause:
-        at <root>/src/entry.ts:3:15
-        2 | 
-        3 | css'color: #{(0, "hotpink")};';
-          |               ^^^^^^^^^^^^ a sequence expression
+          |              ^^^^^^^^^^^^^^ contains a sequence expression
     "
   `);
 });
@@ -883,14 +871,14 @@ test("tagged template warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains a tagged template.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{String.raw'hotpink'};';
-          |              ^^^^^^^^^^^^^^^^^^^ a tagged template
+          |              ^^^^^^^^^^^^^^^^^^^ contains a tagged template
     "
   `);
 });
@@ -912,14 +900,14 @@ test("private field warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation failed.
+    warning: CSS literal eval failed: interpolation contains private field access.
       Plugin: vite-plugin-css-compile
       File: <root>/src/entry.ts:5:35
       Interpolation:
         at <root>/src/entry.ts:5:35
         4 |   static #value = "hotpink";
         5 |   static className = css'color: #{this.#value};';
-          |                                   ^^^^^^^^^^^ private field access
+          |                                   ^^^^^^^^^^^ contains private field access
         6 | }
     "
   `);
