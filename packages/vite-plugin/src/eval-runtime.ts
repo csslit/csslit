@@ -57,17 +57,17 @@ function decodeLocationToken(token: string): Span {
 function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalDiagnostic {
   const interpolationLocation = decodeLocationToken(interpolation);
   let current: unknown = error;
-  let primary: Dependency | undefined;
   const dependencies: Dependency[] = [];
+  let rootCauseSource = interpolationLocation;
 
   if (current instanceof EvaluationError && current.diagnostic.kind === "dependency") {
     const diagnostic = current.diagnostic;
 
-    primary = {
+    rootCauseSource = decodeLocationToken(diagnostic.source);
+    dependencies.push({
       name: diagnostic.name,
       reference: decodeLocationToken(diagnostic.reference),
-      source: decodeLocationToken(diagnostic.source),
-    };
+    });
 
     current = current.cause;
   }
@@ -76,18 +76,18 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
     const diagnostic = current.diagnostic;
 
     switch (diagnostic.kind) {
-      case "dependency":
+      case "dependency": {
+        rootCauseSource = decodeLocationToken(diagnostic.source);
         dependencies.push({
           name: diagnostic.name,
           reference: decodeLocationToken(diagnostic.reference),
-          source: decodeLocationToken(diagnostic.source),
         });
         break;
+      }
       case "variable": {
         return {
           dependencies,
-          primaryName: primary?.name,
-          primaryReference: primary?.reference ?? interpolationLocation,
+          interpolation: interpolationLocation,
           rootCause: {
             kind: "variable",
             name: diagnostic.name,
@@ -100,8 +100,7 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
       case "expression": {
         return {
           dependencies,
-          primaryName: primary?.name,
-          primaryReference: primary?.reference ?? interpolationLocation,
+          interpolation: interpolationLocation,
           rootCause: {
             kind: "expression",
             code: diagnostic.code,
@@ -123,14 +122,12 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
     text = "<unstringifiable thrown value>";
   }
 
-  const root = dependencies.at(-1);
   return {
     dependencies,
-    primaryName: primary?.name,
-    primaryReference: primary?.reference ?? interpolationLocation,
+    interpolation: interpolationLocation,
     rootCause: {
       kind: "thrown",
-      source: root?.source ?? primary?.source ?? interpolationLocation,
+      source: rootCauseSource,
       text,
       stack: current instanceof Error ? current.stack : undefined,
     },

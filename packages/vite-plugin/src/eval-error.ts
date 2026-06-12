@@ -87,7 +87,6 @@ export type ExpressionCode =
 export interface Dependency {
   name: string;
   reference: Span;
-  source: Span;
 }
 
 interface VariableIssueRootCause {
@@ -113,8 +112,7 @@ interface ThrownRootCause {
 
 export interface EvalDiagnostic {
   dependencies: Dependency[];
-  primaryName?: string;
-  primaryReference: Span;
+  interpolation: Span;
   rootCause: RootCause;
 }
 
@@ -176,8 +174,10 @@ const predicateStrings: Record<DiagnosticPredicateCode, string> = {
 
 function formatHeadline(diagnostic: EvalDiagnostic) {
   const prefix = "CSS literal eval failed:";
-  const primaryName = diagnostic.primaryName;
-  const deps = diagnostic.dependencies;
+  const dependencies = diagnostic.dependencies;
+  const primary = dependencies[0];
+  const primaryName = primary?.name;
+  const hasDependencyChain = dependencies.length > 1;
 
   const rootCause = diagnostic.rootCause;
   switch (rootCause.kind) {
@@ -188,8 +188,8 @@ function formatHeadline(diagnostic: EvalDiagnostic) {
         return `${prefix} interpolation threw during evaluation${suffix}`;
       }
 
-      if (deps.length > 0) {
-        const root = deps.at(-1)!;
+      if (hasDependencyChain) {
+        const root = dependencies.at(-1)!;
         return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which threw during evaluation${suffix}`;
       }
 
@@ -201,8 +201,8 @@ function formatHeadline(diagnostic: EvalDiagnostic) {
         return `${prefix} interpolation contains ${expression}.`;
       }
 
-      if (deps.length > 0) {
-        const root = deps.at(-1)!;
+      if (hasDependencyChain) {
+        const root = dependencies.at(-1)!;
         return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which depends on ${expression}.`;
       }
 
@@ -214,8 +214,8 @@ function formatHeadline(diagnostic: EvalDiagnostic) {
         return `${prefix} interpolation references ${rootCause.name}, which ${predicate}`;
       }
 
-      if (deps.length > 0) {
-        const root = deps.at(-1)!;
+      if (hasDependencyChain) {
+        const root = dependencies.at(-1)!;
         return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which ${predicate}`;
       }
 
@@ -247,10 +247,6 @@ function parseStackLocation(line: string, options: StackOptions): FileLocation |
 
 function locationEq(left: Location, right: Location) {
   return left.row === right.row && left.col === right.col;
-}
-
-function spanEq(left: Span, right: Span) {
-  return locationEq(left.start, right.start) && locationEq(left.end, right.end);
 }
 
 function spanContainsLocation(span: Span, location: Location) {
@@ -366,86 +362,65 @@ function formatSection(
 }
 
 function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
-  const primaryName = diagnostic.primaryName;
   const dependencies = diagnostic.dependencies;
-  const hasDependencyChain = dependencies.length > 0;
-  const sourceFile = options.sourceFile;
-  const interpolation = diagnostic.primaryReference;
-  const root = diagnostic.rootCause;
+  const rootCause = diagnostic.rootCause;
 
-  switch (root.kind) {
+  switch (rootCause.kind) {
     case "thrown": {
-      const stack = root.stack ? options.normalizeStackText(root.stack) : undefined;
+      const stack = rootCause.stack ? options.normalizeStackText(rootCause.stack) : undefined;
 
-      let rootLabel: string;
-      if (stack) {
-        rootLabel = root.text;
-      } else if (hasDependencyChain) {
-        rootLabel = `${dependencies.at(-1)!.name} threw ${root.text}`;
-      } else if (primaryName !== undefined) {
-        rootLabel = `${primaryName} threw ${root.text}`;
-      } else {
-        rootLabel = `threw ${root.text}`;
-      }
-
-      let thrownSource: FileLocation;
+      let thrownFile = options.sourceFile;
+      let thrownLocation = rootCause.source.start;
       let trimmedStack: string | undefined;
       if (stack) {
-        const analyzedStack = analyzeThrownStack(stack, sourceFile, root.source, options);
-        thrownSource = analyzedStack.source;
+        const analyzedStack = analyzeThrownStack(
+          stack,
+          options.sourceFile,
+          rootCause.source,
+          options,
+        );
+        thrownLocation = analyzedStack.source.location;
+        thrownFile = analyzedStack.source.file;
         trimmedStack = analyzedStack.stack;
-      } else {
-        thrownSource = {
-          file: sourceFile,
-          location: root.source.start,
-        };
       }
 
-      const inlineRoot =
-        !hasDependencyChain &&
-        thrownSource.file === sourceFile &&
-        spanContainsLocation(interpolation, thrownSource.location);
-
-      let interpolationSectionSpan = inlineRoot
-        ? { start: thrownSource.location, end: thrownSource.location }
-        : interpolation;
-
-      let interpolationSectionFile = inlineRoot ? thrownSource.file : sourceFile;
-
-      let label: string | undefined;
-      if (inlineRoot) {
-        label = rootLabel;
-      } else if (primaryName !== undefined) {
-        label = `references ${primaryName}`;
+      let frame;
+      if (dependencies.length === 0) {
+        frame = formatSection(
+          "Interpolation",
+          options.sourceFile,
+          dependencies[0].reference,
+          `references ${dependencies[0].name}`,
+          options,
+        );
       } else {
-        label = undefined;
-      }
+        let deps = [...dependencies];
+        const root = deps.at(-1)!;
+        const primary = deps.shift()!;
+        frame = formatSection(
+          "Interpolation",
+          options.sourceFile,
+          primary.reference,
+          `references ${primary.name}`,
+          options,
+        );
 
-      let frame = formatSection(
-        "Interpolation",
-        interpolationSectionFile,
-        interpolationSectionSpan,
-        label,
-        options,
-      );
-
-      if (hasDependencyChain) {
-        const width = Math.max(...dependencies.map((dependency) => dependency.name.length));
-        frame += "\n\nDependency chain:";
-        for (const dependency of dependencies) {
-          const subject = dependency.name.padEnd(width, " ");
-          frame += `\n  ${subject}  at ${formatLink(sourceFile, dependency.reference.start)}`;
+        if (deps.length !== 0) {
+          let width = 0;
+          for (const d of deps) if (d.name.length > width) width = d.name.length;
+          frame += "\n\nDependency chain:";
+          for (const dependency of deps) {
+            frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
+          }
         }
-      }
 
-      if (!inlineRoot) {
         frame +=
           "\n\n" +
           formatSection(
             "Root cause",
-            thrownSource.file,
-            { start: thrownSource.location, end: thrownSource.location },
-            rootLabel,
+            thrownFile,
+            { start: thrownLocation, end: thrownLocation },
+            stack ? rootCause.text : `${root.name} threw ${rootCause.text}`,
             options,
           );
       }
@@ -460,17 +435,27 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
       return frame;
     }
     case "variable": {
-      let label: string | undefined;
-      label = `references ${primaryName!}`;
+      if (dependencies.length === 0)
+        throw new Error("Expected variable issue to have at least one dependency");
 
-      let frame = formatSection("Interpolation", sourceFile, interpolation, label, options);
+      let deps = [...dependencies];
+      const primary = deps.shift()!;
 
-      if (hasDependencyChain) {
-        const width = Math.max(...dependencies.map((dependency) => dependency.name.length));
+      let frame = formatSection(
+        "Interpolation",
+        options.sourceFile,
+        primary.reference,
+        `references ${primary.name}`,
+        options,
+      );
+
+      if (deps.length !== 0) {
+        let width = 0;
+        for (const d of deps) if (d.name.length > width) width = d.name.length;
+
         frame += "\n\nDependency chain:";
-        for (const dependency of dependencies) {
-          const subject = dependency.name.padEnd(width, " ");
-          frame += `\n  ${subject}  at ${formatLink(sourceFile, dependency.reference.start)}`;
+        for (const dependency of deps) {
+          frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
         }
       }
 
@@ -478,55 +463,65 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
         "\n\n" +
         formatSection(
           "Root cause",
-          sourceFile,
-          root.source,
-          `${root.name} ${predicateStrings[root.predicate]}`,
+          options.sourceFile,
+          rootCause.source,
+          `${rootCause.name} ${predicateStrings[rootCause.predicate]}`,
           options,
         );
 
       return frame;
     }
     case "expression": {
-      const rootBoundary = root.source;
-      const rootName = hasDependencyChain ? dependencies.at(-1)!.name : primaryName;
-      const rootLabel =
-        rootName !== undefined
-          ? `${rootName} depends on ${expressionStrings[root.code]}.`
-          : `contains ${expressionStrings[root.code]}`;
+      if (dependencies.length === 0) {
+        return formatSection(
+          "Interpolation",
+          options.sourceFile,
+          diagnostic.interpolation,
+          `contains ${expressionStrings[rootCause.code]}`,
+          options,
+        );
+      } else {
+        let deps = [...dependencies];
+        const root = deps.at(-1)!;
+        const primary = deps.shift()!;
+        let frame = formatSection(
+          "Interpolation",
+          options.sourceFile,
+          primary.reference,
+          `references ${primary.name}`,
+          options,
+        );
 
-      const inlineRoot = primaryName === undefined && !hasDependencyChain;
+        if (deps.length !== 0) {
+          let width = 0;
+          for (const d of deps) if (d.name.length > width) width = d.name.length;
 
-      let label: string | undefined;
-      if (inlineRoot) {
-        label = rootLabel;
-      } else if (primaryName !== undefined) {
-        label = `references ${primaryName}`;
-      }
-
-      let frame = formatSection("Interpolation", sourceFile, interpolation, label, options);
-
-      if (hasDependencyChain) {
-        const width = Math.max(...dependencies.map((dependency) => dependency.name.length));
-        frame += "\n\nDependency chain:";
-        for (const dependency of dependencies) {
-          const subject = dependency.name.padEnd(width, " ");
-          frame += `\n  ${subject}  at ${formatLink(sourceFile, dependency.reference.start)}`;
+          frame += "\n\nDependency chain:";
+          for (const dependency of deps) {
+            frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
+          }
         }
-      }
 
-      if (!inlineRoot) {
-        frame += "\n\n" + formatSection("Root cause", sourceFile, rootBoundary, rootLabel, options);
-      }
+        frame +=
+          "\n\n" +
+          formatSection(
+            "Root cause",
+            options.sourceFile,
+            rootCause.source,
+            `${root.name} depends on ${expressionStrings[rootCause.code]}.`,
+            options,
+          );
 
-      return frame;
+        return frame;
+      }
     }
     default:
-      return assertNever(root, "Unsupported csslit root cause");
+      return assertNever(rootCause, "Unsupported csslit root cause");
   }
 }
 
 export function buildCsslitError(diagnostic: EvalDiagnostic, options: ErrorOptions): BuiltError {
-  const loc = diagnostic.primaryReference;
+  const loc = diagnostic.dependencies[0]?.reference ?? diagnostic.interpolation;
 
   return {
     frame: formatFrame(diagnostic, options),
