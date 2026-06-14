@@ -6,11 +6,13 @@ mod transform;
 
 #[napi(object)]
 pub struct RuntimeTransformRequest {
+  pub css_import: String,
   pub filename: String,
   pub sourcemap: bool,
 }
 
 struct RuntimeTransformOptions {
+  css_import: String,
   filename: String,
   sourcemap: bool,
 }
@@ -101,6 +103,7 @@ pub fn transform_runtime(
   let result = transform::transform_runtime(
     source_text,
     RuntimeTransformOptions {
+      css_import: options.css_import,
       filename: options.filename,
       sourcemap: options.sourcemap,
     },

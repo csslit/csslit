@@ -8,9 +8,14 @@ export interface Span {
   end: Location;
 }
 
-interface FileLocation {
+export interface FileLocation {
   file: string;
   location: Location;
+}
+
+interface StackLine {
+  line: string;
+  location?: FileLocation;
 }
 
 interface BuiltErrorLocation {
@@ -20,9 +25,7 @@ interface BuiltErrorLocation {
 }
 
 interface StackOptions {
-  normalizeFile: (file: string) => string;
-  normalizeStackText: (stackText: string) => string;
-  stopStackTraceAtFile: (file: string) => boolean;
+  normalizeStackLine: (line: string) => StackLine | undefined;
 }
 
 interface BuiltError {
@@ -144,12 +147,6 @@ const expressionStrings: Record<ExpressionCode, string> = {
   "unsupported-expression": "an unsupported expression",
 };
 
-export function trimModuleRunnerStack(stack: string): string {
-  const lines = stack.split("\n");
-  const cutIndex = lines.findIndex((l) => l.includes("runInlinedModule"));
-  return cutIndex !== -1 ? lines.slice(0, cutIndex).join("\n") : stack;
-}
-
 const predicateStrings: Record<DiagnosticPredicateCode, string> = {
   "runtime-parameter": "is a runtime parameter.",
   "function-binding": "is a function binding.",
@@ -226,25 +223,6 @@ function formatHeadline(diagnostic: EvalDiagnostic) {
   }
 }
 
-function parseStackLocation(line: string, options: StackOptions): FileLocation | undefined {
-  const match = /^ *at (?:(?:.+) \((.+):([0-9]+):([0-9]+)\)|(.+):([0-9]+):([0-9]+))$/.exec(line);
-  if (!match) {
-    return undefined;
-  }
-
-  const file = options.normalizeFile(match[1] ?? match[4]!);
-  const lineNumber = Number(match[2] ?? match[5]);
-  const columnNumber = Number(match[3] ?? match[6]);
-
-  return {
-    file,
-    location: {
-      row: lineNumber - 1,
-      col: columnNumber - 1,
-    },
-  };
-}
-
 function locationEq(left: Location, right: Location) {
   return left.row === right.row && left.col === right.col;
 }
@@ -265,50 +243,51 @@ function analyzeThrownStack(
   file: string,
   span: Span,
   options: ErrorOptions,
-): { source: FileLocation; stack: string } {
-  const stackLines = stack.split("\n");
-  let trimmedStack = stackLines[0]!;
-  let source: FileLocation | undefined;
+): { location: Location; stack: string } {
+  let location: Location | undefined;
 
-  for (let index = 1; index < stackLines.length; index += 1) {
-    const line = stackLines[index]!;
+  const lines = stack.split("\n");
+  let trimmedStack = lines.shift() ?? "";
 
-    const location = parseStackLocation(line, options);
-
-    if (!location) {
-      continue;
-    }
-
-    if (options.stopStackTraceAtFile(location.file)) {
+  for (const line of lines) {
+    const stackLine = options.normalizeStackLine(line);
+    if (!stackLine) {
       break;
     }
 
-    trimmedStack += `\n${line}`;
+    trimmedStack += `\n${stackLine.line}`;
 
-    if (location.file === file && spanContainsLocation(span, location.location)) {
-      source = location;
+    const fileLocation = stackLine.location;
+    if (fileLocation?.file === file && spanContainsLocation(span, fileLocation.location)) {
+      location = fileLocation.location;
       break;
     }
   }
 
   return {
-    source: source ?? {
-      file,
-      location: span.start,
-    },
+    location: location ?? span.start,
     stack: trimmedStack,
   };
 }
 
-function firstStackLocation(stack: string, options: StackOptions) {
+function analyzeStack(stack: string, options: StackOptions) {
+  let trimmedStack = "";
+  let location: FileLocation | undefined;
+
   for (const line of stack.split("\n")) {
-    const location = parseStackLocation(line, options);
-    if (location) {
-      return location;
+    const stackLine = options.normalizeStackLine(line);
+    if (!stackLine) {
+      break;
     }
+
+    trimmedStack += trimmedStack ? `\n${stackLine.line}` : stackLine.line;
+    location ??= stackLine.location;
   }
 
-  return undefined;
+  return {
+    location,
+    stack: trimmedStack,
+  };
 }
 
 function formatLink(file: string, location: Location) {
@@ -367,20 +346,16 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
 
   switch (rootCause.kind) {
     case "thrown": {
-      const stack = rootCause.stack ? options.normalizeStackText(rootCause.stack) : undefined;
-
-      let thrownFile = options.sourceFile;
       let thrownLocation = rootCause.source.start;
       let trimmedStack: string | undefined;
-      if (stack) {
+      if (rootCause.stack) {
         const analyzedStack = analyzeThrownStack(
-          stack,
+          rootCause.stack,
           options.sourceFile,
           rootCause.source,
           options,
         );
-        thrownLocation = analyzedStack.source.location;
-        thrownFile = analyzedStack.source.file;
+        thrownLocation = analyzedStack.location;
         trimmedStack = analyzedStack.stack;
       }
 
@@ -389,13 +364,12 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
         frame = formatSection(
           "Interpolation",
           options.sourceFile,
-          dependencies[0].reference,
-          `references ${dependencies[0].name}`,
+          { start: thrownLocation, end: thrownLocation },
+          rootCause.text,
           options,
         );
       } else {
         let deps = [...dependencies];
-        const root = deps.at(-1)!;
         const primary = deps.shift()!;
         frame = formatSection(
           "Interpolation",
@@ -418,9 +392,9 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
           "\n\n" +
           formatSection(
             "Root cause",
-            thrownFile,
+            options.sourceFile,
             { start: thrownLocation, end: thrownLocation },
-            stack ? rootCause.text : `${root.name} threw ${rootCause.text}`,
+            rootCause.text,
             options,
           );
       }
@@ -547,9 +521,8 @@ export function buildCsslitEvaluationError(
   }
 
   const stack =
-    error instanceof Error && error.stack ? options.normalizeStackText(error.stack) : undefined;
-
-  const location = stack ? firstStackLocation(stack, options) : undefined;
+    error instanceof Error && error.stack ? analyzeStack(error.stack, options) : undefined;
+  const location = stack?.location;
 
   return {
     loc: location
@@ -560,6 +533,6 @@ export function buildCsslitEvaluationError(
         }
       : undefined,
     message: `CSS literal evaluation failed while evaluating ${sourceFile}.\n${text}`,
-    stack,
+    stack: stack?.stack,
   };
 }

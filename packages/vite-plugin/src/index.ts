@@ -1,22 +1,11 @@
 import { transformCompileTime, transformRuntime } from "@csslit/rust-transformer";
 import { readFileSync } from "node:fs";
-import path from "node:path";
 import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
 import type { SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
-import { buildCsslitError, buildCsslitEvaluationError, trimModuleRunnerStack } from "./eval-error";
-import type { EvalDiagnostic } from "./eval-error";
-
-const CSS_DERIVED_SUFFIX = ".csslit.module.css";
-const CSSLIT_EVAL_RESULT_EXPORT = "__csslit_eval_result";
-const CSSLIT_COMPTIME_ENVIRONMENT = "comptime";
-const CSSLIT_EVAL_RUNTIME_ID = "virtual:csslit-eval-runtime";
-const RESOLVED_CSSLIT_EVAL_RUNTIME_ID = "\0virtual:csslit-eval-runtime";
-const CSSLIT_EVAL_ID_PREFIX = "virtual:csslit-eval:";
-const CSSLIT_EVAL_STACK_ID_RE = /virtual:csslit-eval:[^)\s]+?(?=:\d+:\d+\)?|$|\s)/g;
-const TRANSFORM_ID_RE = /^(?:virtual:csslit-eval:|.*\.(?:js|ts|jsx|tsx)(?:$|\?))/;
-const CSS_DERIVED_ID_RE = /\.csslit\.module\.css$/;
+import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error";
+import type { EvalDiagnostic, Location } from "./eval-error";
 
 interface EvalResult {
   code: string;
@@ -27,30 +16,50 @@ interface EvalResult {
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
 
 const csslitErrorResolutionOptions = {
-  normalizeFile(file: string) {
-    return normalizePath(file);
-  },
-  normalizeStackText(stackText: string) {
-    const normalized = stackText.replace(CSSLIT_EVAL_STACK_ID_RE, (id) => parseCssEvalId(id) ?? id);
-    return trimModuleRunnerStack(normalized);
-  },
-  stopStackTraceAtFile(file: string) {
-    return file.includes("virtual:csslit-eval-runtime");
+  normalizeStackLine(line: string) {
+    const stackLine = line.replace(/[^)\s]+?\.csslit(?=:\d+:\d+\)?|$|\s)/g, (id) =>
+      id.slice(0, -".csslit".length),
+    );
+
+    const match = /^    at (.+) \((.+):([0-9]+):([0-9]+)\)$/.exec(stackLine);
+
+    let location: { file: string; location: Location } | undefined = undefined;
+    if (match) {
+      const callee = match[1]!;
+      const file = match[2]!;
+      const line = Number(match[3]!);
+      const column = Number(match[4]!);
+
+      if (
+        callee === "ESModulesEvaluator.runInlinedModule" ||
+        file === "virtual:csslit-eval-runtime"
+      ) {
+        return undefined;
+      }
+
+      location = {
+        file: normalizePath(file),
+        location: {
+          row: line - 1,
+          col: column - 1,
+        },
+      };
+    }
+
+    return {
+      line: stackLine,
+      location: location,
+    };
   },
   readSource(file: string) {
     return readFileSync(file, "utf8");
   },
 };
 
-function parseCssEvalId(id: string) {
-  return id.startsWith(CSSLIT_EVAL_ID_PREFIX)
-    ? decodeURIComponent(id.slice(CSSLIT_EVAL_ID_PREFIX.length))
-    : null;
-}
-
 function watchCssEvalDependencies(
   addWatchFile: (id: string) => void,
   evaluatedModules: EvaluatedModules,
+  moduleGraph: RunnableDevEnvironment["moduleGraph"],
   evalId: string,
 ) {
   const start = evaluatedModules.getModuleByUrl(evalId);
@@ -64,6 +73,15 @@ function watchCssEvalDependencies(
 
     addWatchFile(mod.file);
 
+    const graphModule = moduleGraph.getModuleById(mod.id);
+    if (graphModule) {
+      for (const importedModule of graphModule.importedModules) {
+        if (importedModule.type === "asset") {
+          addWatchFile(importedModule.file!);
+        }
+      }
+    }
+
     for (const importedId of mod.imports) {
       visit(evaluatedModules.getModuleById(importedId));
     }
@@ -72,16 +90,16 @@ function watchCssEvalDependencies(
   visit(start);
 }
 
-export function cssCompilePlugin(): Plugin {
+export function csslitPlugin(): Plugin {
   let evalEnvironment: RunnableDevEnvironment | null = null;
 
   return {
-    name: "vite-plugin-css-compile",
+    name: "vite-plugin-csslit",
     enforce: "pre",
 
     config(config) {
       config.environments ??= {};
-      const comptime = (config.environments[CSSLIT_COMPTIME_ENVIRONMENT] ??= {});
+      const comptime = (config.environments.comptime ??= {});
 
       comptime.consumer ??= "server";
       comptime.resolve ??= {};
@@ -97,29 +115,31 @@ export function cssCompilePlugin(): Plugin {
     },
 
     configureServer(server: ViteDevServer) {
-      evalEnvironment = server.environments[CSSLIT_COMPTIME_ENVIRONMENT] as RunnableDevEnvironment;
+      evalEnvironment = server.environments.comptime as RunnableDevEnvironment;
     },
 
     transform: {
       filter: {
-        id: TRANSFORM_ID_RE,
+        id: [/\.(?:js|ts|jsx|tsx)\.csslit$/, /\.(?:js|ts|jsx|tsx)$/],
         moduleType: ["js", "jsx", "ts", "tsx"],
       },
       async handler(code: string, id: string) {
         const config = this.environment.config;
-        const queryIndex = id.indexOf("?");
-        const cleanId = queryIndex === -1 ? id : id.slice(0, queryIndex);
-        const evalSourceId = parseCssEvalId(cleanId);
+        const isEvalRequest = id.endsWith(".csslit");
+
         const jsSourcemap =
           config.command === "build"
             ? !!config.build.sourcemap
             : typeof config.dev.sourcemap === "boolean"
               ? config.dev.sourcemap
               : (config.dev.sourcemap?.js ?? true);
-        const cssSourcemap =
-          config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
-        if (evalSourceId) {
+        if (isEvalRequest) {
+          const evalSourceId = id.slice(0, -".csslit".length);
+
+          const cssSourcemap =
+            config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
+
           const filename = evalSourceId.startsWith(`${config.root}/`)
             ? evalSourceId.slice(config.root.length)
             : evalSourceId;
@@ -138,7 +158,8 @@ export function cssCompilePlugin(): Plugin {
           };
         } else {
           const result = transformRuntime(code, {
-            filename: cleanId,
+            cssImport: `${normalizePath(id)}.csslit.module.css`,
+            filename: id,
             sourcemap: jsSourcemap,
           });
 
@@ -151,56 +172,40 @@ export function cssCompilePlugin(): Plugin {
     },
 
     resolveId: {
-      async handler(source, importer) {
-        if (source === CSSLIT_EVAL_RUNTIME_ID) {
-          return RESOLVED_CSSLIT_EVAL_RUNTIME_ID;
+      filter: {
+        id: [/^virtual:csslit-eval-runtime$/, /\.csslit\.module\.css$/],
+      },
+      async handler(source) {
+        if (source === "virtual:csslit-eval-runtime") {
+          return "\0virtual:csslit-eval-runtime";
         }
 
-        const importerId = importer ? (parseCssEvalId(importer) ?? importer) : null;
-
-        if (
-          importerId &&
-          (source.startsWith("./") || source.startsWith("../")) &&
-          !source.startsWith(CSSLIT_EVAL_ID_PREFIX)
-        ) {
-          return normalizePath(path.resolve(path.dirname(importerId), source));
-        }
-
-        if (source.startsWith(CSSLIT_EVAL_ID_PREFIX)) {
+        if (source.endsWith(".csslit.module.css")) {
+          const sourceId = source.slice(0, -".csslit.module.css".length);
           return {
-            id: source,
-            moduleType: "js",
-          };
-        }
-
-        if (!CSS_DERIVED_ID_RE.test(source)) {
-          return null;
-        }
-
-        if (path.isAbsolute(source)) {
-          return {
-            id: normalizePath(source),
+            id: `${sourceId}.csslit.module.css`,
             moduleType: "css",
           };
         }
 
-        if (!importerId) return null;
-
-        return {
-          id: normalizePath(path.resolve(path.dirname(importerId), source)),
-          moduleType: "css",
-        };
+        return null;
       },
     },
 
     load: {
+      filter: {
+        id: [
+          // oxlint-disable-next-line no-control-regex
+          /^\0virtual:csslit-eval-runtime$/,
+          /\.csslit\.module\.css$/,
+          /\.(?:js|ts|jsx|tsx)\.csslit$/,
+        ],
+      },
       async handler(id) {
-        if (id === RESOLVED_CSSLIT_EVAL_RUNTIME_ID) {
+        if (id === "\0virtual:csslit-eval-runtime") {
           return csslitEvalRuntimeCode;
-        }
-
-        const evalSourceId = parseCssEvalId(id);
-        if (evalSourceId) {
+        } else if (id.endsWith(".csslit")) {
+          const evalSourceId = id.slice(0, -".csslit".length);
           return {
             code: readFileSync(evalSourceId, "utf8"),
             moduleType: evalSourceId.endsWith(".tsx")
@@ -211,77 +216,69 @@ export function cssCompilePlugin(): Plugin {
                   ? "jsx"
                   : "js",
           };
-        }
+        } else if (id.endsWith(".csslit.module.css")) {
+          const sourceId = id.slice(0, -".csslit.module.css".length);
+          const sourceFile = sourceId;
+          const evalId = `${sourceId}.csslit`;
+          let result: EvalResult;
 
-        if (!CSS_DERIVED_ID_RE.test(id)) {
-          return null;
-        }
+          this.addWatchFile(sourceId);
+          const runner = evalEnvironment!.runner;
 
-        const sourcePath = id.slice(0, -CSS_DERIVED_SUFFIX.length);
-        const sourceId = path.isAbsolute(sourcePath)
-          ? normalizePath(sourcePath)
-          : normalizePath(path.resolve(this.environment.config.root, `.${sourcePath}`));
-        const sourceFile = csslitErrorResolutionOptions.normalizeFile(sourceId);
-        const evalId = `${CSSLIT_EVAL_ID_PREFIX}${encodeURIComponent(sourceId)}`;
-        let result: EvalResult;
+          let mod: Record<string, unknown>;
 
-        this.addWatchFile(sourceId);
-        const runner = evalEnvironment!.runner;
-        const evalModule = runner.evaluatedModules.getModuleByUrl(evalId);
-        if (evalModule) {
-          runner.evaluatedModules.invalidateModule(evalModule);
-        }
-        const comptimeModule = evalEnvironment!.moduleGraph.getModuleById(evalId);
-        if (comptimeModule) {
-          evalEnvironment!.moduleGraph.invalidateModule(comptimeModule);
-        }
-        let mod: Record<string, unknown>;
-        try {
-          mod = await runner.import(evalId);
-        } catch (err: unknown) {
-          const error = buildCsslitEvaluationError(err, sourceFile, csslitErrorResolutionOptions);
+          try {
+            mod = await runner.import(evalId);
+          } catch (err: unknown) {
+            const error = buildCsslitEvaluationError(err, sourceFile, csslitErrorResolutionOptions);
 
-          this.error({
-            cause: err,
-            code: "CSS_EVALUATION_ERROR",
-            hook: "load",
-            id: sourceId,
-            loc: error.loc,
-            message: error.message,
-            stack: error.stack,
-          });
-        }
-        watchCssEvalDependencies(
-          (file) => this.addWatchFile(file),
-          runner.evaluatedModules,
-          evalId,
-        );
-        result = mod[CSSLIT_EVAL_RESULT_EXPORT] as EvalResult;
+            this.error({
+              cause: err,
+              code: "CSS_EVALUATION_ERROR",
+              hook: "load",
+              id: sourceId,
+              loc: error.loc,
+              message: error.message,
+              stack: error.stack,
+            });
+          } finally {
+            watchCssEvalDependencies(
+              (file) => this.addWatchFile(file),
+              runner.evaluatedModules,
+              evalEnvironment!.moduleGraph,
+              evalId,
+            );
+          }
 
-        if (result.errors.length > 0) {
-          if (this.environment.name !== CSSLIT_COMPTIME_ENVIRONMENT) {
-            for (const error of result.errors) {
-              const warning = buildCsslitError(error, {
-                ...csslitErrorResolutionOptions,
-                sourceFile,
-              });
+          result = mod.__csslit_eval_result as EvalResult;
 
-              this.warn({
-                cause: error,
-                frame: warning.frame,
-                id: sourceId,
-                loc: warning.loc,
-                message: warning.message,
-              });
+          if (result.errors.length > 0) {
+            if (this.environment.name !== "comptime") {
+              for (const error of result.errors) {
+                const warning = buildCsslitError(error, {
+                  ...csslitErrorResolutionOptions,
+                  sourceFile,
+                });
+
+                this.warn({
+                  cause: error,
+                  frame: warning.frame,
+                  id: sourceId,
+                  loc: warning.loc,
+                  message: warning.message,
+                });
+              }
             }
           }
-        }
 
-        return {
-          code: result.code,
-          map: result.map ?? null,
-          moduleType: "css",
-        };
+          return {
+            code: result.code,
+            map: result.map ?? null,
+            moduleType: "css",
+          };
+        } else {
+          return null;
+        }
       },
     },
   };

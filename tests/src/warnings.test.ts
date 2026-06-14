@@ -1,15 +1,9 @@
 import { expect, test } from "vite-plus/test";
 
-import { snapshotCsslitWarningsCase } from "../harness/csslit-harness.ts";
-
-type WarningCase = Parameters<typeof snapshotCsslitWarningsCase>[0];
-
-function snapshotWarningCase(warningCase: WarningCase) {
-  return snapshotCsslitWarningsCase(warningCase);
-}
+import { buildWarningSnapshot } from "../harness/csslit-harness.ts";
 
 test("runtime parameter warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -25,7 +19,7 @@ test("runtime parameter warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references param, which is a runtime parameter.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:16
       Interpolation:
         at <root>/src/entry.ts:4:16
@@ -45,7 +39,7 @@ test("runtime parameter warning", async () => {
 });
 
 test("function binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -61,7 +55,7 @@ test("function binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which is a function binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -80,7 +74,7 @@ test("function binding warning", async () => {
 });
 
 test("function binding warning through call access", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -98,7 +92,7 @@ test("function binding warning through call access", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which is a function binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -117,7 +111,7 @@ test("function binding warning through call access", async () => {
 });
 
 test("class binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -133,7 +127,7 @@ test("class binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references Tone, which is a class binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -152,7 +146,7 @@ test("class binding warning", async () => {
 });
 
 test("class binding warning through member access", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -170,7 +164,7 @@ test("class binding warning through member access", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references Tone, which is a class binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -189,7 +183,7 @@ test("class binding warning through member access", async () => {
 });
 
 test("catch binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -207,7 +201,7 @@ test("catch binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references error, which is a catch binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:16
       Interpolation:
         at <root>/src/entry.ts:6:16
@@ -227,7 +221,7 @@ test("catch binding warning", async () => {
 });
 
 test("reassigned local binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -244,7 +238,7 @@ test("reassigned local binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which is reassigned.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
@@ -263,7 +257,7 @@ test("reassigned local binding warning", async () => {
 });
 
 test("destructuring local binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -283,7 +277,7 @@ test("destructuring local binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which comes from destructuring.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
@@ -302,7 +296,7 @@ test("destructuring local binding warning", async () => {
 });
 
 test("loop binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -318,7 +312,7 @@ test("loop binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which comes from a loop binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:16
       Interpolation:
         at <root>/src/entry.ts:4:16
@@ -338,7 +332,7 @@ test("loop binding warning", async () => {
 });
 
 test("no initializer warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -354,7 +348,7 @@ test("no initializer warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which has no initializer.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -373,7 +367,7 @@ test("no initializer warning", async () => {
 });
 
 test("enum declaration warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -391,7 +385,7 @@ test("enum declaration warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references Tone, which is an enum declaration.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -410,7 +404,7 @@ test("enum declaration warning", async () => {
 });
 
 test("namespace declaration warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -428,7 +422,7 @@ test("namespace declaration warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references Tone, which is a namespace/module declaration.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -447,7 +441,7 @@ test("namespace declaration warning", async () => {
 });
 
 test("circular dependency warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -466,7 +460,7 @@ test("circular dependency warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: ReferenceError: Cannot access 'border' before initialization.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:16
       Interpolation:
         at <root>/src/entry.ts:7:16
@@ -490,7 +484,7 @@ test("circular dependency warning", async () => {
 });
 
 test("var initializer order warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -506,7 +500,7 @@ test("var initializer order warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which is used before its initializer runs.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
@@ -525,7 +519,7 @@ test("var initializer order warning", async () => {
 });
 
 test("locally defined function direct interpolation warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -541,7 +535,7 @@ test("locally defined function direct interpolation warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references pickColor, which is a function binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -560,7 +554,7 @@ test("locally defined function direct interpolation warning", async () => {
 });
 
 test("locally defined function comptime binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -578,7 +572,7 @@ test("locally defined function comptime binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, depending on pickColor, which is a function binding.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -600,7 +594,7 @@ test("locally defined function comptime binding warning", async () => {
 });
 
 test("dependent call warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -616,7 +610,7 @@ test("dependent call warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which depends on a call expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -635,7 +629,7 @@ test("dependent call warning", async () => {
 });
 
 test("locally defined function call binding warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -653,7 +647,7 @@ test("locally defined function call binding warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which depends on a call expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -672,7 +666,7 @@ test("locally defined function call binding warning", async () => {
 });
 
 test("dependent dependency chain warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -689,7 +683,7 @@ test("dependent dependency chain warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references color, depending on tone, which depends on a call expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
@@ -711,7 +705,7 @@ test("dependent dependency chain warning", async () => {
 });
 
 test("multi-step dependency chain warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -729,7 +723,7 @@ test("multi-step dependency chain warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references className, depending on accent, which depends on a call expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -752,7 +746,7 @@ test("multi-step dependency chain warning", async () => {
 });
 
 test("delete expression warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -766,7 +760,7 @@ test("delete expression warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains a delete expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
@@ -778,7 +772,7 @@ test("delete expression warning", async () => {
 });
 
 test("assignment expression warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -794,7 +788,7 @@ test("assignment expression warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains an assignment expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
@@ -806,7 +800,7 @@ test("assignment expression warning", async () => {
 });
 
 test("new expression warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -820,7 +814,7 @@ test("new expression warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains a new expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
@@ -832,7 +826,7 @@ test("new expression warning", async () => {
 });
 
 test("sequence expression warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -846,7 +840,7 @@ test("sequence expression warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains a sequence expression.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
@@ -858,7 +852,7 @@ test("sequence expression warning", async () => {
 });
 
 test("tagged template warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -872,7 +866,7 @@ test("tagged template warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains a tagged template.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
@@ -884,7 +878,7 @@ test("tagged template warning", async () => {
 });
 
 test("private field warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -901,7 +895,7 @@ test("private field warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation contains private field access.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:35
       Interpolation:
         at <root>/src/entry.ts:5:35
@@ -914,7 +908,7 @@ test("private field warning", async () => {
 });
 
 test("direct thrown evaluation warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -936,7 +930,7 @@ test("direct thrown evaluation warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation threw during evaluation: Error: boom.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:14
       Interpolation:
         at <root>/src/entry.ts:4:22
@@ -946,14 +940,14 @@ test("direct thrown evaluation warning", async () => {
 
       Stack trace:
         Error: boom
-            at Object.get tone (<root>/src/theme:3:11)
+            at Object.get tone (<root>/src/theme.ts:3:11)
             at palette.tone (<root>/src/entry.ts:4:22)
     "
   `);
 });
 
 test("dependent thrown evaluation warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -977,7 +971,7 @@ test("dependent thrown evaluation warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: Error: boom.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
@@ -994,14 +988,14 @@ test("dependent thrown evaluation warning", async () => {
 
       Stack trace:
         Error: boom
-            at Object.get tone (<root>/src/theme:3:11)
+            at Object.get tone (<root>/src/theme.ts:3:11)
             at palette.tone (<root>/src/entry.ts:4:22)
     "
   `);
 });
 
 test("dependent thrown dependency chain warning", async () => {
-  const result = await snapshotWarningCase({
+  const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -1026,7 +1020,7 @@ test("dependent thrown dependency chain warning", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     warning: CSS literal eval failed: interpolation references color, depending on tone, which threw during evaluation: Error: boom.
-      Plugin: vite-plugin-css-compile
+      Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
@@ -1046,7 +1040,7 @@ test("dependent thrown dependency chain warning", async () => {
 
       Stack trace:
         Error: boom
-            at Object.get tone (<root>/src/theme:3:11)
+            at Object.get tone (<root>/src/theme.ts:3:11)
             at palette.tone (<root>/src/entry.ts:4:22)
     "
   `);

@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import { runCsslitCase } from "../harness/csslit-harness.ts";
+import { build } from "../harness/csslit-harness.ts";
 
 function decodeEmbeddedCssMap(code: string) {
   const match = code.match(/sourceMappingURL=data:application\/json;base64,([^*\s]+)/);
@@ -13,7 +13,7 @@ function decodeEmbeddedCssMap(code: string) {
 }
 
 test("css module sourcemap uses root-relative source paths", async () => {
-  const result = await runCsslitCase({
+  const result = await build({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `

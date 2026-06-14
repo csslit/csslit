@@ -6,7 +6,6 @@ use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
-use std::path::Path;
 
 use super::shared::CssImportSymbols;
 use crate::OxcTransformResult;
@@ -50,10 +49,6 @@ pub(crate) fn transform_runtime(
 
   let semantic = SemanticBuilder::new().build(&program).semantic;
   let css_import_symbols = CssImportSymbols::collect(allocator, &program);
-  let self_import = Path::new(&options.filename)
-    .file_name()
-    .and_then(|name| name.to_str())
-    .unwrap_or(&options.filename);
 
   let mut transformer = RuntimeTransformer {
     has_css: false,
@@ -66,9 +61,10 @@ pub(crate) fn transform_runtime(
 
   if transformer.has_css {
     let ast = AstBuilder::new(allocator);
+    let css_import = options.css_import;
     program.body.insert(
       0,
-      quote_stmt!(ast, import __css_module_import from @"./{self_import}.csslit.module.css";),
+      quote_stmt!(ast, import __css_module_import from @"{css_import}";),
     );
   }
 

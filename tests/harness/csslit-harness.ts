@@ -3,7 +3,7 @@ import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect } from "vite-plus/test";
 import { createServer, normalizePath } from "vite-plus";
-import { cssCompilePlugin } from "@csslit/vite-plugin";
+import { csslitPlugin } from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";
 const REPO_ROOT = normalizePath(path.resolve(import.meta.dirname, "../.."));
@@ -533,7 +533,7 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
       logLevel: "silent",
       plugins: [
         virtualFilesPlugin(absoluteFiles),
-        wrapCsslitPluginWithWarningCapture(cssCompilePlugin() as CsslitPlugin, warnings),
+        wrapCsslitPluginWithWarningCapture(csslitPlugin() as CsslitPlugin, warnings),
       ],
       root: serverRoot,
       server: {
@@ -664,14 +664,14 @@ function formatCapturedWarning(warning: CapturedWarning) {
   return lines.join("\n");
 }
 
-export async function runCsslitCase(input: HarnessCase) {
+export async function build(input: HarnessCase) {
   const currentRun = runCsslitCaseQueue.then(() => runCsslitCaseIsolated(input));
   runCsslitCaseQueue = currentRun.catch(() => {});
   return currentRun;
 }
 
-export async function snapshotCsslitCase(input: HarnessCase) {
-  const result = await runCsslitCase(input);
+export async function buildSnapshot(input: HarnessCase) {
+  const result = await build(input);
   const cssModules = result.writtenFiles.map(({ code, id }) => parseCssModuleSnapshot(code, id));
   return createSnapshotReport({
     cssModules:
@@ -686,8 +686,8 @@ export async function snapshotCsslitCase(input: HarnessCase) {
   });
 }
 
-export async function snapshotCsslitWarningsCase(input: HarnessCase) {
-  const result = await runCsslitCase(input);
+export async function buildWarningSnapshot(input: HarnessCase) {
+  const result = await build(input);
   return createSnapshotReport({
     warnings:
       result.warnings.length > 0

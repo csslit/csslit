@@ -1,9 +1,9 @@
 import { expect, test } from "vite-plus/test";
 
-import { snapshotCsslitCase } from "../harness/csslit-harness.ts";
+import { buildSnapshot } from "../harness/csslit-harness.ts";
 
 test("css literal reads from enclosing function scope", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -44,7 +44,7 @@ test("css literal reads from enclosing function scope", async () => {
 });
 
 test("imported function can be called directly in interpolation", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -82,7 +82,7 @@ test("imported function can be called directly in interpolation", async () => {
 });
 
 test("comptime allows function call in binding position", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -125,7 +125,7 @@ test("comptime allows function call in binding position", async () => {
 });
 
 test("array literal can be used in direct interpolation", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -157,7 +157,7 @@ test("array literal can be used in direct interpolation", async () => {
 });
 
 test("object literal can be used in direct interpolation", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -189,7 +189,7 @@ test("object literal can be used in direct interpolation", async () => {
 });
 
 test("css literal compiles to static css", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
@@ -223,7 +223,7 @@ test("css literal compiles to static css", async () => {
 });
 
 test("css literal resolves inline module dependencies", async () => {
-  const result = await snapshotCsslitCase({
+  const result = await buildSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
