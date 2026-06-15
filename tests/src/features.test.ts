@@ -29,13 +29,10 @@ test("css literal reads from enclosing function scope", async () => {
     };
     export const className = makeStyles();
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_bje7q_1 {
     color: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_bje7q_1
@@ -67,13 +64,10 @@ test("imported function can be called directly in interpolation", async () => {
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_bje7q_1 {
     color: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_bje7q_1
@@ -110,13 +104,10 @@ test("comptime allows function call in binding position", async () => {
     const tone = comptime(pickColor());
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_bje7q_1 {
     color: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_bje7q_1
@@ -142,13 +133,10 @@ test("array literal can be used in direct interpolation", async () => {
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_14mec_1 {
     transition: opacity 0.2s, transform 0.2s;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_14mec_1
@@ -174,13 +162,10 @@ test("object literal can be used in direct interpolation", async () => {
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_bje7q_1 {
     color: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_bje7q_1
@@ -208,13 +193,10 @@ test("css literal compiles to static css", async () => {
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_rxsyk_1 {
       background: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_rxsyk_1
@@ -250,13 +232,10 @@ test("css literal resolves inline module dependencies", async () => {
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
     export const className = __css_module_import.csslit_0;
 
-
     # css /src/entry.ts.csslit.module.css
     ._csslit_0_rxsyk_1 {
       background: hotpink;
     }
-
-
 
     # exports
     csslit_0 = _csslit_0_rxsyk_1

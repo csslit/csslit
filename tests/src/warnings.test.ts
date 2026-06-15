@@ -27,7 +27,7 @@ test("runtime parameter warning", async () => {
         4 |   css'color: #{param};';
           |                ^^^^^ references param
         5 | }
-
+      
       Root cause:
         at <root>/src/entry.ts:3:15
         2 | 
@@ -62,7 +62,7 @@ test("function binding warning", async () => {
         4 | 
         5 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:10
         2 | 
@@ -99,7 +99,7 @@ test("function binding warning through call access", async () => {
         6 | 
         7 | css'color: #{tone()};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:10
         2 | 
@@ -134,7 +134,7 @@ test("class binding warning", async () => {
         4 | 
         5 | css'color: #{Tone};';
           |              ^^^^ references Tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:7
         2 | 
@@ -171,7 +171,7 @@ test("class binding warning through member access", async () => {
         6 | 
         7 | css'color: #{Tone.name};';
           |              ^^^^ references Tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:7
         2 | 
@@ -209,7 +209,7 @@ test("catch binding warning", async () => {
         6 |   css'color: #{error};';
           |                ^^^^^ references error
         7 | }
-
+      
       Root cause:
         at <root>/src/entry.ts:5:10
         4 |   throw new Error("boom");
@@ -245,7 +245,7 @@ test("reassigned local binding warning", async () => {
         5 | 
         6 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:4:1
         3 | let tone = "hotpink";
@@ -284,7 +284,7 @@ test("destructuring local binding warning", async () => {
         5 | 
         6 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:4:7
         3 | 
@@ -320,7 +320,7 @@ test("loop binding warning", async () => {
         4 |   css'color: #{tone};';
           |                ^^^^ references tone
         5 | }
-
+      
       Root cause:
         at <root>/src/entry.ts:3:12
         2 | 
@@ -355,7 +355,7 @@ test("no initializer warning", async () => {
         4 | 
         5 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:5
         2 | 
@@ -392,7 +392,7 @@ test("enum declaration warning", async () => {
         6 | 
         7 | css'color: #{Tone};';
           |              ^^^^ references Tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:6
         2 | 
@@ -429,7 +429,7 @@ test("namespace declaration warning", async () => {
         6 | 
         7 | css'color: #{Tone};';
           |              ^^^^ references Tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:11
         2 | 
@@ -468,14 +468,14 @@ test("circular dependency warning", async () => {
         7 |   css'color: #{tone};';
           |                ^^^^ references tone
         8 | }
-
+      
       Root cause:
         at <root>/src/entry.ts:4:16
         3 | function demo() {
         4 |   const tone = border;
           |                ^ ReferenceError: Cannot access 'border' before initialization
         5 |   const border = tone;
-
+      
       Stack trace:
         ReferenceError: Cannot access 'border' before initialization
             at border (<root>/src/entry.ts:4:16)
@@ -508,7 +508,7 @@ test("var initializer order warning", async () => {
         3 | css'color: #{tone};';
           |              ^^^^ references tone
         4 | 
-
+      
       Root cause:
         at <root>/src/entry.ts:5:5
         4 | 
@@ -542,7 +542,7 @@ test("locally defined function direct interpolation warning", async () => {
         4 | 
         5 | css'color: #{pickColor()};';
           |              ^^^^^^^^^ references pickColor
-
+      
       Root cause:
         at <root>/src/entry.ts:3:10
         2 | 
@@ -579,10 +579,10 @@ test("locally defined function comptime binding warning", async () => {
         6 | 
         7 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Dependency chain:
         pickColor  at <root>/src/entry.ts:5:23
-
+      
       Root cause:
         at <root>/src/entry.ts:3:10
         2 | 
@@ -617,7 +617,7 @@ test("dependent call warning", async () => {
         4 | 
         5 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:3:14
         2 | 
@@ -654,7 +654,7 @@ test("locally defined function call binding warning", async () => {
         6 | 
         7 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:5:14
         4 | 
@@ -690,10 +690,10 @@ test("dependent dependency chain warning", async () => {
         5 | 
         6 | css'color: #{color};';
           |              ^^^^^ references color
-
+      
       Dependency chain:
         tone  at <root>/src/entry.ts:4:15
-
+      
       Root cause:
         at <root>/src/entry.ts:3:14
         2 | 
@@ -730,11 +730,11 @@ test("multi-step dependency chain warning", async () => {
         6 | 
         7 | css'color: #{className};';
           |              ^^^^^^^^^ references className
-
+      
       Dependency chain:
         tone    at <root>/src/entry.ts:5:19
         accent  at <root>/src/entry.ts:4:14
-
+      
       Root cause:
         at <root>/src/entry.ts:3:16
         2 | 
@@ -937,7 +937,7 @@ test("direct thrown evaluation warning", async () => {
         3 | 
         4 | css'color: #{palette.tone};';
           |                      ^ Error: boom
-
+      
       Stack trace:
         Error: boom
             at Object.get tone (<root>/src/theme.ts:3:11)
@@ -978,14 +978,14 @@ test("dependent thrown evaluation warning", async () => {
         5 | 
         6 | css'color: #{tone};';
           |              ^^^^ references tone
-
+      
       Root cause:
         at <root>/src/entry.ts:4:22
         3 | 
         4 | const tone = palette.tone;
           |                      ^ Error: boom
         5 | 
-
+      
       Stack trace:
         Error: boom
             at Object.get tone (<root>/src/theme.ts:3:11)
@@ -1027,17 +1027,17 @@ test("dependent thrown dependency chain warning", async () => {
         6 | 
         7 | css'color: #{color};';
           |              ^^^^^ references color
-
+      
       Dependency chain:
         tone  at <root>/src/entry.ts:5:15
-
+      
       Root cause:
         at <root>/src/entry.ts:4:22
         3 | 
         4 | const tone = palette.tone;
           |                      ^ Error: boom
         5 | const color = tone;
-
+      
       Stack trace:
         Error: boom
             at Object.get tone (<root>/src/theme.ts:3:11)

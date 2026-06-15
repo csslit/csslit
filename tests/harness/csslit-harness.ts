@@ -59,20 +59,26 @@ function renderSnapshotReport(report: CsslitSnapshotReport) {
   let hasContent = false;
 
   if (report.js) {
-    output += `\n# js\n${report.js}`;
+    output += "\n# js";
+    output += `\n${report.js}\n`;
     hasContent = true;
   }
 
   for (const cssModule of report.cssModules ?? []) {
-    if (hasContent) {
+    if (!output.endsWith("\n")) {
       output += "\n";
     }
 
-    output += `\n# css ${cssModule.id}\n${cssModule.css}`;
+    output += `# css ${cssModule.id}`;
+    output += `\n${cssModule.css}`;
     hasContent = true;
 
     if (cssModule.exports && Object.keys(cssModule.exports).length > 0) {
-      output += "\n\n# exports";
+      if (!output.endsWith("\n")) {
+        output += "\n";
+      }
+
+      output += "# exports";
 
       for (const [name, value] of Object.entries(cssModule.exports).sort(([left], [right]) =>
         left.localeCompare(right),
@@ -85,11 +91,11 @@ function renderSnapshotReport(report: CsslitSnapshotReport) {
   const warnings = report.warnings ?? [];
   if (warnings.length > 0) {
     if (report.js || (report.cssModules?.length ?? 0) > 0) {
-      if (hasContent) {
+      if (!output.endsWith("\n")) {
         output += "\n";
       }
 
-      output += "\n# warnings";
+      output += "# warnings";
     }
 
     for (let index = 0; index < warnings.length; index += 1) {
@@ -106,7 +112,7 @@ function renderSnapshotReport(report: CsslitSnapshotReport) {
     return '""';
   }
 
-  return `${output}\n"`;
+  return output.endsWith("\n") ? `${output}"` : `${output}\n"`;
 }
 
 expect.addSnapshotSerializer({
@@ -185,26 +191,6 @@ type NormalizedMapInput = {
   sourceRoot?: string | null;
   sources?: string[];
 } | null;
-
-type CapturedWarningInput =
-  | string
-  | {
-      frame?: string;
-      hook?: string;
-      id?: string;
-      loc?: CapturedWarningLocation;
-      message?: string;
-      plugin?: string;
-    };
-
-type LoadContext = {
-  warn: (warning: CapturedWarningInput) => void;
-};
-
-type CsslitPlugin = {
-  load?: unknown;
-  name: string;
-} & Record<string, unknown>;
 
 function dedent(raw: string) {
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
@@ -358,86 +344,6 @@ function virtualFilesPlugin(files: Map<string, string>) {
   };
 }
 
-function normalizeWarningLocation(value: unknown) {
-  if (typeof value !== "object" || value === null) {
-    return undefined;
-  }
-
-  const location = value as CapturedWarningLocation;
-  return {
-    column: typeof location.column === "number" ? location.column : undefined,
-    endColumn: typeof location.endColumn === "number" ? location.endColumn : undefined,
-    endLine: typeof location.endLine === "number" ? location.endLine : undefined,
-    file: typeof location.file === "string" ? location.file : undefined,
-    line: typeof location.line === "number" ? location.line : undefined,
-  };
-}
-
-function sanitizeWarningFrame(frame: string) {
-  return frame.replaceAll("\\", "/").replaceAll("`", "'").replaceAll("${", "#{");
-}
-
-function formatWarningMessage(rawWarning: Exclude<CapturedWarningInput, string>) {
-  if (typeof rawWarning.message === "string") {
-    return rawWarning.message;
-  }
-
-  return JSON.stringify(rawWarning);
-}
-
-function normalizeCapturedWarning(
-  rawWarning: CapturedWarningInput,
-  pluginName: string,
-): CapturedWarning {
-  if (typeof rawWarning === "string") {
-    return {
-      message: rawWarning,
-      plugin: pluginName,
-    };
-  }
-
-  return {
-    frame:
-      typeof rawWarning.frame === "string" ? sanitizeWarningFrame(rawWarning.frame) : undefined,
-    hook: typeof rawWarning.hook === "string" ? rawWarning.hook : undefined,
-    id: typeof rawWarning.id === "string" ? rawWarning.id : undefined,
-    loc: normalizeWarningLocation(rawWarning.loc),
-    message: formatWarningMessage(rawWarning),
-    plugin: typeof rawWarning.plugin === "string" ? rawWarning.plugin : pluginName,
-  };
-}
-
-function wrapCsslitPluginWithWarningCapture(plugin: CsslitPlugin, warnings: CapturedWarning[]) {
-  const loadHook = plugin.load;
-  if (typeof loadHook !== "object" || loadHook === null || !("handler" in loadHook)) {
-    return plugin;
-  }
-
-  const loadHandler = loadHook.handler;
-  if (typeof loadHandler !== "function") {
-    return plugin;
-  }
-
-  return {
-    ...plugin,
-    load: {
-      ...loadHook,
-      async handler(this: LoadContext, ...args: unknown[]) {
-        const originalWarn = this.warn;
-        this.warn = (warning) => {
-          warnings.push(normalizeCapturedWarning(warning, plugin.name));
-        };
-
-        try {
-          return await loadHandler.apply(this, args);
-        } finally {
-          this.warn = originalWarn;
-        }
-      },
-    },
-  };
-}
-
 function summarizeMap(map: NormalizedMapInput): MapSummary {
   if (!map) {
     return null;
@@ -473,14 +379,10 @@ function normalizeSnapshotString(value: string, root: string) {
   let normalized = value.replace(/\r\n?/g, "\n");
 
   for (const absoluteRoot of [normalizePath(root), REPO_ROOT]) {
-    const windowsRoot = absoluteRoot.replace(/\//g, "\\");
     const encodedRoot = encodeURIComponent(absoluteRoot);
-    const encodedWindowsRoot = encodeURIComponent(windowsRoot);
 
     normalized = normalized
-      .replaceAll(encodedWindowsRoot, encodeURIComponent(ROOT_TOKEN))
       .replaceAll(encodedRoot, encodeURIComponent(ROOT_TOKEN))
-      .replaceAll(windowsRoot, ROOT_TOKEN)
       .replaceAll(absoluteRoot, ROOT_TOKEN);
   }
 
@@ -520,10 +422,48 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
   const restoreReadFile = installReadFileMock(absoluteFiles);
 
   try {
+    let hasWarned = false;
     const server = await createServer({
       appType: "custom",
       css: {
         devSourcemap: true,
+      },
+      customLogger: {
+        clearScreen() {},
+        error() {},
+        hasErrorLogged() {
+          return false;
+        },
+        get hasWarned() {
+          return hasWarned;
+        },
+        info() {},
+        warn(message) {
+          hasWarned = true;
+          warnings.push({
+            message: message
+              // oxlint-disable-next-line no-control-regex
+              .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+              .replaceAll("\\", "/")
+              .replaceAll("`", "'")
+              .replaceAll("${", "#{")
+              .replace(/^warning:\s*/u, ""),
+            plugin: "",
+          });
+        },
+        warnOnce(message) {
+          hasWarned = true;
+          warnings.push({
+            message: message
+              // oxlint-disable-next-line no-control-regex
+              .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+              .replaceAll("\\", "/")
+              .replaceAll("`", "'")
+              .replaceAll("${", "#{")
+              .replace(/^warning:\s*/u, ""),
+            plugin: "",
+          });
+        },
       },
       dev: {
         sourcemap: {
@@ -531,10 +471,7 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
         },
       },
       logLevel: "silent",
-      plugins: [
-        virtualFilesPlugin(absoluteFiles),
-        wrapCsslitPluginWithWarningCapture(csslitPlugin() as CsslitPlugin, warnings),
-      ],
+      plugins: [virtualFilesPlugin(absoluteFiles), csslitPlugin()],
       root: serverRoot,
       server: {
         middlewareMode: true,
