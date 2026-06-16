@@ -1,4 +1,4 @@
-import { transformCompileTime, transformRuntime } from "@csslit/rust-transformer";
+import { transformClient } from "@csslit/rust-transformer";
 import { readFileSync } from "node:fs";
 import { createRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type { Plugin, ViteDevServer, RunnableDevEnvironment } from "vite-plus";
@@ -11,6 +11,13 @@ interface EvalResult {
   code: string;
   errors: EvalDiagnostic[];
   map: SourceMapInput | null;
+}
+
+interface CsslitModuleMetadata {
+  eval: {
+    code: string;
+    map: SourceMapInput | null;
+  };
 }
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
@@ -91,6 +98,7 @@ function watchCssEvalDependencies(
 }
 
 export function csslitPlugin(): Plugin {
+  let server: ViteDevServer | null = null;
   let evalEnvironment: RunnableDevEnvironment | null = null;
 
   return {
@@ -114,19 +122,17 @@ export function csslitPlugin(): Plugin {
         });
     },
 
-    configureServer(server: ViteDevServer) {
-      evalEnvironment = server.environments.comptime as RunnableDevEnvironment;
+    configureServer(viteServer: ViteDevServer) {
+      server = viteServer;
+      evalEnvironment = viteServer.environments.comptime as RunnableDevEnvironment;
     },
 
     transform: {
       filter: {
-        id: [/\.(?:js|ts|jsx|tsx)\.csslit$/, /\.(?:js|ts|jsx|tsx)$/],
-        moduleType: ["js", "jsx", "ts", "tsx"],
+        id: /\.(?:js|ts|jsx|tsx)$/,
       },
       async handler(code: string, id: string) {
         const config = this.environment.config;
-        const isEvalRequest = id.endsWith(".csslit");
-
         const jsSourcemap =
           config.command === "build"
             ? !!config.build.sourcemap
@@ -134,40 +140,31 @@ export function csslitPlugin(): Plugin {
               ? config.dev.sourcemap
               : (config.dev.sourcemap?.js ?? true);
 
-        if (isEvalRequest) {
-          const evalSourceId = id.slice(0, -".csslit".length);
+        const cssSourcemap =
+          config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
 
-          const cssSourcemap =
-            config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
+        const filename = id.startsWith(`${config.root}/`) ? id.slice(config.root.length) : id;
 
-          const filename = evalSourceId.startsWith(`${config.root}/`)
-            ? evalSourceId.slice(config.root.length)
-            : evalSourceId;
+        const result = transformClient(code, {
+          cssFilename: filename,
+          cssImport: `${normalizePath(id)}.csslit.module.css`,
+          cssSourcemap,
+          filename: id,
+          sourcemap: jsSourcemap,
+        });
 
-          const result = transformCompileTime(code, {
-            cssFilename: filename,
-            cssSourcemap,
-            filename: evalSourceId,
-            sourcemap: jsSourcemap,
-          });
-
-          return {
-            code: result.code,
-            map: result.map ?? null,
-            moduleType: "js",
-          };
-        } else {
-          const result = transformRuntime(code, {
-            cssImport: `${normalizePath(id)}.csslit.module.css`,
-            filename: id,
-            sourcemap: jsSourcemap,
-          });
-
-          return {
-            code: result.code,
-            map: result.map ?? null,
-          };
-        }
+        return {
+          code: result.runtime.code,
+          map: result.runtime.map ?? null,
+          meta: {
+            csslit: {
+              eval: {
+                code: result.eval.code,
+                map: result.eval.map ?? null,
+              },
+            } satisfies CsslitModuleMetadata,
+          },
+        };
       },
     },
 
@@ -184,7 +181,6 @@ export function csslitPlugin(): Plugin {
           const sourceId = source.slice(0, -".csslit.module.css".length);
           return {
             id: `${sourceId}.csslit.module.css`,
-            moduleType: "css",
           };
         }
 
@@ -206,15 +202,13 @@ export function csslitPlugin(): Plugin {
           return csslitEvalRuntimeCode;
         } else if (id.endsWith(".csslit")) {
           const evalSourceId = id.slice(0, -".csslit".length);
+          await server!.environments.client.transformRequest(evalSourceId);
+          const metadata = server!.environments.client.pluginContainer.getModuleInfo(evalSourceId)!
+            .meta.csslit! as CsslitModuleMetadata;
+
           return {
-            code: readFileSync(evalSourceId, "utf8"),
-            moduleType: evalSourceId.endsWith(".tsx")
-              ? "tsx"
-              : evalSourceId.endsWith(".ts")
-                ? "ts"
-                : evalSourceId.endsWith(".jsx")
-                  ? "jsx"
-                  : "js",
+            code: metadata.eval.code,
+            map: metadata.eval.map,
           };
         } else if (id.endsWith(".csslit.module.css")) {
           const sourceId = id.slice(0, -".csslit.module.css".length);

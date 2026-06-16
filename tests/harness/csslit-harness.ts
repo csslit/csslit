@@ -3,6 +3,7 @@ import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect } from "vite-plus/test";
 import { createServer, normalizePath } from "vite-plus";
+import type { Plugin } from "vite-plus";
 import { csslitPlugin } from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";
@@ -129,6 +130,7 @@ type VirtualFiles = Record<`/${string}`, string>;
 type HarnessCase = {
   entry: `/${string}`;
   files: VirtualFiles;
+  plugins?: Plugin[];
   root?: `/${string}`;
   workspaceRooted?: boolean;
 };
@@ -471,7 +473,7 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
         },
       },
       logLevel: "silent",
-      plugins: [virtualFilesPlugin(absoluteFiles), csslitPlugin()],
+      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslitPlugin()],
       root: serverRoot,
       server: {
         middlewareMode: true,

@@ -1,4 +1,5 @@
 import { expect, test } from "vite-plus/test";
+import type { Plugin } from "vite-plus";
 
 import { buildSnapshot } from "../harness/csslit-harness.ts";
 
@@ -324,6 +325,50 @@ test("css expressions in conditional bindings emit matching css module keys", as
     # exports
     csslit_3_31 = _csslit_3_31_1rey4_1
     csslit_5_4 = _csslit_5_4_1rey4_5
+    "
+  `);
+});
+
+test("css eval uses source transformed before csslit", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "csslit";
+
+        const tone = "__TOKEN__";
+        export const className = css\`color: \${tone};\`;
+      `,
+    },
+    plugins: [
+      {
+        name: "csslit-test-rewrite-before-csslit",
+        enforce: "pre",
+        transform(code, id) {
+          if (id.endsWith("/src/entry.ts")) {
+            return code.replaceAll("__TOKEN__", "hotpink");
+          }
+
+          return null;
+        },
+      } satisfies Plugin,
+    ],
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.css";
+    const tone = "hotpink";
+    export const className = __css_module_import.csslit_3_25;
+
+    # css /src/entry.ts.csslit.module.css
+    ._csslit_3_25_q4wvi_1 {
+    color: hotpink;
+    }
+
+    # exports
+    csslit_3_25 = _csslit_3_25_q4wvi_1
     "
   `);
 });

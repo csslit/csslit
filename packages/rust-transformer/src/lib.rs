@@ -26,6 +26,15 @@ pub struct CompileTimeTransformRequest {
   pub css_sourcemap: Option<bool>,
 }
 
+#[napi(object)]
+pub struct ClientTransformRequest {
+  pub css_import: String,
+  pub filename: String,
+  pub css_filename: String,
+  pub sourcemap: bool,
+  pub css_sourcemap: Option<bool>,
+}
+
 struct CompileTimeTransformOptions {
   filename: String,
   css_filename: String,
@@ -43,6 +52,12 @@ struct OxcTransformResult {
 pub struct TransformResult {
   pub code: String,
   pub map: Option<RawSourceMap>,
+}
+
+#[napi(object)]
+pub struct ClientTransformResult {
+  pub runtime: TransformResult,
+  pub eval: TransformResult,
 }
 
 #[napi(object)]
@@ -143,5 +158,42 @@ pub fn transform_compile_time(
   Ok(TransformResult {
     code: result.code,
     map: result.map.map(Into::into),
+  })
+}
+
+#[napi]
+pub fn transform_client(
+  source_text: String,
+  options: ClientTransformRequest,
+) -> napi::Result<ClientTransformResult> {
+  let css_sourcemap = options.css_sourcemap.unwrap_or(options.sourcemap);
+  let runtime = transform::transform_runtime(
+    source_text.clone(),
+    RuntimeTransformOptions {
+      css_import: options.css_import,
+      filename: options.filename.clone(),
+      sourcemap: options.sourcemap,
+    },
+  );
+  let eval = transform::transform_compile_time(
+    source_text,
+    CompileTimeTransformOptions {
+      css_filename: options.css_filename,
+      filename: options.filename,
+      sourcemap: options.sourcemap,
+      css_sourcemap,
+      input_map: None,
+    },
+  );
+
+  Ok(ClientTransformResult {
+    runtime: TransformResult {
+      code: runtime.code,
+      map: runtime.map.map(Into::into),
+    },
+    eval: TransformResult {
+      code: eval.code,
+      map: eval.map.map(Into::into),
+    },
   })
 }
