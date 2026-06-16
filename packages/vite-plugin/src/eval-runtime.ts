@@ -136,6 +136,7 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
 
 export function init() {
   const blocks: {
+    className: string;
     patchLines: number[];
     strings: TemplateStringsArray;
     values: unknown[];
@@ -265,9 +266,9 @@ export function init() {
     }
   }
 
-  function css(block: { patch_lines: number[] }) {
+  function css(className: string, patchLines: number[] = []) {
     return (strings: TemplateStringsArray, ...values: unknown[]) => {
-      blocks.push({ patchLines: block.patch_lines, strings, values });
+      blocks.push({ className, patchLines, strings, values });
     };
   }
 
@@ -286,14 +287,12 @@ export function init() {
     let mappingCursor = 0;
     let mappingLine = 0;
     let baselineLine = 0;
-    let classId = 0;
 
     for (const block of blocks) {
       const blockStartLine = baselineLine;
       let blockEndsWithNewline = false;
 
-      code += `.csslit_${classId} {`;
-      classId += 1;
+      code += `.${block.className} {`;
 
       if (!block.strings[0].startsWith("\n")) {
         code += "\n";

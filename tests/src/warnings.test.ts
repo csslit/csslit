@@ -877,6 +877,41 @@ test("tagged template warning", async () => {
   `);
 });
 
+test("tagged template binding warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "csslit";
+
+        const token = String.raw\`hotpink\`;
+
+        css\`color: \${token};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation references token, which depends on a tagged template.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:5:14
+      Interpolation:
+        at <root>/src/entry.ts:5:14
+        4 | 
+        5 | css'color: #{token};';
+          |              ^^^^^ references token
+      
+      Root cause:
+        at <root>/src/entry.ts:3:15
+        2 | 
+        3 | const token = String.raw'hotpink';
+          |               ^^^^^^^^^^^^^^^^^^^ token depends on a tagged template.
+        4 | 
+    "
+  `);
+});
+
 test("private field warning", async () => {
   const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",

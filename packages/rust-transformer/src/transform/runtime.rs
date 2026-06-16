@@ -2,6 +2,7 @@ use crate::{RuntimeTransformOptions, quote_expr, quote_stmt};
 use oxc_allocator::Allocator;
 use oxc_ast::{AstBuilder, ast::Expression};
 use oxc_codegen::{Codegen, CodegenOptions};
+use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_parser::Parser;
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
@@ -12,8 +13,9 @@ use crate::OxcTransformResult;
 
 struct RuntimeTransformer<'a> {
   has_css: bool,
-  index: u32,
   css_import_symbols: CssImportSymbols<'a>,
+  source_rope: Rope,
+  source_text: &'a str,
 }
 
 impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
@@ -22,10 +24,10 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
       Expression::TaggedTemplateExpression(tagged)
         if self.css_import_symbols.is_css(&tagged.tag, ctx) =>
       {
-        let index = self.index;
-        self.index += 1;
+        let (line, column) =
+          get_line_column(&self.source_rope, tagged.span.start, self.source_text);
         self.has_css = true;
-        *expr = quote_expr!(ctx.ast, __css_module_import.@"csslit_{index}");
+        *expr = quote_expr!(ctx.ast, __css_module_import.@"csslit_{line}_{column}");
       }
       _ => {}
     }
@@ -52,8 +54,9 @@ pub(crate) fn transform_runtime(
 
   let mut transformer = RuntimeTransformer {
     has_css: false,
-    index: 0,
     css_import_symbols,
+    source_rope: Rope::from_str(&source_text),
+    source_text: &source_text,
   };
 
   let scoping = semantic.into_scoping();

@@ -1038,20 +1038,29 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     self.emit_import_declaration(import.take_in(self.allocator));
   }
 
-  fn visit_tagged_template_expression(&mut self, tagged: &mut TaggedTemplateExpression<'ast>) {
+  fn visit_expression(&mut self, expr: &mut Expression<'ast>) {
+    let Expression::TaggedTemplateExpression(tagged) = expr else {
+      walk_mut::walk_expression(self, expr);
+      return;
+    };
+
     if !self
       .css_import_symbols
       .is_css_with_scoping(&tagged.tag, self.scoping)
     {
-      walk_mut::walk_tagged_template_expression(self, tagged);
+      walk_mut::walk_expression(self, expr);
       return;
     }
 
+    let template_location = self.location_context.resolve(tagged.span);
+    let line = template_location.line;
+    let column = template_location.column;
     self.record_template_sourcemap(&tagged.quasi.quasis);
     let mut template = tagged.quasi.take_in(self.allocator);
     for expression in &mut template.expressions {
       let span = expression.span();
       let mut rewritten_expression = expression.take_in(self.allocator);
+      self.visit_expression(&mut rewritten_expression);
       let should_capture = match analyze_expression_for_synthesis(
         self.allocator,
         self.css_import_symbols,
@@ -1120,12 +1129,22 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         patch_lines.push(current_line);
       }
     }
+
     let span = template.span;
-    let callee = quote_expr!(self.allocator, span, __csslit.css({ patch_lines: [@{patch_lines}] }));
+    let callee = if patch_lines.is_empty() {
+      quote_expr!(self.allocator, span, __csslit.css(@"csslit_{line}_{column}"))
+    } else {
+      quote_expr!(
+        self.allocator,
+        span,
+        __csslit.css(@"csslit_{line}_{column}", [@{patch_lines}])
+      )
+    };
     let css_eval =
       AstBuilder::new(self.allocator).expression_tagged_template(span, callee, NONE, template);
     let statement = quote_stmt!(self.allocator, (@{css_eval}););
     self.frames.last_mut().unwrap().body.push(statement);
+    *expr = quote_expr!(self.allocator, span, @"csslit_{line}_{column}");
   }
 
   fn visit_variable_declarator(&mut self, declarator: &mut VariableDeclarator<'ast>) {
@@ -1137,10 +1156,12 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
           | SymbolState::AllowedThunk
           | SymbolState::AllowedCallMemo { .. }
       ) {
-        let init = declarator
+        let mut init = declarator
           .init
           .take()
           .expect("live simple bindings must have an initializer");
+
+        self.visit_expression(&mut init);
         self.push_binding_statement(self.build_owned_symbol_statement(symbol_id, init));
         return;
       }
@@ -1400,6 +1421,11 @@ fn analyze_supported_expression<'alloc>(
         )?;
       }
       Ok(is_plain)
+    }
+    Expression::TaggedTemplateExpression(tagged)
+      if css_import_symbols.is_css_with_scoping(&tagged.tag, scoping) =>
+    {
+      Ok(true)
     }
     Expression::ArrayExpression(array) => match mode {
       ExpressionAnalysisMode::Binding => Err(Issue::Expression {
@@ -2327,7 +2353,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
-        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("csslit_5_8", [1, 1])`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2357,7 +2383,7 @@ mod tests {
         __csslit.defer(() => {
           const param = __csslit.cellVarErr("param", "runtime-parameter", "5:22:5:35");
           const local = outer + 1;
-          __csslit.css({ patch_lines: [1, 1] })`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
+          __csslit.css("csslit_7_10", [1, 1])`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
         });
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2383,7 +2409,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
-        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("csslit_5_8", [1, 1])`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2411,7 +2437,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
         const border = __csslit.cellVarErr("border", "destructured", "7:14:7:32");
-        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
+        __csslit.css("csslit_8_8", [1, 1])`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2437,7 +2463,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
-        __csslit.css({ patch_lines: [1, 1] })`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
+        __csslit.css("csslit_6_8", [1, 1])`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2459,7 +2485,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
+        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2483,11 +2509,11 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         const tone = "red";
-        __csslit.css({ patch_lines: [
+        __csslit.css("csslit_4_8", [
           1,
           1,
           1
-        ] })`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
+        ])`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2510,7 +2536,58 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css({ patch_lines: [] })`color: red;`;
+        __csslit.css("csslit_4_10")`color: red;`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn css_binding_initializers_emit_class_name_string() {
+    let output = compile(
+      r#"
+        import { css } from "csslit";
+
+        const appStyle = css`color: red;`;
+        css`.${appStyle} & { color: blue; }`;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        __csslit.css("csslit_3_25")`color: red;`;
+        const appStyle = "csslit_3_25";
+        __csslit.css("csslit_4_8", [1])`.${appStyle} & { color: blue; }`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn css_expressions_emit_class_name_strings() {
+    let output = compile(
+      r#"
+        import { css } from "csslit";
+
+        const useFoo = true;
+        const appStyle = useFoo ? css`color: red;` : css`color: blue;`;
+        css`.${appStyle} & { color: hotpink; }`;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        const useFoo = true;
+        __csslit.css("csslit_4_34")`color: red;`;
+        __csslit.css("csslit_4_53")`color: blue;`;
+        const appStyle = useFoo ? "csslit_4_34" : "csslit_4_53";
+        __csslit.css("csslit_5_8", [1])`.${appStyle} & { color: hotpink; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2535,7 +2612,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
+        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
         function pick() {
           return __csslit.varErr("pick", "function-binding", arguments[0], "5:17:5:21");
         }
@@ -2563,7 +2640,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css({ patch_lines: [1] })`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
+        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
         const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
