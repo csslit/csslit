@@ -10,14 +10,15 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@csslit/rust-transformer": "^1.0.0"
+    "@csslit/rust-transformer": "^1.0.0",
+    "es-module-lexer": "^1.7.0"
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260322.1",
-    "vite-plus": "^0.1.21"
+    "vite-plus": "^0.2.0"
   },
   "peerDependencies": {
     "vite": "^8.0.12",
-    "vite-plus": "^0.1.21"
+    "vite-plus": "^0.2.0"
   }
 }

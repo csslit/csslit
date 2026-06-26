@@ -11,6 +11,6 @@
   },
   "devDependencies": {
     "@napi-rs/cli": "^3.6.2",
-    "vite-plus": "^0.1.21"
+    "vite-plus": "^0.2.0"
   }
 }

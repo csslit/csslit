@@ -2,8 +2,9 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect } from "vite-plus/test";
-import { createServer, normalizePath } from "vite-plus";
+import { createBuilder, createServer, normalizePath } from "vite-plus";
 import type { Plugin } from "vite-plus";
+import type { RolldownOutput } from "@voidzero-dev/vite-plus-core/rolldown";
 import { csslitPlugin } from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";
@@ -24,105 +25,135 @@ const RESOLUTION_SUFFIXES = [
 ] as const;
 
 type SnapshotCssModule = {
-  css: string;
-  id: string;
+  code: string;
+  id?: string;
   exports?: Record<string, string>;
 };
 
-type CsslitSnapshotReportData = {
-  cssModules?: SnapshotCssModule[];
-  js?: string;
-  warnings?: string[];
+type SnapshotJsModule = {
+  code: string;
+  id?: string;
 };
 
+type CsslitSnapshotReportData = {
+  css?: SnapshotCssModule[];
+  js?: SnapshotJsModule[];
+  warnings?: string[];
+}
+ 
 class CsslitSnapshotReport {
-  readonly cssModules?: SnapshotCssModule[];
-  readonly js?: string;
+  readonly css?: SnapshotCssModule[];
+  readonly js?: SnapshotJsModule[];
   readonly warnings?: string[];
 
-  constructor({ cssModules, js, warnings }: CsslitSnapshotReportData) {
-    this.cssModules = cssModules;
+  constructor({ css, js, warnings }: CsslitSnapshotReportData) {
+    this.css = css;
     this.js = js;
     this.warnings = warnings;
   }
 }
 
-function createSnapshotReport(data: CsslitSnapshotReportData) {
-  return new CsslitSnapshotReport({
-    cssModules: data.cssModules,
-    js: data.js?.replace(/\r\n?/g, "\n"),
-    warnings: data.warnings?.map((warning) => warning.replace(/\r\n?/g, "\n")),
-  });
+class CsslitWarningSnapshot {
+  readonly warnings?: string[];
+
+  constructor(warnings?: string[]) {
+    this.warnings = warnings;
+  }
 }
 
 function renderSnapshotReport(report: CsslitSnapshotReport) {
-  let output = '"';
+  let output = '"\n';
   let hasContent = false;
 
-  if (report.js) {
-    output += "\n# js";
-    output += `\n${report.js}\n`;
-    hasContent = true;
-  }
+  for (const jsModule of report.js ?? []) {
+    if (hasContent) {
+      output += "\n";
+    }
 
-  for (const cssModule of report.cssModules ?? []) {
+    output += jsModule.id ? `# js ${normalizeSnapshotText(jsModule.id)}\n` : "# js\n";
+
+    output += normalizeSnapshotText(stripSourceMapComment(jsModule.code));
     if (!output.endsWith("\n")) {
       output += "\n";
     }
 
-    output += `# css ${cssModule.id}`;
-    output += `\n${cssModule.css}`;
+    hasContent = true;
+  }
+
+  for (const cssModule of report.css ?? []) {
+    if (hasContent) {
+      output += "\n";
+    }
+
+    output += cssModule.id ? `# css ${normalizeSnapshotText(cssModule.id)}\n` : "# css\n";
+
+    output += normalizeSnapshotText(stripCssSourceMapComment(cssModule.code));
+    if (!output.endsWith("\n")) {
+      output += "\n";
+    }
+
     hasContent = true;
 
     if (cssModule.exports && Object.keys(cssModule.exports).length > 0) {
-      if (!output.endsWith("\n")) {
-        output += "\n";
-      }
+      output += "# exports\n";
 
-      output += "# exports";
-
-      for (const [name, value] of Object.entries(cssModule.exports).sort(([left], [right]) =>
-        left.localeCompare(right),
-      )) {
-        output += `\n${name} = ${value}`;
+      for (const [name, value] of Object.entries(cssModule.exports)) {
+        output += `${name} = ${normalizeSnapshotText(value)}\n`;
       }
     }
   }
 
   const warnings = report.warnings ?? [];
   if (warnings.length > 0) {
-    if (report.js || (report.cssModules?.length ?? 0) > 0) {
-      if (!output.endsWith("\n")) {
+    if (hasContent) {
+      output += "\n";
+    }
+
+    output += "# warnings\n";
+    for (let index = 0; index < warnings.length; index += 1) {
+      if (index > 0) {
         output += "\n";
       }
 
-      output += "# warnings";
+      output += `warning: ${normalizeWarningText(warnings[index])}`;
+      if (!output.endsWith("\n")) {
+        output += "\n";
+      }
     }
-
-    for (let index = 0; index < warnings.length; index += 1) {
-      output +=
-        index === 0 && !report.js && (report.cssModules?.length ?? 0) === 0
-          ? `\n${warnings[index]}`
-          : `\n\n${warnings[index]}`;
-    }
-
     hasContent = true;
   }
 
-  if (!hasContent) {
+  return `${output}"`;
+}
+
+function renderWarningSnapshot(snapshot: CsslitWarningSnapshot) {
+  if (!snapshot.warnings?.length) {
     return '""';
   }
 
-  return output.endsWith("\n") ? `${output}"` : `${output}\n"`;
+  let output = '"\n';
+  for (let index = 0; index < snapshot.warnings.length; index += 1) {
+    if (index > 0) {
+      output += "\n";
+    }
+
+    output += `warning: ${normalizeWarningText(snapshot.warnings[index])}`;
+    if (!output.endsWith("\n")) {
+      output += "\n";
+    }
+  }
+
+  return `${output}"`;
 }
 
 expect.addSnapshotSerializer({
-  test(value) {
-    return value instanceof CsslitSnapshotReport;
-  },
-  serialize(value) {
-    return renderSnapshotReport(value as CsslitSnapshotReport);
-  },
+  test: (value) => value instanceof CsslitSnapshotReport,
+  serialize: (value) => renderSnapshotReport(value as CsslitSnapshotReport),
+});
+
+expect.addSnapshotSerializer({
+  test: (value) => value instanceof CsslitWarningSnapshot,
+  serialize: (value) => renderWarningSnapshot(value as CsslitWarningSnapshot),
 });
 
 type VirtualFiles = Record<`/${string}`, string>;
@@ -134,65 +165,6 @@ type HarnessCase = {
   root?: `/${string}`;
   workspaceRooted?: boolean;
 };
-
-type MapSummary = {
-  file: string | null;
-  mappingsPreview: string | null;
-  namesCount: number;
-  sourceRoot: string | null;
-  sources: string[];
-} | null;
-
-type CssModuleSnapshot = {
-  css: string;
-  exports: Record<string, string>;
-  id: string;
-};
-
-type CapturedWarningLocation = {
-  column?: number;
-  endColumn?: number;
-  endLine?: number;
-  file?: string;
-  line?: number;
-};
-
-type CapturedWarning = {
-  frame?: string;
-  hook?: string;
-  id?: string;
-  loc?: CapturedWarningLocation;
-  message: string;
-  plugin: string;
-};
-
-type TransformedCssModule = {
-  code: string;
-  id: string;
-  map: MapSummary;
-  publicId: string;
-};
-
-type CsslitCaseResult = {
-  entry: `/${string}`;
-  files: VirtualFiles;
-  runtime: {
-    code: string;
-    cssModuleIds: string[];
-    id: string;
-    map: MapSummary;
-  };
-  warnings: CapturedWarning[];
-  writtenFiles: TransformedCssModule[];
-};
-
-type NormalizedMapInput = {
-  file?: string | null;
-  mappings?: string;
-  names?: string[];
-  sourceRoot?: string | null;
-  sources?: string[];
-} | null;
 
 function dedent(raw: string) {
   const lines = raw.replace(/\r\n?/g, "\n").split("\n");
@@ -346,20 +318,6 @@ function virtualFilesPlugin(files: Map<string, string>) {
   };
 }
 
-function summarizeMap(map: NormalizedMapInput): MapSummary {
-  if (!map) {
-    return null;
-  }
-
-  return {
-    file: map.file ?? null,
-    mappingsPreview: typeof map.mappings === "string" ? map.mappings.slice(0, 160) : null,
-    namesCount: map.names?.length ?? 0,
-    sourceRoot: map.sourceRoot ?? null,
-    sources: map.sources ?? [],
-  };
-}
-
 function stripSourceMapComment(code: string) {
   return code
     .replace(/\n\/\*# sourceMappingURL=[\s\S]*?\*\/\s*$/u, "")
@@ -377,10 +335,10 @@ function unwrapPublicId(id: string) {
   return id.startsWith("/@id/") ? normalizePath(decodeURIComponent(id.slice(5))) : id;
 }
 
-function normalizeSnapshotString(value: string, root: string) {
+function normalizeSnapshotText(value: string, root = SYNTHETIC_ROOT) {
   let normalized = value.replace(/\r\n?/g, "\n");
 
-  for (const absoluteRoot of [normalizePath(root), REPO_ROOT]) {
+  for (const absoluteRoot of [normalizePath(root), normalizePath(path.resolve(root)), REPO_ROOT]) {
     const encodedRoot = encodeURIComponent(absoluteRoot);
 
     normalized = normalized
@@ -388,48 +346,36 @@ function normalizeSnapshotString(value: string, root: string) {
       .replaceAll(absoluteRoot, ROOT_TOKEN);
   }
 
-  return normalized;
+  return normalized.replace(/(?:[A-Za-z]:)?\/__csslit_test_root__/g, ROOT_TOKEN);
 }
 
-function normalizeForSnapshot(value: unknown, root: string): unknown {
-  if (typeof value === "string") {
-    return normalizeSnapshotString(value, root);
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((entry) => normalizeForSnapshot(entry, root));
-  }
-
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, entry]) => [
-        normalizeSnapshotString(key, root),
-        normalizeForSnapshot(entry, root),
-      ]),
-    );
-  }
-
-  return value;
+function normalizeWarningText(value: string) {
+  return normalizeSnapshotText(
+    value
+    // oxlint-disable-next-line no-control-regex
+      .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
+      .replaceAll("\\", "/")
+      .replaceAll("`", "'")
+      .replaceAll("${", "#{"),
+  )
+    .replace(/^warning:\s*/u, "");
 }
 
 let runCsslitCaseQueue: Promise<unknown> = Promise.resolve();
 
-async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResult> {
+async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshotReportData> {
   const fileRoot = input.workspaceRooted ? TESTS_ROOT : SYNTHETIC_ROOT;
   const files = normalizeInputFiles(input.files);
   const absoluteFiles = absolutizeFiles(files, fileRoot);
   const entryId = absolutizeFile(input.entry, fileRoot);
   const serverRoot = input.root ? absolutizeFile(input.root) : TESTS_ROOT;
-  const warnings: CapturedWarning[] = [];
+  const warnings: string[] = [];
   const restoreReadFile = installReadFileMock(absoluteFiles);
 
   try {
     let hasWarned = false;
     const server = await createServer({
       appType: "custom",
-      css: {
-        devSourcemap: true,
-      },
       customLogger: {
         clearScreen() {},
         error() {},
@@ -442,34 +388,11 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
         info() {},
         warn(message) {
           hasWarned = true;
-          warnings.push({
-            message: message
-              // oxlint-disable-next-line no-control-regex
-              .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
-              .replaceAll("\\", "/")
-              .replaceAll("`", "'")
-              .replaceAll("${", "#{")
-              .replace(/^warning:\s*/u, ""),
-            plugin: "",
-          });
+          warnings.push(message);
         },
         warnOnce(message) {
           hasWarned = true;
-          warnings.push({
-            message: message
-              // oxlint-disable-next-line no-control-regex
-              .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
-              .replaceAll("\\", "/")
-              .replaceAll("`", "'")
-              .replaceAll("${", "#{")
-              .replace(/^warning:\s*/u, ""),
-            plugin: "",
-          });
-        },
-      },
-      dev: {
-        sourcemap: {
-          js: true,
+          warnings.push(message);
         },
       },
       logLevel: "silent",
@@ -486,35 +409,19 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
         throw new Error(`No transform result for ${entryId}`);
       }
 
-      const cssModuleIds = extractVirtualCssIds(runtimeResult.code);
-      const cssModules: TransformedCssModule[] = [];
+      const cssModules: SnapshotCssModule[] = [];
 
-      for (const publicId of cssModuleIds) {
+      for (const publicId of extractVirtualCssIds(runtimeResult.code)) {
         const resolvedId = unwrapPublicId(publicId);
         const cssResult = await server.transformRequest(resolvedId);
-        cssModules.push({
-          code: cssResult?.code ?? "",
-          id: resolvedId,
-          map: summarizeMap(cssResult?.map as NormalizedMapInput),
-          publicId,
-        });
+        cssModules.push(parseCssModuleSnapshot(cssResult?.code ?? "", resolvedId));
       }
 
-      return normalizeForSnapshot(
-        {
-          entry: input.entry,
-          files,
-          runtime: {
-            code: stripSourceMapComment(runtimeResult.code),
-            cssModuleIds,
-            id: entryId,
-            map: summarizeMap(runtimeResult.map as NormalizedMapInput),
-          },
-          warnings,
-          writtenFiles: cssModules,
-        },
-        SYNTHETIC_ROOT,
-      ) as CsslitCaseResult;
+      return {
+        css: cssModules.length > 0 ? cssModules : undefined,
+        js: [{ code: runtimeResult.code }],
+        warnings: warnings.length > 0 ? warnings : undefined,
+      };
     } finally {
       await server.close();
     }
@@ -523,13 +430,97 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitCaseResu
   }
 }
 
+async function runCsslitProductionBuildIsolated(
+  input: HarnessCase,
+): Promise<CsslitSnapshotReportData> {
+  const fileRoot = input.workspaceRooted ? TESTS_ROOT : SYNTHETIC_ROOT;
+  const files = normalizeInputFiles(input.files);
+  const absoluteFiles = absolutizeFiles(files, fileRoot);
+  const entryId = absolutizeFile(input.entry, fileRoot);
+  const serverRoot = input.root ? absolutizeFile(input.root) : TESTS_ROOT;
+  const warnings: string[] = [];
+  const restoreReadFile = installReadFileMock(absoluteFiles);
+
+  try {
+    let hasWarned = false;
+    const builder = await createBuilder({
+      appType: "custom",
+      build: {
+        rollupOptions: {
+          input: entryId,
+        },
+        write: false,
+      },
+      customLogger: {
+        clearScreen() {},
+        error() {},
+        hasErrorLogged() {
+          return false;
+        },
+        get hasWarned() {
+          return hasWarned;
+        },
+        info() {},
+        warn(message) {
+          hasWarned = true;
+          warnings.push(message);
+        },
+        warnOnce(message) {
+          hasWarned = true;
+          warnings.push(message);
+        },
+      },
+      logLevel: "silent",
+      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslitPlugin()],
+      root: serverRoot,
+    });
+
+    let result: Awaited<ReturnType<typeof builder.build>>;
+    try {
+      result = await builder.build(builder.environments.client);
+    } finally {
+      await (builder.environments.comptime as { close?: () => Promise<void> }).close?.();
+    }
+
+    const js: SnapshotJsModule[] = [];
+    const css: SnapshotCssModule[] = [];
+
+    for (const entry of (Array.isArray(result) ? result : [result]) as RolldownOutput[]) {
+      for (const output of entry.output) {
+        if (output.type === "chunk") {
+          js.push({
+            code: output.code,
+            id: output.fileName,
+          });
+        } else if (output.fileName.endsWith(".css")) {
+          css.push({
+            code:
+              typeof output.source === "string"
+                ? output.source
+                : Buffer.from(output.source).toString("utf8"),
+            id: output.fileName,
+          });
+        }
+      }
+    }
+
+    return {
+      css: css.length > 0 ? css : undefined,
+      js: js.length > 0 ? js : undefined,
+      warnings: warnings.length > 0 ? warnings : undefined,
+    };
+  } finally {
+    restoreReadFile();
+  }
+}
+
 function compactSnapshotPath(value: string) {
-  return value
+  return normalizeSnapshotText(value)
     .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1")
     .replace(/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1");
 }
 
-function parseCssModuleSnapshot(code: string, id: string): CssModuleSnapshot {
+function parseCssModuleSnapshot(code: string, id: string): SnapshotCssModule {
   const cssLiteral = code.match(/const __vite__css = ("(?:\\.|[^"\\])*")/u)?.[1];
   const exportMatches = [
     ...code.matchAll(/export const\s+([A-Za-z_$][\w$]*)\s*=\s*("(?:\\.|[^"\\])*");/gu),
@@ -540,7 +531,7 @@ function parseCssModuleSnapshot(code: string, id: string): CssModuleSnapshot {
   }
 
   return {
-    css: JSON.parse(cssLiteral) as string,
+    code: JSON.parse(cssLiteral) as string,
     exports: Object.fromEntries(
       exportMatches.map(([, name, value]) => [name, JSON.parse(value) as string]),
     ),
@@ -548,59 +539,8 @@ function parseCssModuleSnapshot(code: string, id: string): CssModuleSnapshot {
   };
 }
 
-function formatSnapshotCode(code: string) {
-  return code.replace(/\r\n?/g, "\n");
-}
-
 function stripCssSourceMapComment(css: string) {
   return css.replace(/\n?\/\*# sourceMappingURL=[\s\S]*?\*\/\s*$/u, "");
-}
-
-function formatSnapshotCss(css: string) {
-  return stripCssSourceMapComment(css).replace(/\r\n?/g, "\n");
-}
-
-function formatCssModuleSnapshot(module: CssModuleSnapshot) {
-  const exports = Object.keys(module.exports).length > 0 ? module.exports : undefined;
-
-  return {
-    css: formatSnapshotCss(module.css),
-    exports,
-    id: module.id,
-  } satisfies SnapshotCssModule;
-}
-
-function padLines(value: string, count = 2) {
-  const indentation = " ".repeat(count);
-
-  return value
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => (line.length === 0 ? "" : `${indentation}${line}`))
-    .join("\n");
-}
-
-function formatCapturedWarning(warning: CapturedWarning) {
-  const lines = [`warning: ${warning.message}`];
-
-  if (warning.plugin) {
-    lines.push(`  Plugin: ${warning.plugin}`);
-  }
-
-  if (warning.id) {
-    const location =
-      typeof warning.loc?.line === "number" && typeof warning.loc?.column === "number"
-        ? `:${warning.loc.line}:${warning.loc.column}`
-        : "";
-
-    lines.push(`  File: ${warning.id}${location}`);
-  }
-
-  if (warning.frame) {
-    lines.push(padLines(warning.frame));
-  }
-
-  return lines.join("\n");
 }
 
 export async function build(input: HarnessCase) {
@@ -611,26 +551,21 @@ export async function build(input: HarnessCase) {
 
 export async function buildSnapshot(input: HarnessCase) {
   const result = await build(input);
-  const cssModules = result.writtenFiles.map(({ code, id }) => parseCssModuleSnapshot(code, id));
-  return createSnapshotReport({
-    cssModules:
-      cssModules.length > 0
-        ? cssModules.map((module) => formatCssModuleSnapshot(module))
-        : undefined,
-    js: formatSnapshotCode(result.runtime.code),
-    warnings:
-      result.warnings.length > 0
-        ? result.warnings.map((warning) => formatCapturedWarning(warning))
-        : undefined,
-  });
+  return new CsslitSnapshotReport(result);
 }
 
 export async function buildWarningSnapshot(input: HarnessCase) {
   const result = await build(input);
-  return createSnapshotReport({
-    warnings:
-      result.warnings.length > 0
-        ? result.warnings.map((warning) => formatCapturedWarning(warning))
-        : undefined,
-  });
+  return new CsslitWarningSnapshot(result.warnings);
+}
+
+export async function buildProduction(input: HarnessCase) {
+  const currentRun = runCsslitCaseQueue.then(() => runCsslitProductionBuildIsolated(input));
+  runCsslitCaseQueue = currentRun.catch(() => {});
+  return currentRun;
+}
+
+export async function buildProductionSnapshot(input: HarnessCase) {
+  const result = await buildProduction(input);
+  return new CsslitSnapshotReport(result);
 }

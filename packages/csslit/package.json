@@ -11,6 +11,6 @@
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260510.1",
-    "vite-plus": "^0.1.21"
+    "vite-plus": "^0.2.0"
   }
 }
