@@ -121,6 +121,7 @@ export function csslitPlugin(): PluginOption {
         const comptime = (config.environments.comptime ??= {});
 
         comptime.consumer ??= "server";
+        comptime.isBundled ??= false;
         comptime.resolve ??= {};
         comptime.resolve.external ??= true;
         comptime.resolve.noExternal ??= [];
