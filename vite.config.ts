@@ -13,6 +13,7 @@ export default defineConfig({
     },
     rules: {
       "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+      "eslint/no-unused-expressions": "off",
       "typescript/consistent-type-imports": "error",
     },
   },
