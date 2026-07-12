@@ -13,7 +13,7 @@ export default defineConfig({
   run: {
     tasks: {
       build: {
-        command: "vp pack",
+        command: "vp pack -l silent",
       },
       dev: {
         command: "vp pack --watch",

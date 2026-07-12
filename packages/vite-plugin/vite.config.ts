@@ -19,8 +19,9 @@ export default defineConfig({
   run: {
     tasks: {
       build: {
-        command: "vp pack",
+        command: "vp pack -l silent",
         dependsOn: ["@csslit/rust-transformer#build"],
+        env: ["CSSLIT_RELEASE"],
       },
       dev: {
         command: "vp pack --watch",

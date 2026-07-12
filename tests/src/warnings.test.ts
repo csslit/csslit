@@ -1080,3 +1080,33 @@ test("dependent thrown dependency chain warning", async () => {
     "
   `);
 });
+
+test("global css evaluation warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "csslit";
+
+        css.global\`html { color: \${pickColor()}; }\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation threw during evaluation: ReferenceError: pickColor is not defined.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:3:28
+      Interpolation:
+        at <root>/src/entry.ts:3:28
+        2 | 
+        3 | css.global'html { color: #{pickColor()}; }';
+          |                            ^ ReferenceError: pickColor is not defined
+      
+      Stack trace:
+        ReferenceError: pickColor is not defined
+            at pickColor() (<root>/src/entry.ts:3:28)
+    "
+  `);
+});

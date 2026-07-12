@@ -37,24 +37,22 @@ where
 }
 
 #[doc(hidden)]
-pub trait QuoteArrayElements<'a> {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>>;
-}
-
-#[doc(hidden)]
-pub fn quote_array_elements<'a, T>(
+pub fn quote_array_expression<'a, T>(
   ast: AstBuilder<'a>,
   span: Span,
-  value: T,
-) -> Vec<'a, ArrayExpressionElement<'a>>
+  values: impl IntoIterator<Item = T>,
+) -> Expression<'a>
 where
-  T: QuoteArrayElements<'a>,
+  T: QuoteInterpolation<'a>,
 {
-  value.into_quoted_array_elements(ast, span)
+  ast.expression_array(
+    span,
+    ast.vec_from_iter(
+      values
+        .into_iter()
+        .map(|value| ArrayExpressionElement::from(quote_interpolation(ast, span, value))),
+    ),
+  )
 }
 
 #[doc(hidden)]
@@ -184,29 +182,9 @@ impl<'a> QuoteInterpolation<'a> for Expression<'a> {
   }
 }
 
-impl<'a> QuoteArrayElements<'a> for Expression<'a> {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    _span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(self))
-  }
-}
-
 impl<'a> QuoteInterpolation<'a> for &'a str {
   fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
     quote_literal(ast, span, self)
-  }
-}
-
-impl<'a> QuoteArrayElements<'a> for &'a str {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
   }
 }
 
@@ -216,29 +194,9 @@ impl<'a> QuoteInterpolation<'a> for String {
   }
 }
 
-impl<'a> QuoteArrayElements<'a> for String {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
-  }
-}
-
 impl<'a> QuoteInterpolation<'a> for Str<'a> {
   fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
     quote_literal(ast, span, self)
-  }
-}
-
-impl<'a> QuoteArrayElements<'a> for Str<'a> {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
   }
 }
 
@@ -248,31 +206,9 @@ impl<'a> QuoteInterpolation<'a> for Ident<'a> {
   }
 }
 
-impl<'a> QuoteArrayElements<'a> for Ident<'a> {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(
-      ast.expression_identifier(span, self),
-    ))
-  }
-}
-
 impl<'a> QuoteInterpolation<'a> for bool {
   fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
     quote_literal(ast, span, self)
-  }
-}
-
-impl<'a> QuoteArrayElements<'a> for bool {
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
   }
 }
 
@@ -290,47 +226,12 @@ macro_rules! impl_quote_numeric_interpolation {
 
 impl_quote_numeric_interpolation!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 
-macro_rules! impl_quote_numeric_array_elements {
-  ($($ty:ty),* $(,)?) => {
-    $(
-      impl<'a> QuoteArrayElements<'a> for $ty {
-        fn into_quoted_array_elements(
-          self,
-          ast: AstBuilder<'a>,
-          span: Span,
-        ) -> Vec<'a, ArrayExpressionElement<'a>> {
-          ast.vec1(ArrayExpressionElement::from(quote_literal(ast, span, self)))
-        }
-      }
-    )*
-  };
-}
-
-impl_quote_numeric_array_elements!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
-
 impl<'a, T> QuoteInterpolation<'a> for Vec<'a, T>
 where
   T: Into<ArrayExpressionElement<'a>>,
 {
   fn into_quoted_interpolation(self, ast: AstBuilder<'a>, span: Span) -> Expression<'a> {
     ast.expression_array(span, ast.vec_from_iter(self.into_iter().map(Into::into)))
-  }
-}
-
-impl<'a, T> QuoteArrayElements<'a> for Vec<'a, T>
-where
-  T: QuoteInterpolation<'a>,
-{
-  fn into_quoted_array_elements(
-    self,
-    ast: AstBuilder<'a>,
-    span: Span,
-  ) -> Vec<'a, ArrayExpressionElement<'a>> {
-    ast.vec_from_iter(
-      self
-        .into_iter()
-        .map(|value| ArrayExpressionElement::from(quote_interpolation(ast, span, value))),
-    )
   }
 }
 
@@ -423,6 +324,21 @@ where
 }
 
 #[doc(hidden)]
+pub fn quote_import_statement<'a, T>(ast: AstBuilder<'a>, span: Span, source: T) -> Statement<'a>
+where
+  T: QuoteModuleSource<'a>,
+{
+  Statement::from(ast.module_declaration_import_declaration(
+    span,
+    None,
+    quote_module_source(ast, span, source),
+    None,
+    NONE,
+    ImportOrExportKind::Value,
+  ))
+}
+
+#[doc(hidden)]
 pub fn quote_import_default_statement<'a, T>(
   ast: AstBuilder<'a>,
   span: Span,
@@ -473,6 +389,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub fn quote_object_property_shorthand<'a>(
   ast: AstBuilder<'a>,
   span: Span,
@@ -491,6 +408,7 @@ pub fn quote_object_property_shorthand<'a>(
 }
 
 #[doc(hidden)]
+#[allow(dead_code)]
 pub fn quote_object_property_named<'a>(
   ast: AstBuilder<'a>,
   span: Span,
@@ -987,10 +905,7 @@ macro_rules! __quote_expr_atom {
   ($ast:expr, $span:ident, [@{$items:ident}]) => {{
     let __ast = $ast;
     let __span = $span;
-    __ast.expression_array(
-      __span,
-      $crate::quote::quote_array_elements(__ast, __span, $items),
-    )
+    $crate::quote::quote_array_expression(__ast, __span, $items)
   }};
   ($ast:expr, $span:ident, [$($items:tt)*]) => {{
     let __ast = $ast;
@@ -1262,6 +1177,29 @@ macro_rules! quote_stmt {
       __ast,
       __span,
       $crate::quote_expr!(__ast, __span, $($expr)+),
+    )
+  }};
+  ($allocator:expr, $span:ident, import @$source:literal;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_statement(
+      __ast,
+      __span,
+      $crate::__quote_module_source!(__ast, @$source),
+    )
+  }};
+  ($allocator:expr, $span:ident, import @{$source:ident};) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_statement(__ast, __span, $source)
+  }};
+  ($allocator:expr, $span:ident, import $source:tt;) => {{
+    let __ast = $crate::quote::quote_ast_builder($allocator);
+    let __span = $span;
+    $crate::quote::quote_import_statement(
+      __ast,
+      __span,
+      $crate::__quote_module_source!(__ast, $source),
     )
   }};
   ($allocator:expr, $span:ident, import * as @$local:literal from @$source:literal;) => {{
@@ -1768,10 +1706,11 @@ mod tests {
     let allocator = Allocator::default();
     let ast = AstBuilder::new(&allocator);
     let source: Str = "./styles.css".into();
+    let side_effect_source: Str = "./reset.css".into();
     let export_name: Ident = "dynamicStyles".into();
     let import_name: Ident = "dynamicImport".into();
     let value = ast.expression_identifier(oxc_span::SPAN, "value");
-    let single_array_value = ast.expression_identifier(oxc_span::SPAN, "value");
+    let single_array_values = std::iter::once(ast.expression_identifier(oxc_span::SPAN, "value"));
     let paren_value = ast.expression_identifier(oxc_span::SPAN, "value");
     let return_value = ast.expression_identifier(oxc_span::SPAN, "returnValue");
     let statement_value = ast.expression_identifier(oxc_span::SPAN, "statementValue");
@@ -1781,6 +1720,7 @@ mod tests {
     let index = 3u32;
 
     let import = crate::quote_stmt!(ast, import styles from @{source};);
+    let side_effect_import = crate::quote_stmt!(ast, import @{side_effect_source};);
     let formatted_import = crate::quote_stmt!(ast, import styles from @"./styles-{index}.css";);
     let formatted_binding_import =
       crate::quote_stmt!(ast, import @"styles_{index}" from @{source};);
@@ -1803,10 +1743,14 @@ mod tests {
     let empty_return_stmt = crate::quote_stmt!(ast, return;);
     let expression_stmt = crate::quote_stmt!(ast, (@{statement_value}););
     let block_stmt = crate::quote_stmt!(ast, { @{block_body} });
-    let single_array_splice = crate::quote_expr!(ast, [@{single_array_value}]);
+    let single_array_splice = crate::quote_expr!(ast, [@{single_array_values}]);
     let array_splice = crate::quote_expr!(ast, [@{lines}]);
 
     assert!(matches!(import, Statement::ImportDeclaration(_)));
+    assert!(matches!(
+      side_effect_import,
+      Statement::ImportDeclaration(_)
+    ));
     assert!(matches!(formatted_import, Statement::ImportDeclaration(_)));
     assert!(matches!(
       formatted_binding_import,

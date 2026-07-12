@@ -1,4 +1,4 @@
-use crate::{RuntimeTransformOptions, quote_expr, quote_stmt};
+use crate::{CsslitClassExport, RuntimeTransformOptions, quote_expr, quote_stmt};
 use oxc_allocator::Allocator;
 use oxc_ast::{AstBuilder, ast::Expression};
 use oxc_codegen::{Codegen, CodegenOptions};
@@ -8,14 +8,17 @@ use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 
-use super::shared::CssImportSymbols;
+use super::shared::{CssImportSymbols, stable_name_hash};
 use crate::OxcTransformResult;
 
 struct RuntimeTransformer<'a> {
   has_css: bool,
+  has_global_css: bool,
+  exports: Vec<CsslitClassExport>,
   css_import_symbols: CssImportSymbols<'a>,
   source_rope: Rope,
   source_text: &'a str,
+  filename: &'a str,
 }
 
 impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
@@ -26,8 +29,27 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
       {
         let (line, column) =
           get_line_column(&self.source_rope, tagged.span.start, self.source_text);
+        let local_line = line + 1;
+        let local_column = column + 1;
+        let local_name = format!("css_{local_line}_{local_column}");
+        let scoped_name = format!(
+          "{}_{}_{}",
+          stable_name_hash(self.filename, line, column),
+          local_line,
+          local_column
+        );
         self.has_css = true;
-        *expr = quote_expr!(ctx.ast, __css_module_import.@"csslit_{line}_{column}");
+        self.exports.push(CsslitClassExport {
+          local_name,
+          scoped_name,
+        });
+        *expr = quote_expr!(ctx.ast, __css_module_import.@"css_{local_line}_{local_column}");
+      }
+      Expression::TaggedTemplateExpression(tagged)
+        if self.css_import_symbols.is_global_css(&tagged.tag, ctx) =>
+      {
+        self.has_global_css = true;
+        *expr = quote_expr!(ctx.ast, undefined);
       }
       _ => {}
     }
@@ -54,7 +76,10 @@ pub(crate) fn transform_runtime(
 
   let mut transformer = RuntimeTransformer {
     has_css: false,
+    has_global_css: false,
+    exports: Vec::new(),
     css_import_symbols,
+    filename: &options.filename,
     source_rope: Rope::from_str(&source_text),
     source_text: &source_text,
   };
@@ -64,11 +89,17 @@ pub(crate) fn transform_runtime(
 
   if transformer.has_css {
     let ast = AstBuilder::new(allocator);
-    let css_import = options.css_import;
+    let module_import = options.module_import.clone();
     program.body.insert(
       0,
-      quote_stmt!(ast, import __css_module_import from @"{css_import}";),
+      quote_stmt!(ast, import __css_module_import from @"{module_import}";),
     );
+  } else if transformer.has_global_css {
+    let ast = AstBuilder::new(allocator);
+    let module_import = options.module_import.clone();
+    program
+      .body
+      .insert(0, quote_stmt!(ast, import @{module_import};));
   }
 
   let result = Codegen::new()
@@ -84,5 +115,6 @@ pub(crate) fn transform_runtime(
   OxcTransformResult {
     code: result.code,
     map: result.map,
+    exports: transformer.exports,
   }
 }

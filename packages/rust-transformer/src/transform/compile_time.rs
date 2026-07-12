@@ -1,14 +1,11 @@
-use std::borrow::Cow;
-
 use crate::{CompileTimeTransformOptions, OxcTransformResult, quote_expr, quote_stmt};
-use oxc_allocator::{Allocator, Box, CloneIn, StringBuilder, TakeIn, Vec};
+use oxc_allocator::{Allocator, Box, CloneIn, TakeIn, Vec};
 use oxc_ast::{
   AstBuilder, AstKind, NONE,
   ast::{
     Argument, BindingPattern, ChainElement, ClassType, Expression, FunctionType,
     IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind,
-    Statement, TSModuleDeclarationName, TaggedTemplateExpression, TemplateElement,
-    VariableDeclarator,
+    Statement, TSModuleDeclarationName, TaggedTemplateExpression, VariableDeclarator,
   },
 };
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
@@ -17,16 +14,14 @@ use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_index::{IndexBox, IndexSlice, IndexVec};
 use oxc_parser::Parser;
 use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
-use oxc_sourcemap::SourceMapBuilder;
 use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::{
   operator::{BinaryOperator, UnaryOperator},
   scope::{ScopeFlags, ScopeId},
   symbol::{SymbolFlags, SymbolId},
 };
-use rolldown_sourcemap::{SourceMap, collapse_sourcemaps};
 
-use super::shared::CssImportSymbols;
+use super::shared::{CssImportSymbols, stable_name_hash};
 
 const CSSLIT_EVAL_RESULT_NAME: &str = "__csslit_eval_result";
 const CSSLIT_RUNTIME_NAME: &str = "__csslit_eval_runtime";
@@ -201,39 +196,6 @@ impl<'alloc> SourceLocationContext<'alloc> {
       end_line,
       end_column,
     }
-  }
-}
-
-struct CssSourcemapBuilder {
-  builder: SourceMapBuilder,
-  source_id: u32,
-}
-
-impl CssSourcemapBuilder {
-  fn new(allocator: &Allocator, source_text: &str, filename: &str) -> Self {
-    let mut builder = SourceMapBuilder::default();
-    let mut output_filename = StringBuilder::with_capacity_in(filename.len() + 18, allocator);
-    output_filename.push_str(filename);
-    output_filename.push_str(".csslit.module.css");
-    builder.set_file(output_filename.as_str());
-    let source_id = builder.add_source_and_content(filename, source_text);
-
-    Self { builder, source_id }
-  }
-
-  fn add_token(&mut self, dst_line: u32, dst_col: u32, source: ResolvedLocation) {
-    self.builder.add_token(
-      dst_line,
-      dst_col,
-      source.line,
-      source.column,
-      Some(self.source_id),
-      None,
-    );
-  }
-
-  fn into_sourcemap(self) -> SourceMap {
-    self.builder.into_sourcemap()
   }
 }
 
@@ -698,6 +660,9 @@ impl<'ast, 'alloc> Visit<'ast> for TemplateDiscoveryVisitor<'ast, 'alloc> {
     if self
       .css_import_symbols
       .is_css_with_scoping(&it.tag, self.scoping)
+      || self
+        .css_import_symbols
+        .is_global_css_with_scoping(&it.tag, self.scoping)
     {
       for expression in &it.quasi.expressions {
         if analyze_interpolation_expression(
@@ -725,15 +690,11 @@ struct EmitFrame<'ast> {
   flags: ScopeFlags,
 }
 
-struct CssSourcemapState {
-  current_line: u32,
-  builder: CssSourcemapBuilder,
-}
-
 struct CompileTimeEmitter<'ast, 'alloc> {
   allocator: &'alloc Allocator,
-  css_sourcemap_state: Option<CssSourcemapState>,
+  css_sourcemap: bool,
   css_import_symbols: &'ast CssImportSymbols<'alloc>,
+  filename: &'ast str,
   frames: Vec<'ast, EmitFrame<'ast>>,
   location_context: &'ast SourceLocationContext<'ast>,
   root_body: Vec<'ast, Statement<'ast>>,
@@ -742,57 +703,6 @@ struct CompileTimeEmitter<'ast, 'alloc> {
 }
 
 impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
-  fn record_template_sourcemap(&mut self, quasis: &[TemplateElement<'ast>]) {
-    let Some(state) = self.css_sourcemap_state.as_mut() else {
-      return;
-    };
-
-    let location_context = self.location_context;
-
-    let start_loc = location_context.resolve(quasis.first().unwrap().span);
-    state.builder.add_token(state.current_line, 0, start_loc);
-
-    state.current_line += 1;
-
-    for quasi in quasis {
-      let raw = quasi.value.raw;
-      let cooked = quasi.value.cooked.unwrap_or(raw);
-      let generated_line_count = cooked.lines().count() as u32;
-      let source_line_count = raw.lines().count() as u32;
-
-      if !cooked.is_empty() {
-        let quasi_loc = location_context.resolve(quasi.span);
-        for line_offset in 0..generated_line_count {
-          state.builder.add_token(
-            state.current_line + line_offset,
-            0,
-            ResolvedLocation {
-              line: quasi_loc.line + line_offset.min(source_line_count - 1),
-              column: if line_offset == 0 {
-                quasi_loc.column
-              } else {
-                0
-              },
-              end_line: quasi_loc.end_line,
-              end_column: quasi_loc.end_column,
-            },
-          );
-        }
-
-        state.current_line += generated_line_count - 1;
-      }
-    }
-
-    state.current_line += 2;
-  }
-
-  fn finish_css_sourcemap(&mut self) -> Option<SourceMap> {
-    self
-      .css_sourcemap_state
-      .take()
-      .map(|state| state.builder.into_sourcemap())
-  }
-
   fn push_binding_statement(&mut self, statement: Statement<'ast>) {
     let frame = self.frames.last_mut().unwrap();
     frame.has_live_bindings = true;
@@ -1044,10 +954,15 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
       return;
     };
 
-    if !self
+    let is_css = self
       .css_import_symbols
-      .is_css_with_scoping(&tagged.tag, self.scoping)
-    {
+      .is_css_with_scoping(&tagged.tag, self.scoping);
+
+    let is_global_css = self
+      .css_import_symbols
+      .is_global_css_with_scoping(&tagged.tag, self.scoping);
+
+    if !is_css && !is_global_css {
       walk_mut::walk_expression(self, expr);
       return;
     }
@@ -1055,7 +970,9 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     let template_location = self.location_context.resolve(tagged.span);
     let line = template_location.line;
     let column = template_location.column;
-    self.record_template_sourcemap(&tagged.quasi.quasis);
+    let local_line = line + 1;
+    let local_column = column + 1;
+    let hash = stable_name_hash(self.filename, line, column);
     let mut template = tagged.quasi.take_in(self.allocator);
     for expression in &mut template.expressions {
       let span = expression.span();
@@ -1114,37 +1031,40 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
       };
     }
 
-    let mut current_line = 1u32;
-    let mut patch_lines = Vec::with_capacity_in(template.expressions.len(), self.allocator);
-    for (index, quasi) in template.quasis.iter().enumerate() {
-      let raw = quasi.value.raw;
-      let cooked = quasi.value.cooked.unwrap_or(raw);
-      let generated_line_count = cooked.lines().count() as u32;
-
-      if !cooked.is_empty() {
-        current_line += generated_line_count - 1;
-      }
-
-      if index < template.expressions.len() {
-        patch_lines.push(current_line);
-      }
-    }
-
     let span = template.span;
-    let callee = if patch_lines.is_empty() {
-      quote_expr!(self.allocator, span, __csslit.css(@"csslit_{line}_{column}"))
+    let callee = if self.css_sourcemap {
+      let quasi_locations = template.quasis.iter().flat_map(|quasi| {
+        // OXC TemplateElement spans begin at the first byte of the raw quasi contents.
+        let raw_start = quasi.span.start;
+        let location = self
+          .location_context
+          .resolve(Span::new(raw_start, raw_start));
+        [location.line, location.column]
+      });
+
+      if is_global_css {
+        quote_expr!(self.allocator, span, __csslit.globalCss([@{quasi_locations}]))
+      } else {
+        quote_expr!(
+          self.allocator,
+          span,
+          __csslit.css(@"{hash}_{local_line}_{local_column}", [@{quasi_locations}])
+        )
+      }
+    } else if is_global_css {
+      quote_expr!(self.allocator, span, __csslit.globalCss())
     } else {
-      quote_expr!(
-        self.allocator,
-        span,
-        __csslit.css(@"csslit_{line}_{column}", [@{patch_lines}])
-      )
+      quote_expr!(self.allocator, span, __csslit.css(@"{hash}_{local_line}_{local_column}"))
     };
     let css_eval =
       AstBuilder::new(self.allocator).expression_tagged_template(span, callee, NONE, template);
     let statement = quote_stmt!(self.allocator, (@{css_eval}););
     self.frames.last_mut().unwrap().body.push(statement);
-    *expr = quote_expr!(self.allocator, span, @"csslit_{line}_{column}");
+    *expr = if is_global_css {
+      quote_expr!(self.allocator, span, undefined)
+    } else {
+      quote_expr!(self.allocator, span, @"__csslit_class_{hash}_{local_line}_{local_column}")
+    };
   }
 
   fn visit_variable_declarator(&mut self, declarator: &mut VariableDeclarator<'ast>) {
@@ -1249,10 +1169,8 @@ pub(crate) fn transform_compile_time(
 ) -> OxcTransformResult {
   let CompileTimeTransformOptions {
     filename,
-    css_filename,
     css_sourcemap,
     sourcemap,
-    input_map,
   } = options;
 
   let source_type = SourceType::from_path(&filename)
@@ -1288,11 +1206,9 @@ pub(crate) fn transform_compile_time(
 
   let mut emitter = CompileTimeEmitter {
     allocator,
-    css_sourcemap_state: css_sourcemap.then(|| CssSourcemapState {
-      current_line: 0,
-      builder: CssSourcemapBuilder::new(allocator, &source_text, &css_filename),
-    }),
+    css_sourcemap,
     css_import_symbols: &css_import_symbols,
+    filename: &filename,
     frames: Vec::new_in(allocator),
     location_context: &diagnostic_location_context,
     root_body: Vec::new_in(allocator),
@@ -1301,26 +1217,7 @@ pub(crate) fn transform_compile_time(
   };
   emitter.visit_program(&mut ret.program);
 
-  fn collapse<'a>(a: Cow<'a, SourceMap>, b: Cow<'a, SourceMap>) -> Cow<'a, SourceMap> {
-    Cow::Owned(collapse_sourcemaps(&[&a, &b]))
-  }
-
-  let css_baseline_map = emitter.finish_css_sourcemap();
-
-  let baseline_map = match (input_map.as_ref(), css_baseline_map.as_ref()) {
-    (Some(a), Some(b)) => {
-      let map = collapse_sourcemaps(&[a, b]);
-      let json = map.to_json_string();
-      quote_expr!(allocator, JSON.parse(@{json}))
-    }
-    (None, Some(map)) | (Some(map), None) => {
-      let json = map.to_json_string();
-      quote_expr!(allocator, JSON.parse(@{json}))
-    }
-    _ => quote_expr!(allocator, null),
-  };
-
-  let finalize = quote_expr!(allocator, __csslit.finalize(@{baseline_map}));
+  let finalize = quote_expr!(allocator, __csslit.finalize(null));
   emitter
     .root_body
     .push(quote_stmt!(allocator, export const @{CSSLIT_EVAL_RESULT_NAME} = (@{finalize});));
@@ -1336,9 +1233,10 @@ pub(crate) fn transform_compile_time(
     ret.program.scope_id.get().unwrap(),
   );
 
+  let source_map_filename = filename.clone();
   let result = Codegen::new()
     .with_options(CodegenOptions {
-      source_map_path: sourcemap.then(|| filename.into()),
+      source_map_path: sourcemap.then(|| source_map_filename.into()),
       ..CodegenOptions::default()
     })
     .with_source_text(&source_text)
@@ -1346,10 +1244,8 @@ pub(crate) fn transform_compile_time(
 
   OxcTransformResult {
     code: result.code,
-    map: result.map.map(|transform_map| match input_map.as_ref() {
-      Some(input_map) => collapse_sourcemaps(&[input_map, &transform_map]),
-      None => transform_map,
-    }),
+    map: result.map,
+    exports: std::vec::Vec::new(),
   }
 }
 
@@ -1424,6 +1320,11 @@ fn analyze_supported_expression<'alloc>(
     }
     Expression::TaggedTemplateExpression(tagged)
       if css_import_symbols.is_css_with_scoping(&tagged.tag, scoping) =>
+    {
+      Ok(true)
+    }
+    Expression::TaggedTemplateExpression(tagged)
+      if css_import_symbols.is_global_css_with_scoping(&tagged.tag, scoping) =>
     {
       Ok(true)
     }
@@ -2271,14 +2172,16 @@ mod tests {
   use super::*;
 
   fn compile(source: &str) -> String {
+    compile_with_css_sourcemap(source, false)
+  }
+
+  fn compile_with_css_sourcemap(source: &str, css_sourcemap: bool) -> String {
     let mut output = transform_compile_time(
       source.to_string(),
       CompileTimeTransformOptions {
         filename: "/src/example.tsx".to_string(),
-        css_filename: "/src/example.tsx".to_string(),
-        css_sourcemap: false,
+        css_sourcemap,
         sourcemap: false,
-        input_map: None,
       },
     )
     .code
@@ -2335,6 +2238,19 @@ mod tests {
   }
 
   #[test]
+  fn emits_quasi_content_locations_only_for_css_sourcemaps() {
+    let source = "import { css } from \"csslit\";\ncss`ab${value}\ncd`;";
+    let without_map = compile_with_css_sourcemap(source, false);
+    let with_map = compile_with_css_sourcemap(source, true);
+
+    assert!(without_map.contains("__csslit.css("));
+    assert!(
+      with_map.contains(", [\n  1,\n  4,\n  1,\n  14\n])"),
+      "{with_map}"
+    );
+  }
+
+  #[test]
   fn snapshots_top_level_binding_rewrite() {
     let output = compile(
       r#"
@@ -2353,7 +2269,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
-        __csslit.css("csslit_5_8", [1, 1])`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("aKU63j_8_5")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2383,7 +2299,7 @@ mod tests {
         __csslit.defer(() => {
           const param = __csslit.cellVarErr("param", "runtime-parameter", "5:22:5:35");
           const local = outer + 1;
-          __csslit.css("csslit_7_10", [1, 1])`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
+          __csslit.css("PJY18l_10_7")`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
         });
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2409,7 +2325,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
-        __csslit.css("csslit_5_8", [1, 1])`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("aKU63j_8_5")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2437,7 +2353,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
         const border = __csslit.cellVarErr("border", "destructured", "7:14:7:32");
-        __csslit.css("csslit_8_8", [1, 1])`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
+        __csslit.css("HAXkGd_8_8")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2463,7 +2379,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
-        __csslit.css("csslit_6_8", [1, 1])`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
+        __csslit.css("GEZhd6_8_6")`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2485,7 +2401,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
+        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2509,11 +2425,7 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         const tone = "red";
-        __csslit.css("csslit_4_8", [
-          1,
-          1,
-          1
-        ])`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
+        __csslit.css("bmUxWS_8_4")`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2536,7 +2448,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("csslit_4_10")`color: red;`;
+        __csslit.css("CNgLnJ_10_4")`color: red;`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2558,9 +2470,9 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("csslit_3_25")`color: red;`;
-        const appStyle = "csslit_3_25";
-        __csslit.css("csslit_4_8", [1])`.${appStyle} & { color: blue; }`;
+        __csslit.css("VebxKp_25_3")`color: red;`;
+        const appStyle = "__csslit_class_VebxKp_25_3";
+        __csslit.css("bmUxWS_8_4")`.${appStyle} & { color: blue; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2584,10 +2496,10 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         const useFoo = true;
-        __csslit.css("csslit_4_34")`color: red;`;
-        __csslit.css("csslit_4_53")`color: blue;`;
-        const appStyle = useFoo ? "csslit_4_34" : "csslit_4_53";
-        __csslit.css("csslit_5_8", [1])`.${appStyle} & { color: hotpink; }`;
+        __csslit.css("glNCrI_34_4")`color: red;`;
+        __csslit.css("wnfmD7_53_4")`color: blue;`;
+        const appStyle = useFoo ? "__csslit_class_glNCrI_34_4" : "__csslit_class_wnfmD7_53_4";
+        __csslit.css("aKU63j_8_5")`.${appStyle} & { color: hotpink; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2612,7 +2524,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
+        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
         function pick() {
           return __csslit.varErr("pick", "function-binding", arguments[0], "5:17:5:21");
         }
@@ -2640,7 +2552,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("csslit_3_8", [1])`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
+        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
         const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,

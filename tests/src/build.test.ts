@@ -19,11 +19,14 @@ test("production build emits csslit css", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-tM_3AfFd.js
-    ({csslit_2_25:\`_csslit_2_25_b1keg_1\`}).csslit_2_25;
+    # js assets/entry-BhaSCCYR.js
+    ({ "css_3_26": "Myz4Qi_3_26" }).css_3_26;
+    //#endregion
 
-    # css assets/entry-CJ5jQY1k.css
-    ._csslit_2_25_b1keg_1{color:#ff69b4}
+    # css assets/entry-QuEypHYX.css
+    .Myz4Qi_3_26 {
+      color: #ff69b4;
+    }
     "
   `);
 });
@@ -56,11 +59,14 @@ test("production build eval uses source transformed before csslit", async () => 
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-DrFFYQB5.js
-    ({csslit_3_25:\`_csslit_3_25_q4wvi_1\`}).csslit_3_25;
+    # js assets/entry-KzH5W5Gq.js
+    ({ "css_4_26": "nTevJI_4_26" }).css_4_26;
+    //#endregion
 
-    # css assets/entry-BkBLMIme.css
-    ._csslit_3_25_q4wvi_1{color:#ff69b4}
+    # css assets/entry-B2LtiVZK.css
+    .nTevJI_4_26 {
+      color: #ff69b4;
+    }
     "
   `);
 });
@@ -95,11 +101,117 @@ test("production build eval imports use comptime transforms", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-DrFFYQB5.js
-    ({csslit_3_25:\`_csslit_3_25_q4wvi_1\`}).csslit_3_25;
+    # js assets/entry-KzH5W5Gq.js
+    ({ "css_4_ 26": "nTevJI_4_26" }).css_4_26;
+    //#endregion
 
-    # css assets/entry-BkBLMIme.css
-    ._csslit_3_25_q4wvi_1{color:#ff69b4}
+    # css assets/entry-B2LtiVZK.css
+    .nTevJI_4_26 {
+      color: #ff69b4;
+    }
+    "
+  `);
+});
+
+test("production build preserves global and scoped css source order", async () => {
+  const result = await buildProductionSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "csslit";
+
+        const tone = "hotpink";
+
+        export const first = css\`
+          color: \${tone};
+        \`;
+
+        css.global\`
+          html { background: \${tone}; }
+        \`;
+
+        export const second = css\`
+          border-color: \${tone};
+        \`;
+
+        css.global\`
+          body { color: \${tone}; }
+        \`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js assets/entry-ooHe3jza.js
+    //#region ../../../../..<root>/src/entry.ts.csslit.module.js
+    var entry_ts_csslit_module_default = {
+    	"css_5_22": "RbVSf2_5_22",
+    	"css_13_23": "FQBCkZ_13_23"
+    };
+    entry_ts_csslit_module_default.css_5_22;
+    entry_ts_csslit_module_default.css_13_23;
+    //#endregion
+
+    # css assets/entry-By_gOgLe.css
+    .RbVSf2_5_22 {
+      color: #ff69b4;
+    }
+
+    html {
+      background: #ff69b4;
+    }
+
+    .FQBCkZ_13_23 {
+      border-color: #ff69b4;
+    }
+
+    body {
+      color: #ff69b4;
+    }
+    "
+  `);
+});
+
+test("production build hoists csslit keyframes", async () => {
+  const result = await buildProductionSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "csslit";
+
+        export const className = css\`
+          animation: pulse 1s infinite;
+
+          @keyframes pulse {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+        \`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js assets/entry-xhBY8LoT.js
+    ({ "css_3_26": "Myz4Qi_3_26" }).css_3_26;
+    //#endregion
+
+    # css assets/entry-CNwFaZQO.css
+    .Myz4Qi_3_26 {
+      animation: 1s infinite Qt1gFG_pulse;
+    }
+
+    @keyframes Qt1gFG_pulse {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
     "
   `);
 });

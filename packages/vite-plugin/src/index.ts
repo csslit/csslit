@@ -1,5 +1,7 @@
-import { transformClient } from "@csslit/rust-transformer";
+import { compileCsslit, transformClient } from "@csslit/rust-transformer";
 import { readFileSync } from "node:fs";
+import remapping from "@jridgewell/remapping";
+import type { SourceMapInput as RemappingSourceMapInput } from "@jridgewell/remapping";
 import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath } from "vite-plus";
 import type {
   BuildEnvironment,
@@ -14,9 +16,20 @@ import type { EvalDiagnostic, Location } from "./eval-error";
 import { csslitComptimeBuildImportNormalizer } from "./import-normalizer";
 
 interface EvalResult {
-  code: string;
+  blocks: Array<
+    | {
+        kind: "scoped";
+        scopedName: string;
+        code: string;
+        mappingRuns?: number[];
+      }
+    | {
+        kind: "global";
+        code: string;
+        mappingRuns?: number[];
+      }
+  >;
   errors: EvalDiagnostic[];
-  map: SourceMapInput | null;
 }
 
 interface CsslitModuleMetadata {
@@ -24,6 +37,11 @@ interface CsslitModuleMetadata {
     code: string;
     map: SourceMapInput | null;
   };
+  exports: Array<{
+    localName: string;
+    scopedName: string;
+  }>;
+  sourceMap: RemappingSourceMapInput | null;
 }
 
 type LoadModule = PluginContext["load"];
@@ -107,11 +125,14 @@ function watchCssEvalDependencies(
 
 export function csslitPlugin(): PluginOption {
   let comptimeEnvironment: RunnableDevEnvironment | null = null;
+  let devServer: ViteDevServer | null = null;
   let loadClientModule: LoadModule | null = null;
+  const warnedEvalIds = new Set<string>();
 
   return [
     {
       name: "vite-plugin-csslit",
+      // Run before Vite's built-in source transforms so csslit receives the original source.
       enforce: "pre",
       sharedDuringBuild: true,
 
@@ -149,6 +170,7 @@ export function csslitPlugin(): PluginOption {
       },
 
       configureServer(viteServer: ViteDevServer) {
+        devServer = viteServer;
         comptimeEnvironment = viteServer.environments.comptime as RunnableDevEnvironment;
       },
 
@@ -174,6 +196,7 @@ export function csslitPlugin(): PluginOption {
           await comptimeEnvironment?.close();
           comptimeEnvironment = null;
           loadClientModule = null;
+          warnedEvalIds.clear();
         }
       },
 
@@ -197,11 +220,14 @@ export function csslitPlugin(): PluginOption {
 
           const result = transformClient(code, {
             cssFilename: filename,
-            cssImport: `${normalizePath(id)}.csslit.module.css`,
+            moduleImport: `${normalizePath(id)}.csslit.module.js`,
             cssSourcemap,
             filename: id,
             sourcemap: jsSourcemap,
           });
+          const sourceMap = cssSourcemap
+            ? (this.getCombinedSourcemap() as unknown as RemappingSourceMapInput)
+            : null;
 
           return {
             code: result.runtime.code,
@@ -212,6 +238,8 @@ export function csslitPlugin(): PluginOption {
                   code: result.eval.code,
                   map: result.eval.map ?? null,
                 },
+                exports: result.runtime.exports,
+                sourceMap,
               } satisfies CsslitModuleMetadata,
             },
           };
@@ -220,17 +248,26 @@ export function csslitPlugin(): PluginOption {
 
       resolveId: {
         filter: {
-          id: [/^virtual:csslit-eval-runtime$/, /\.csslit\.module\.css$/],
+          id: [/^virtual:csslit-eval-runtime$/, /\.csslit\.(?:module\.js|css)$/],
         },
-        async handler(source) {
+        async handler(source, importer) {
           if (source === "virtual:csslit-eval-runtime") {
             return "\0virtual:csslit-eval-runtime";
           }
 
-          if (source.endsWith(".csslit.module.css")) {
-            const sourceId = source.slice(0, -".csslit.module.css".length);
+          if (source.endsWith(".csslit.module.js")) {
+            const sourceId = source.slice(0, -".csslit.module.js".length);
+            const resolved = await this.resolve(sourceId, importer);
             return {
-              id: `${sourceId}.csslit.module.css`,
+              id: `${resolved!.id}.csslit.module.js`,
+            };
+          }
+
+          if (source.endsWith(".csslit.css")) {
+            const sourceId = source.slice(0, -".csslit.css".length);
+            const resolved = await this.resolve(sourceId, importer);
+            return {
+              id: `${resolved!.id}.csslit.css`,
             };
           }
 
@@ -243,7 +280,8 @@ export function csslitPlugin(): PluginOption {
           id: [
             // oxlint-disable-next-line no-control-regex
             /^\0virtual:csslit-eval-runtime$/,
-            /\.csslit\.module\.css$/,
+            /\.csslit\.css$/,
+            /\.csslit\.module\.js$/,
             /\.(?:js|ts|jsx|tsx)\.csslit$/,
           ],
         },
@@ -252,20 +290,72 @@ export function csslitPlugin(): PluginOption {
             return csslitEvalRuntimeCode;
           } else if (id.endsWith(".csslit")) {
             const evalSourceId = id.slice(0, -".csslit".length);
-            const moduleInfo = await loadClientModule!({ id: evalSourceId });
-            const metadata = moduleInfo.meta.csslit as CsslitModuleMetadata;
+            let metadata: CsslitModuleMetadata;
+
+            // Link the virtual eval module to its source so Vite invalidates the runner cache.
+            this.addWatchFile(evalSourceId);
+
+            if (devServer) {
+              // Vite dev's PluginContext.load is not the full Rollup/Rolldown load pipeline for
+              // ordinary source files: it runs plugin load/transform hooks, but the default
+              // filesystem read lives in transformRequest. Until that compat gap is fixed, force
+              // the client owner module through transformRequest before reading transform metadata.
+              // Related upstream compat issues:
+              // https://github.com/vitejs/vite/issues/18914
+              // https://github.com/vitejs/vite/issues/19674
+              await devServer!.environments.client.transformRequest(evalSourceId);
+              metadata = devServer!.environments.client.pluginContainer.getModuleInfo(evalSourceId)!
+                .meta.csslit as CsslitModuleMetadata;
+            } else {
+              const moduleInfo = await loadClientModule!({ id: evalSourceId });
+              metadata = moduleInfo.meta.csslit as CsslitModuleMetadata;
+            }
 
             return {
               code: metadata.eval.code,
               map: metadata.eval.map,
             };
-          } else if (id.endsWith(".csslit.module.css")) {
-            const sourceId = id.slice(0, -".csslit.module.css".length);
+          } else if (id.endsWith(".csslit.module.js")) {
+            const sourceId = id.slice(0, -".csslit.module.js".length);
+            let metadata: CsslitModuleMetadata;
+
+            this.addWatchFile(sourceId);
+
+            if (devServer) {
+              await devServer!.environments.client.transformRequest(sourceId);
+              metadata = devServer!.environments.client.pluginContainer.getModuleInfo(sourceId)!
+                .meta.csslit as CsslitModuleMetadata;
+            } else {
+              const moduleInfo = await loadClientModule!({ id: sourceId });
+              metadata = moduleInfo.meta.csslit as CsslitModuleMetadata;
+            }
+
+            const exports = Object.fromEntries(
+              metadata.exports.map((entry) => [
+                entry.localName,
+                this.environment.name === "comptime"
+                  ? `__csslit_class_${entry.scopedName}`
+                  : entry.scopedName,
+              ]),
+            );
+
+            return {
+              code:
+                this.environment.name === "comptime"
+                  ? `export default ${JSON.stringify(exports)};\n`
+                  : `import ${JSON.stringify(`${sourceId}.csslit.css`)};\nexport default ${JSON.stringify(exports)};\n`,
+              map: null,
+            };
+          } else if (id.endsWith(".csslit.css")) {
+            const sourceId = id.slice(0, -".csslit.css".length);
             const sourceFile = sourceId;
             const evalId = `${sourceId}.csslit`;
+            let metadata: CsslitModuleMetadata;
             let result: EvalResult;
 
             this.addWatchFile(sourceId);
+            metadata = this.getModuleInfo(sourceId)!.meta.csslit as CsslitModuleMetadata;
+
             const runnerEnvironment = comptimeEnvironment!;
 
             const runner = runnerEnvironment.runner;
@@ -301,7 +391,8 @@ export function csslitPlugin(): PluginOption {
 
             result = mod.__csslit_eval_result as EvalResult;
 
-            if (result.errors.length > 0) {
+            if (result.errors.length > 0 && !warnedEvalIds.has(evalId)) {
+              warnedEvalIds.add(evalId);
               if (this.environment.name !== "comptime") {
                 for (const error of result.errors) {
                   const warning = buildCsslitError(error, {
@@ -320,9 +411,28 @@ export function csslitPlugin(): PluginOption {
               }
             }
 
+            const compiled = compileCsslit({
+              blocks: result.blocks,
+              filename: sourceId,
+              sourcemap: metadata.sourceMap !== null,
+            });
+
+            for (const warning of compiled.warnings) {
+              this.warn({
+                id: sourceId,
+                message: warning,
+              });
+            }
+
             return {
-              code: result.code,
-              map: result.map ?? null,
+              code: compiled.code,
+              map:
+                compiled.map && metadata.sourceMap
+                  ? (remapping(
+                      [compiled.map as unknown as RemappingSourceMapInput, metadata.sourceMap],
+                      () => null,
+                    ) as SourceMapInput)
+                  : (compiled.map ?? null),
               moduleType: "css",
             };
           } else {

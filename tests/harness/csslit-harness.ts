@@ -27,7 +27,6 @@ const RESOLUTION_SUFFIXES = [
 type SnapshotCssModule = {
   code: string;
   id?: string;
-  exports?: Record<string, string>;
 };
 
 type SnapshotJsModule = {
@@ -39,8 +38,8 @@ type CsslitSnapshotReportData = {
   css?: SnapshotCssModule[];
   js?: SnapshotJsModule[];
   warnings?: string[];
-}
- 
+};
+
 class CsslitSnapshotReport {
   readonly css?: SnapshotCssModule[];
   readonly js?: SnapshotJsModule[];
@@ -93,14 +92,6 @@ function renderSnapshotReport(report: CsslitSnapshotReport) {
     }
 
     hasContent = true;
-
-    if (cssModule.exports && Object.keys(cssModule.exports).length > 0) {
-      output += "# exports\n";
-
-      for (const [name, value] of Object.entries(cssModule.exports)) {
-        output += `${name} = ${normalizeSnapshotText(value)}\n`;
-      }
-    }
   }
 
   const warnings = report.warnings ?? [];
@@ -159,6 +150,7 @@ expect.addSnapshotSerializer({
 type VirtualFiles = Record<`/${string}`, string>;
 
 type HarnessCase = {
+  cssDevSourcemap?: boolean;
   entry: `/${string}`;
   files: VirtualFiles;
   plugins?: Plugin[];
@@ -326,7 +318,13 @@ function stripSourceMapComment(code: string) {
 }
 
 function extractVirtualCssIds(code: string) {
-  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.module\.css/g) ?? [])].map(
+  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.css/g) ?? [])].map(
+    normalizePath,
+  );
+}
+
+function extractVirtualCssModuleJsIds(code: string) {
+  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.module\.js/g) ?? [])].map(
     normalizePath,
   );
 }
@@ -352,13 +350,12 @@ function normalizeSnapshotText(value: string, root = SYNTHETIC_ROOT) {
 function normalizeWarningText(value: string) {
   return normalizeSnapshotText(
     value
-    // oxlint-disable-next-line no-control-regex
+      // oxlint-disable-next-line no-control-regex
       .replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "")
       .replaceAll("\\", "/")
       .replaceAll("`", "'")
       .replaceAll("${", "#{"),
-  )
-    .replace(/^warning:\s*/u, "");
+  ).replace(/^warning:\s*/u, "");
 }
 
 let runCsslitCaseQueue: Promise<unknown> = Promise.resolve();
@@ -367,7 +364,6 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
   const fileRoot = input.workspaceRooted ? TESTS_ROOT : SYNTHETIC_ROOT;
   const files = normalizeInputFiles(input.files);
   const absoluteFiles = absolutizeFiles(files, fileRoot);
-  const entryId = absolutizeFile(input.entry, fileRoot);
   const serverRoot = input.root ? absolutizeFile(input.root) : TESTS_ROOT;
   const warnings: string[] = [];
   const restoreReadFile = installReadFileMock(absoluteFiles);
@@ -376,6 +372,9 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
     let hasWarned = false;
     const server = await createServer({
       appType: "custom",
+      css: {
+        devSourcemap: input.cssDevSourcemap,
+      },
       customLogger: {
         clearScreen() {},
         error() {},
@@ -404,22 +403,33 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
     });
 
     try {
-      const runtimeResult = await server.transformRequest(entryId);
-      if (!runtimeResult) {
-        throw new Error(`No transform result for ${entryId}`);
-      }
-
+      const jsModules: SnapshotJsModule[] = [];
       const cssModules: SnapshotCssModule[] = [];
 
-      for (const publicId of extractVirtualCssIds(runtimeResult.code)) {
-        const resolvedId = unwrapPublicId(publicId);
-        const cssResult = await server.transformRequest(resolvedId);
-        cssModules.push(parseCssModuleSnapshot(cssResult?.code ?? "", resolvedId));
+      for (const file of Object.keys(files).sort()) {
+        const sourceResult = await server.transformRequest(absolutizeFile(file, fileRoot));
+        if (!sourceResult) {
+          throw new Error(`No transform result for ${file}`);
+        }
+        jsModules.push({ code: sourceResult.code, id: file });
+
+        for (const publicModuleId of extractVirtualCssModuleJsIds(sourceResult.code)) {
+          const resolvedModuleId = unwrapPublicId(publicModuleId);
+          const moduleResult = await server.transformRequest(resolvedModuleId);
+          const code = moduleResult?.code ?? "";
+          jsModules.push({ code, id: `${file}.csslit.module.js` });
+
+          for (const publicCssId of extractVirtualCssIds(code)) {
+            const resolvedCssId = unwrapPublicId(publicCssId);
+            const cssResult = await server.transformRequest(resolvedCssId);
+            cssModules.push(parseCssSnapshot(cssResult?.code ?? "", resolvedCssId));
+          }
+        }
       }
 
       return {
         css: cssModules.length > 0 ? cssModules : undefined,
-        js: [{ code: runtimeResult.code }],
+        js: jsModules,
         warnings: warnings.length > 0 ? warnings : undefined,
       };
     } finally {
@@ -446,6 +456,7 @@ async function runCsslitProductionBuildIsolated(
     const builder = await createBuilder({
       appType: "custom",
       build: {
+        minify: false,
         rollupOptions: {
           input: entryId,
         },
@@ -516,25 +527,23 @@ async function runCsslitProductionBuildIsolated(
 
 function compactSnapshotPath(value: string) {
   return normalizeSnapshotText(value)
+    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.module\.js)/g, "$1")
     .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1")
-    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1");
+    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.global\.css)/g, "$1")
+    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1")
+    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1")
+    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.global\.css)/g, "$1")
+    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1");
 }
 
-function parseCssModuleSnapshot(code: string, id: string): SnapshotCssModule {
+function parseCssSnapshot(code: string, id: string): SnapshotCssModule {
   const cssLiteral = code.match(/const __vite__css = ("(?:\\.|[^"\\])*")/u)?.[1];
-  const exportMatches = [
-    ...code.matchAll(/export const\s+([A-Za-z_$][\w$]*)\s*=\s*("(?:\\.|[^"\\])*");/gu),
-  ];
-
   if (!cssLiteral) {
-    throw new Error(`Expected Vite CSS module wrapper for ${id}`);
+    throw new Error(`Expected Vite CSS wrapper for ${id}`);
   }
 
   return {
     code: JSON.parse(cssLiteral) as string,
-    exports: Object.fromEntries(
-      exportMatches.map(([, name, value]) => [name, JSON.parse(value) as string]),
-    ),
     id: compactSnapshotPath(id),
   };
 }

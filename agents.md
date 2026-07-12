@@ -13,7 +13,9 @@ Unified toolchain from voidzero combining vite, vitest, oxcfmt, oxclint and a at
 - vite.config.ts contains workspace and per project configuration
 - `vp run playground#dev` - Run the playground dev server. This will automatically rebuild all packages it depends on. Remember to stop the dev server once you are done using it.
 
-run tasks have dependsOn specified to build dependencies to the task first.
+Run tasks have `dependsOn` specified to build dependencies first. For tests, use `vp run tests#test` (or `vp run -w test`) so dirty Rust/NAPI and package artifacts are rebuilt. Running `vp test` directly bypasses the task graph and can test against stale `dist/` artifacts. Pass test-runner arguments after the task, for example `vp run tests#test -- -u` to update snapshots.
+
+For routine changes, use `vp run -w check` as the single cached verification command for formatting, linting, compilation, and integration tests. The task graph caches clean dependencies, so the cold path may rebuild NAPI but warm checks should be reasonable. Use the full `vp run tests#test` pipeline when you need detailed test output or snapshot updates. Keep tool output limits small for successful checks and request full output only when a command fails.
 
 ## Build Artifacts
 
@@ -30,3 +32,4 @@ run tasks have dependsOn specified to build dependencies to the task first.
 
 - Prefer trusting established contracts between Vite/plugins/tooling instead of adding defensive fallback code for cases that should not happen. If another layer violates the contract, prefer surfacing it clearly and fixing or reporting it there.
 - Prefer straight-line code over abstractions unless there is a substantial piece of code reuse. Avoid introducing helpers or indirection for small one-off logic.
+- Start from the actual guarantees of the data produced by this project and solve that concrete problem. Do not generalize into a reusable or defensive implementation for hypothetical inputs unless the real contract requires it.

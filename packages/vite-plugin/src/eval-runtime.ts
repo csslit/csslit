@@ -135,12 +135,19 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
 }
 
 export function init() {
-  const blocks: {
-    className: string;
-    patchLines: number[];
-    strings: TemplateStringsArray;
-    values: unknown[];
-  }[] = [];
+  const blocks: Array<
+    | {
+        kind: "scoped";
+        scopedName: string;
+        code: string;
+        mappingRuns?: number[];
+      }
+    | {
+        kind: "global";
+        code: string;
+        mappingRuns?: number[];
+      }
+  > = [];
   const deferred: Array<() => void> = [];
   const errors: EvalDiagnostic[] = [];
 
@@ -266,9 +273,146 @@ export function init() {
     }
   }
 
-  function css(className: string, patchLines: number[] = []) {
+  function materialize(
+    strings: TemplateStringsArray,
+    values: unknown[],
+    quasiLocations: number[] | undefined,
+  ) {
+    let code = "";
+    const mappingRuns: number[] | undefined = quasiLocations === undefined ? undefined : [];
+    const mappingBoundaries = /[\\\f\n\u2028\u2029]/g;
+    const requiresSlowMapping = /[\f\u2028\u2029]/;
+
+    for (let i = 0; i < strings.length; i += 1) {
+      const cooked = strings[i]!;
+      const raw = strings.raw[i];
+      if (cooked === undefined) {
+        throw new Error("Invalid template escape sequence");
+      }
+      code += cooked;
+
+      let interpolationRow = 0;
+      let interpolationCol = 0;
+      if (mappingRuns !== undefined) {
+        let row = quasiLocations![i * 2];
+        let col = quasiLocations![i * 2 + 1];
+
+        if (raw === cooked && !requiresSlowMapping.test(raw)) {
+          if (cooked.length > 0) {
+            mappingRuns.push(cooked.length * 2, row, col);
+          }
+
+          let lineStart = 0;
+          let newline: number;
+          while ((newline = raw.indexOf("\n", lineStart)) !== -1) {
+            row += 1;
+            col = 0;
+            lineStart = newline + 1;
+          }
+          col += raw.length - lineStart;
+        } else {
+          let rawIndex = 0;
+
+          mappingBoundaries.lastIndex = 0;
+          while (mappingBoundaries.test(raw)) {
+            const start = mappingBoundaries.lastIndex - 1;
+            const identityLength = start - rawIndex;
+            if (identityLength > 0) {
+              mappingRuns.push(identityLength * 2, row, col);
+            }
+            col += identityLength;
+
+            if (raw.charCodeAt(start) !== 0x5c) {
+              mappingRuns.push(3, row, col);
+              if (raw.charCodeAt(start) === 0x0c) {
+                col += 1;
+              } else {
+                row += 1;
+                col = 0;
+              }
+              rawIndex = start + 1;
+              continue;
+            }
+
+            let end = start + 2;
+            let cookedLength = 1;
+            switch (raw.charCodeAt(start + 1)) {
+              case 0x0a:
+              case 0x2028:
+              case 0x2029:
+                row += 1;
+                col = 0;
+                rawIndex = end;
+                mappingBoundaries.lastIndex = rawIndex;
+                continue;
+              case 0x78:
+                end += 2;
+                break;
+              case 0x75:
+                if (raw.charCodeAt(start + 2) === 0x7b) {
+                  end = raw.indexOf("}", start + 3) + 1;
+                  cookedLength =
+                    Number.parseInt(raw.slice(start + 3, end - 1), 16) > 0xffff ? 2 : 1;
+                } else {
+                  end += 4;
+                }
+                break;
+              default:
+                if (raw.codePointAt(start + 1)! > 0xffff) {
+                  end += 1;
+                  cookedLength = 2;
+                }
+            }
+
+            mappingRuns.push(cookedLength * 2 + 1, row, col);
+            col += end - start;
+            rawIndex = end;
+            mappingBoundaries.lastIndex = end;
+          }
+
+          const identityLength = raw.length - rawIndex;
+          if (identityLength > 0) {
+            mappingRuns.push(identityLength * 2, row, col);
+          }
+          col += identityLength;
+        }
+
+        interpolationRow = row;
+        interpolationCol = col;
+      }
+
+      if (i < strings.length - 1) {
+        const value = String(values[i]);
+        code += value;
+        if (mappingRuns !== undefined && value.length > 0) {
+          mappingRuns.push(value.length * 2 + 1, interpolationRow, interpolationCol);
+        }
+      }
+    }
+
+    return { code, mappingRuns };
+  }
+
+  function css(scopedName: string, quasiLocations?: number[]) {
     return (strings: TemplateStringsArray, ...values: unknown[]) => {
-      blocks.push({ className, patchLines, strings, values });
+      const { code, mappingRuns } = materialize(strings, values, quasiLocations);
+      blocks.push({
+        kind: "scoped",
+        code,
+        mappingRuns,
+        scopedName,
+      });
+    };
+  }
+
+  function globalCss(quasiLocations?: number[]) {
+    return (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const { code, mappingRuns } = materialize(strings, values, quasiLocations);
+      blocks.push({
+        kind: "global",
+        code,
+        mappingRuns,
+      });
     };
   }
 
@@ -276,97 +420,14 @@ export function init() {
     deferred.push(task);
   }
 
-  function finalize(map: { mappings: string } | null) {
+  function finalize(_map: { mappings: string } | null) {
     while (deferred.length > 0) {
       deferred.shift()!();
     }
 
-    let code = "";
-    const mappings = map?.mappings ?? "";
-    let patchedMappings = "";
-    let mappingCursor = 0;
-    let mappingLine = 0;
-    let baselineLine = 0;
-
-    for (const block of blocks) {
-      const blockStartLine = baselineLine;
-      let blockEndsWithNewline = false;
-
-      code += `.${block.className} {`;
-
-      if (!block.strings[0].startsWith("\n")) {
-        code += "\n";
-        if (map) {
-          baselineLine += 1;
-        }
-        blockEndsWithNewline = true;
-      }
-
-      for (let i = 0; i < block.strings.length; i += 1) {
-        const string = block.strings[i];
-        code += string;
-        if (map) {
-          baselineLine += string.match(/\r\n?|\n/g)?.length ?? 0;
-        }
-        if (string.length > 0) {
-          blockEndsWithNewline = string.endsWith("\n");
-        }
-
-        if (i >= block.values.length) {
-          continue;
-        }
-
-        const value = String(block.values[i]);
-        code += value;
-
-        if (value.length > 0) {
-          blockEndsWithNewline = value.endsWith("\n");
-        }
-        const line = block.patchLines[i];
-
-        if (map) {
-          const count = value.match(/\r\n?|\n/g)?.length ?? 0;
-
-          if (count > 0) {
-            const patchLine = blockStartLine + line;
-
-            while (mappingLine < patchLine) {
-              const end = mappings.indexOf(";", mappingCursor);
-              if (end === -1) {
-                patchedMappings += mappings.slice(mappingCursor);
-                mappingCursor = mappings.length;
-                break;
-              }
-
-              patchedMappings += mappings.slice(mappingCursor, end + 1);
-              mappingCursor = end + 1;
-              mappingLine += 1;
-            }
-
-            if (mappingLine === patchLine) {
-              patchedMappings += ";".repeat(count);
-            }
-          }
-        }
-      }
-
-      if (!blockEndsWithNewline) {
-        code += "\n";
-        if (map) {
-          baselineLine += 1;
-        }
-      }
-
-      code += "}\n\n";
-      if (map) {
-        baselineLine += 2;
-      }
-    }
-
     return {
-      code,
+      blocks,
       errors,
-      map: map ? { ...map, mappings: patchedMappings + map.mappings.slice(mappingCursor) } : null,
     };
   }
 
@@ -379,6 +440,7 @@ export function init() {
     defer,
     exprErr,
     finalize,
+    globalCss,
     readCell,
     varErr,
   };
