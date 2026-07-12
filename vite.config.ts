@@ -26,7 +26,6 @@ export default defineConfig({
           "check_cargo_check",
           "tests#check",
         ],
-        env: ["CSSLIT_RELEASE"],
       },
     },
   },

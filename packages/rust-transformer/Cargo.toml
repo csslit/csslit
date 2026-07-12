@@ -21,7 +21,6 @@ oxc_semantic = "0.130.0"
 oxc_syntax = "0.130.0"
 oxc_data_structures = { version = "0.130.0", features = ["rope"] }
 oxc_index = "4.1.0"
-rolldown_sourcemap = "0.1.0"
 oxc_sourcemap = "6.1.1"
 cssparser = "0.33.0"
 lightningcss = { version = "1.0.0-alpha.71", features = ["visitor"] }

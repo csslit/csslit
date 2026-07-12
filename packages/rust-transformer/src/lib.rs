@@ -1,5 +1,5 @@
 use napi_derive::napi;
-use rolldown_sourcemap::SourceMap;
+use oxc_sourcemap::SourceMap;
 
 mod quote;
 mod transform;

@@ -1,0 +1,7 @@
+# napi-rs release outputs: generated platform packages, per-target build
+# artifacts, and the package-root binaries `napi artifacts` stages for the
+# GitHub release upload in `napi pre-publish`.
+npm/
+artifacts/
+*.node
+*.wasm

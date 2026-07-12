@@ -17,7 +17,9 @@
     "directory": "packages/rust-transformer"
   },
   "files": [
-    "dist"
+    "dist/index.d.ts",
+    "dist/index.js",
+    "webcontainer-fallback.cjs"
   ],
   "type": "module",
   "exports": {
@@ -31,8 +33,33 @@
     "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.2",
+    "@emnapi/runtime": "^1.11.2",
     "@napi-rs/cli": "^3.7.3",
+    "@napi-rs/wasm-runtime": "^1.1.6",
+    "@tybys/wasm-util": "^0.10.3",
     "vite-plus": "^0.2.0"
+  },
+  "optionalDependencies": {
+    "@csslit/rust-transformer-linux-x64-gnu": "0.1.0",
+    "@csslit/rust-transformer-linux-x64-musl": "0.1.0",
+    "@csslit/rust-transformer-wasm32-wasi": "0.1.0",
+    "@csslit/rust-transformer-win32-x64-msvc": "0.1.0"
+  },
+  "napi": {
+    "binaryName": "csslit-transformer",
+    "packageName": "@csslit/rust-transformer",
+    "targets": [
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "wasm32-wasip1-threads"
+    ],
+    "wasm": {
+      "browser": {
+        "fs": false
+      }
+    }
   },
   "engines": {
     "node": ">=24.11.0"

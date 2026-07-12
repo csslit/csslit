@@ -11,13 +11,11 @@ export default defineConfig({
       test: {
         command: "vp test --reporter agent",
         dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
-        env: ["CSSLIT_RELEASE"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
       check: {
         command: "vp test --reporter ./concise-reporter.ts",
         dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
-        env: ["CSSLIT_RELEASE"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
     },
