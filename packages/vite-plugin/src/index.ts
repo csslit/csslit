@@ -2,15 +2,10 @@ import { compileCsslit, transformClient } from "@csslit/rust-transformer";
 import { readFileSync } from "node:fs";
 import remapping from "@jridgewell/remapping";
 import type { SourceMapInput as RemappingSourceMapInput } from "@jridgewell/remapping";
-import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath } from "vite-plus";
-import type {
-  BuildEnvironment,
-  PluginOption,
-  RunnableDevEnvironment,
-  ViteDevServer,
-} from "vite-plus";
-import type { EvaluatedModuleNode, EvaluatedModules } from "vite-plus/module-runner";
-import type { PluginContext, SourceMapInput } from "@voidzero-dev/vite-plus-core/rolldown";
+import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath } from "vite";
+import type { BuildEnvironment, PluginOption, RunnableDevEnvironment, ViteDevServer } from "vite";
+import type { EvaluatedModuleNode, EvaluatedModules } from "vite/module-runner";
+import type { PluginContext, SourceMapInput } from "rolldown";
 import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error";
 import type { EvalDiagnostic, Location } from "./eval-error";
 import { csslitComptimeBuildImportNormalizer } from "./import-normalizer";

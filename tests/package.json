@@ -4,18 +4,19 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "csslit": "^1.0.0",
+    "csslit": "^0.1.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
-    "@csslit/vite-plugin": "^1.0.0",
+    "@csslit/vite-plugin": "^0.1.0",
     "@types/node": "^25.6.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@typescript/native-preview": "^7.0.0-dev.20260510.1",
     "@vitejs/plugin-react": "^6.0.1",
     "playwright": "^1.59.1",
+    "vite": "^8.1.4",
     "vite-plus": "^0.2.0"
   }
 }

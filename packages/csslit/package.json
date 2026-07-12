@@ -1,16 +1,41 @@
 {
   "name": "csslit",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "description": "Compile-time CSS template literals for Vite.",
+  "keywords": [
+    "css",
+    "css-in-js",
+    "vite"
+  ],
+  "homepage": "https://github.com/csslit/csslit#readme",
+  "bugs": "https://github.com/csslit/csslit/issues",
+  "license": "MIT",
+  "author": "Gabriel Valfridsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csslit/csslit.git",
+    "directory": "packages/csslit"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./dist/index.js",
-    "./package.json": "./package.json"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
     "@typescript/native-preview": "^7.0.0-dev.20260510.1",
     "vite-plus": "^0.2.0"
+  },
+  "engines": {
+    "node": ">=24.11.0"
   }
 }

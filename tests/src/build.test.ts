@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import type { Plugin } from "vite-plus";
+import type { Plugin } from "vite";
 
 import { buildProductionSnapshot } from "../harness/csslit-harness.ts";
 
@@ -102,7 +102,7 @@ test("production build eval imports use comptime transforms", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js assets/entry-KzH5W5Gq.js
-    ({ "css_4_ 26": "nTevJI_4_26" }).css_4_26;
+    ({ "css_4_26": "nTevJI_4_26" }).css_4_26;
     //#endregion
 
     # css assets/entry-B2LtiVZK.css

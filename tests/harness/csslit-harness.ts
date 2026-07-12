@@ -2,9 +2,9 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect } from "vite-plus/test";
-import { createBuilder, createServer, normalizePath } from "vite-plus";
-import type { Plugin } from "vite-plus";
-import type { RolldownOutput } from "@voidzero-dev/vite-plus-core/rolldown";
+import { createBuilder, createServer, normalizePath } from "vite";
+import type { Plugin } from "vite";
+import type { RolldownOutput } from "rolldown";
 import { csslitPlugin } from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";

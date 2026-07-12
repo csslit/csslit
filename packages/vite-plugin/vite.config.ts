@@ -12,9 +12,7 @@ export default defineConfig({
     format: "esm",
     fixedExtension: false,
     sourcemap: true,
-    exports: {
-      exclude: ["eval-runtime"],
-    },
+    exports: false,
   },
   run: {
     tasks: {

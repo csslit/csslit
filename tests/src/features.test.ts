@@ -1,5 +1,5 @@
 import { expect, test } from "vite-plus/test";
-import type { Plugin } from "vite-plus";
+import type { Plugin } from "vite";
 
 import { buildSnapshot } from "../harness/csslit-harness.ts";
 

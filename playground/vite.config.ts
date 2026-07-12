@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { csslitPlugin } from "@csslit/vite-plugin";
 
 export default defineConfig({
-  plugins: [csslitPlugin() as any, react()],
+  plugins: [csslitPlugin(), react()],
   build: {
     minify: false,
     cssMinify: false,

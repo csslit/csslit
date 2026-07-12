@@ -1,16 +1,40 @@
 {
   "name": "@csslit/rust-transformer",
-  "version": "1.0.0",
+  "version": "0.1.0",
+  "description": "Native and WebAssembly transforms used by csslit.",
+  "keywords": [
+    "css",
+    "oxc",
+    "transform"
+  ],
+  "homepage": "https://github.com/csslit/csslit#readme",
+  "bugs": "https://github.com/csslit/csslit/issues",
+  "license": "MIT",
+  "author": "Gabriel Valfridsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csslit/csslit.git",
+    "directory": "packages/rust-transformer"
+  },
   "files": [
     "dist"
   ],
   "type": "module",
   "exports": {
-    ".": "./dist/index.js",
-    "./package.json": "./package.json"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "devDependencies": {
-    "@napi-rs/cli": "^3.6.2",
+    "@napi-rs/cli": "^3.7.3",
     "vite-plus": "^0.2.0"
+  },
+  "engines": {
+    "node": ">=24.11.0"
   }
 }

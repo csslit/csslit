@@ -8,7 +8,7 @@ export default defineConfig({
     format: "esm",
     fixedExtension: false,
     sourcemap: true,
-    exports: true,
+    exports: false,
   },
   run: {
     tasks: {

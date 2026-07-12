@@ -6,8 +6,8 @@
 // only replace the URL rewrite we need, not HMR or module graph bookkeeping.
 import { init as initLexer, parse } from "es-module-lexer";
 import { existsSync } from "node:fs";
-import { normalizePath } from "vite-plus";
-import type { PluginOption } from "vite-plus";
+import { normalizePath } from "vite";
+import type { PluginOption } from "vite";
 
 interface Replacement {
   end: number;
