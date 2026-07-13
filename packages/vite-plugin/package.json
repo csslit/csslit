@@ -33,7 +33,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@csslit/rust-transformer": "^0.1.0",
+    "@csslit/transform": "^0.1.0",
     "@jridgewell/remapping": "^2.3.5",
     "es-module-lexer": "^1.7.0"
   },

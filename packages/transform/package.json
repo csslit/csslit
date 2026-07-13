@@ -1,5 +1,5 @@
 {
-  "name": "@csslit/rust-transformer",
+  "name": "@csslit/transform",
   "version": "0.1.0",
   "description": "Native and WebAssembly transforms used by csslit.",
   "keywords": [
@@ -14,7 +14,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/csslit/csslit.git",
-    "directory": "packages/rust-transformer"
+    "directory": "packages/transform"
   },
   "files": [
     "dist/index.d.ts",
@@ -41,14 +41,14 @@
     "vite-plus": "^0.2.0"
   },
   "optionalDependencies": {
-    "@csslit/rust-transformer-linux-x64-gnu": "0.1.0",
-    "@csslit/rust-transformer-linux-x64-musl": "0.1.0",
-    "@csslit/rust-transformer-wasm32-wasi": "0.1.0",
-    "@csslit/rust-transformer-win32-x64-msvc": "0.1.0"
+    "@csslit/transform-linux-x64-gnu": "0.1.0",
+    "@csslit/transform-linux-x64-musl": "0.1.0",
+    "@csslit/transform-wasm32-wasi": "0.1.0",
+    "@csslit/transform-win32-x64-msvc": "0.1.0"
   },
   "napi": {
     "binaryName": "csslit-transformer",
-    "packageName": "@csslit/rust-transformer",
+    "packageName": "@csslit/transform",
     "targets": [
       "x86_64-pc-windows-msvc",
       "x86_64-unknown-linux-gnu",

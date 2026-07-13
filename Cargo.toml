@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["packages/rust-transformer"]
+members = ["packages/transform"]
 
 [profile.release]
 lto = true

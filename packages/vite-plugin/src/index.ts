@@ -1,4 +1,4 @@
-import { compileCsslit, transformClient } from "@csslit/rust-transformer";
+import { compileCsslit, transformClient } from "@csslit/transform";
 import { readFileSync } from "node:fs";
 import remapping from "@jridgewell/remapping";
 import type { SourceMapInput as RemappingSourceMapInput } from "@jridgewell/remapping";

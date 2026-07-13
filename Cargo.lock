@@ -1342,33 +1342,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-transformer"
-version = "0.1.0"
-dependencies = [
- "cssparser",
- "expect-test",
- "lightningcss",
- "napi",
- "napi-build",
- "napi-derive",
- "oxc_allocator",
- "oxc_ast",
- "oxc_ast_visit",
- "oxc_codegen",
- "oxc_data_structures",
- "oxc_index",
- "oxc_parser",
- "oxc_semantic",
- "oxc_sourcemap",
- "oxc_span",
- "oxc_str",
- "oxc_syntax",
- "oxc_traverse",
- "parcel_selectors",
- "parcel_sourcemap",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1592,6 +1565,33 @@ name = "tinyvec_macros"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+
+[[package]]
+name = "transform"
+version = "0.1.0"
+dependencies = [
+ "cssparser",
+ "expect-test",
+ "lightningcss",
+ "napi",
+ "napi-build",
+ "napi-derive",
+ "oxc_allocator",
+ "oxc_ast",
+ "oxc_ast_visit",
+ "oxc_codegen",
+ "oxc_data_structures",
+ "oxc_index",
+ "oxc_parser",
+ "oxc_semantic",
+ "oxc_sourcemap",
+ "oxc_span",
+ "oxc_str",
+ "oxc_syntax",
+ "oxc_traverse",
+ "parcel_selectors",
+ "parcel_sourcemap",
+]
 
 [[package]]
 name = "unicode-id-start"

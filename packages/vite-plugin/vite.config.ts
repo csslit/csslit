@@ -18,11 +18,11 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp pack -l silent",
-        dependsOn: ["@csslit/rust-transformer#build"],
+        dependsOn: ["@csslit/transform#build"],
       },
       dev: {
         command: "vp pack --watch",
-        dependsOn: ["@csslit/rust-transformer#dev"],
+        dependsOn: ["@csslit/transform#dev"],
       },
     },
   },
