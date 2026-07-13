@@ -22,6 +22,7 @@ export default defineConfig({
       build: {
         command: "vp pack -l silent",
         dependsOn: ["@csslit/transform#build"],
+        output: ["dist/**"],
       },
       dev: {
         command: "vp pack --watch",

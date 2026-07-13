@@ -777,3 +777,75 @@ test("css literals preserve custom property references", async () => {
     "
   `);
 });
+
+test("new, tagged template, and sequence expressions evaluate in interpolations", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        export const className = css\`
+          color: \${new String("hotpink")};
+          --tag: \${String.raw\`raw-\${1 + 1}\`};
+          --seq: \${(0, "seq")};
+        \`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    export const className = __css_module_import.css_3_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_3_26": "Myz4Qi_3_26" };
+
+    # css /src/entry.ts.csslit.css
+    .Myz4Qi_3_26 {
+      color: #ff69b4;
+      --tag: raw-2;
+      --seq: seq;
+    }
+    "
+  `);
+});
+
+test("css template nested directly in an interpolation becomes its class name", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        export const className = css\`.\${css\`color: red;\`} & { color: blue; }\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    export const className = __css_module_import.css_3_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_3_26": "Myz4Qi_3_26" };
+
+    # css /src/entry.ts.csslit.css
+    .wGi7XQ_3_33 {
+      color: red;
+    }
+
+    .Myz4Qi_3_26 {
+      .wGi7XQ_3_33 & {
+        color: #00f;
+      }
+    }
+    "
+  `);
+});

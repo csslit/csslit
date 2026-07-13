@@ -17,6 +17,7 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp pack -l silent",
+        output: ["dist/**"],
       },
       dev: {
         command: "vp pack --watch",

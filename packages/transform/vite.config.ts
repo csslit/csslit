@@ -9,6 +9,7 @@ export default defineConfig({
       build: {
         command: "napi build --platform --esm --js index.js --dts index.d.ts -o dist -- -q",
         input: [{ auto: true }, "!dist/**"],
+        output: ["dist/**"],
       },
       dev: {
         command: "napi watch --platform --esm --js index.js --dts index.d.ts -o dist",

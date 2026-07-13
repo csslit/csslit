@@ -1638,6 +1638,88 @@ fn analyze_supported_expression<'alloc>(
       on_identifier,
       scoping,
     ),
+    Expression::NewExpression(new_expr) => match mode {
+      ExpressionAnalysisMode::Binding => Err(Issue::Expression {
+        code: ExpressionCode::NewExpression,
+        span: new_expr.span,
+      }),
+      ExpressionAnalysisMode::Interpolation => {
+        analyze_supported_expression(
+          &new_expr.callee,
+          mode,
+          css_import_symbols,
+          on_identifier,
+          scoping,
+        )?;
+        for argument in &new_expr.arguments {
+          match argument {
+            Argument::SpreadElement(spread) => {
+              analyze_supported_expression(
+                &spread.argument,
+                mode,
+                css_import_symbols,
+                on_identifier,
+                scoping,
+              )?;
+            }
+            _ => {
+              analyze_supported_expression(
+                argument.to_expression(),
+                mode,
+                css_import_symbols,
+                on_identifier,
+                scoping,
+              )?;
+            }
+          }
+        }
+        Ok(false)
+      }
+    },
+    Expression::TaggedTemplateExpression(tagged) => match mode {
+      ExpressionAnalysisMode::Binding => Err(Issue::Expression {
+        code: ExpressionCode::TaggedTemplate,
+        span: tagged.span,
+      }),
+      ExpressionAnalysisMode::Interpolation => {
+        analyze_supported_expression(
+          &tagged.tag,
+          mode,
+          css_import_symbols,
+          on_identifier,
+          scoping,
+        )?;
+        for expression in &tagged.quasi.expressions {
+          analyze_supported_expression(
+            expression,
+            mode,
+            css_import_symbols,
+            on_identifier,
+            scoping,
+          )?;
+        }
+        Ok(false)
+      }
+    },
+    Expression::SequenceExpression(sequence) => match mode {
+      ExpressionAnalysisMode::Binding => Err(Issue::Expression {
+        code: ExpressionCode::SequenceExpression,
+        span: sequence.span,
+      }),
+      ExpressionAnalysisMode::Interpolation => {
+        let mut is_plain = true;
+        for expression in &sequence.expressions {
+          is_plain &= analyze_supported_expression(
+            expression,
+            mode,
+            css_import_symbols,
+            on_identifier,
+            scoping,
+          )?;
+        }
+        Ok(is_plain)
+      }
+    },
     _ => Err(Issue::Expression {
       code: expression_dependency_code(expr),
       span: expr.span(),
@@ -2040,6 +2122,67 @@ fn rewrite_local_references<'alloc>(
         symbol_states,
       );
     }
+    Expression::NewExpression(new_expr) => {
+      rewrite_local_references(
+        allocator,
+        &mut new_expr.callee,
+        location_context,
+        scoping,
+        symbol_states,
+      );
+      for argument in &mut new_expr.arguments {
+        match argument {
+          Argument::SpreadElement(spread) => {
+            rewrite_local_references(
+              allocator,
+              &mut spread.argument,
+              location_context,
+              scoping,
+              symbol_states,
+            );
+          }
+          _ => {
+            let expression = argument.to_expression_mut();
+            rewrite_local_references(
+              allocator,
+              expression,
+              location_context,
+              scoping,
+              symbol_states,
+            );
+          }
+        }
+      }
+    }
+    Expression::TaggedTemplateExpression(tagged) => {
+      rewrite_local_references(
+        allocator,
+        &mut tagged.tag,
+        location_context,
+        scoping,
+        symbol_states,
+      );
+      for expression in &mut tagged.quasi.expressions {
+        rewrite_local_references(
+          allocator,
+          expression,
+          location_context,
+          scoping,
+          symbol_states,
+        );
+      }
+    }
+    Expression::SequenceExpression(sequence) => {
+      for expression in &mut sequence.expressions {
+        rewrite_local_references(
+          allocator,
+          expression,
+          location_context,
+          scoping,
+          symbol_states,
+        );
+      }
+    }
     _ => {}
   }
 }
@@ -2247,6 +2390,39 @@ mod tests {
     assert!(
       with_map.contains(", [\n  1,\n  4,\n  1,\n  14\n])"),
       "{with_map}"
+    );
+  }
+
+  #[test]
+  fn supports_new_tagged_template_and_sequence_interpolations() {
+    let output = compile(
+      r#"
+        import { css } from "@csslit/core";
+        import { dedent } from "./tags";
+
+        const scale = 4;
+        css`
+          width: ${new Intl.NumberFormat("en").format(scale)}px;
+          content: ${dedent`a ${scale} b`};
+          height: ${(0, scale)}px;
+        `;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        import { dedent } from "./tags";
+        const scale = 4;
+        __csslit.css("aKU63j_6_9")`
+                  width: ${__csslit.capture("6:19:6:60", () => new Intl.NumberFormat("en").format(scale))}px;
+                  content: ${__csslit.capture("7:21:7:41", () => dedent`a ${scale} b`)};
+                  height: ${0, scale}px;
+                `;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
     );
   }
 
