@@ -7,7 +7,7 @@ test("runtime parameter warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function demo(param: string) {
           css\`color: \${param};\`;
@@ -43,7 +43,7 @@ test("function binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function tone() {}
 
@@ -78,7 +78,7 @@ test("function binding warning through call access", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function tone() {
           return "red";
@@ -115,7 +115,7 @@ test("class binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         class Tone {}
 
@@ -150,7 +150,7 @@ test("class binding warning through member access", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         class Tone {
           value = "hotpink";
@@ -187,7 +187,7 @@ test("catch binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         try {
           throw new Error("boom");
@@ -225,7 +225,7 @@ test("reassigned local binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         let tone = "hotpink";
         tone = "blue";
@@ -261,7 +261,7 @@ test("destructuring local binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { theme } from "./theme";
 
         const { tone } = theme;
@@ -300,7 +300,7 @@ test("loop binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         for (const tone of ["hotpink"]) {
           css\`color: \${tone};\`;
@@ -336,7 +336,7 @@ test("no initializer warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         let tone: string;
 
@@ -371,7 +371,7 @@ test("enum declaration warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         enum Tone {
           Hotpink = "hotpink",
@@ -408,7 +408,7 @@ test("namespace declaration warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-          import { css } from "csslit";
+          import { css } from "@csslit/core";
 
           namespace Tone {
             export const value = "hotpink";
@@ -445,7 +445,7 @@ test("circular dependency warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function demo() {
           const tone = border;
@@ -488,7 +488,7 @@ test("var initializer order warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css\`color: \${tone};\`;
 
@@ -523,7 +523,7 @@ test("locally defined function direct interpolation warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function pickColor() { return "red"; }
 
@@ -558,7 +558,7 @@ test("locally defined function comptime binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { comptime, css } from "csslit";
+        import { comptime, css } from "@csslit/core";
 
         function pickColor() { return "red"; }
 
@@ -598,7 +598,7 @@ test("dependent call warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = pickColor();
 
@@ -633,7 +633,7 @@ test("locally defined function call binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         function pickColor() { return "red"; }
 
@@ -670,7 +670,7 @@ test("dependent dependency chain warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = pickColor();
         const color = tone;
@@ -709,7 +709,7 @@ test("multi-step dependency chain warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const accent = pickColor();
         const tone = accent;
@@ -750,7 +750,7 @@ test("delete expression warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css\`color: \${delete globalThis.theme.color};\`;
       `,
@@ -776,7 +776,7 @@ test("assignment expression warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         let tone = "hotpink";
 
@@ -804,7 +804,7 @@ test("new expression warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css\`color: \${new String("hotpink")};\`;
       `,
@@ -830,7 +830,7 @@ test("sequence expression warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css\`color: \${(0, "hotpink")};\`;
       `,
@@ -856,7 +856,7 @@ test("tagged template warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css\`color: \${String.raw\`hotpink\`};\`;
       `,
@@ -882,7 +882,7 @@ test("tagged template binding warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const token = String.raw\`hotpink\`;
 
@@ -917,7 +917,7 @@ test("private field warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         class Tone {
           static #value = "hotpink";
@@ -947,7 +947,7 @@ test("direct thrown evaluation warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { palette } from "./theme";
 
         css\`color: \${palette.tone};\`;
@@ -986,7 +986,7 @@ test("dependent thrown evaluation warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { palette } from "./theme";
 
         const tone = palette.tone;
@@ -1034,7 +1034,7 @@ test("dependent thrown dependency chain warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { palette } from "./theme";
 
         const tone = palette.tone;
@@ -1086,7 +1086,7 @@ test("global css evaluation warning", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css.global\`html { color: \${pickColor()}; }\`;
       `,

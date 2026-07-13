@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useInsertionEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { css } from "csslit";
+import { css } from "@csslit/core";
 import { Badge } from "./Badge.tsx";
 import type { ThemeName } from "./theme.ts";
 import { theme, themeDeclarations } from "./theme.ts";

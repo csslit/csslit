@@ -8,7 +8,7 @@ test("css literal reads from enclosing function scope", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const makeStyles = () => {
           const base = "hotpink";
@@ -47,7 +47,7 @@ test("imported function can be called directly in interpolation", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { pickColor } from "./theme";
 
         export const className = css\`color: \${pickColor()};\`;
@@ -88,7 +88,7 @@ test("comptime allows function call in binding position", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { comptime, css } from "csslit";
+        import { comptime, css } from "@csslit/core";
         import { pickColor } from "./theme";
 
         const tone = comptime(pickColor());
@@ -107,7 +107,7 @@ test("comptime allows function call in binding position", async () => {
     "
     # js /src/entry.ts
     import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
-    import { comptime } from "/@fs/<root>/packages/csslit/dist/index.js";
+    import { comptime } from "/@fs/<root>/packages/core/dist/index.js";
     import { pickColor } from "/@id/<root>/src/theme.ts";
     const tone = comptime(pickColor());
     export const className = __css_module_import.css_6_26;
@@ -134,7 +134,7 @@ test("array literal can be used in direct interpolation", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`transition: \${["opacity 0.2s", "transform 0.2s"].join(", ")};\`;
       `,
@@ -164,7 +164,7 @@ test("object literal can be used in direct interpolation", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`color: \${{ primary: "hotpink", secondary: "blue" }.primary};\`;
       `,
@@ -194,7 +194,7 @@ test("css literal compiles to static css", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           background: hotpink;
@@ -226,7 +226,7 @@ test("css literal resolves inline module dependencies", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import theme from "./theme";
 
         export const className = css\`
@@ -269,7 +269,7 @@ test("css class binding can be interpolated into another selector", async () => 
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const appStyle = css\`
           display: block;
@@ -317,7 +317,7 @@ test("css class binding is rewritten inside selector functions", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const appStyle = css\`
           display: block;
@@ -369,7 +369,7 @@ test("imported css class binding can be interpolated into another selector", asy
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { base } from "./base";
 
         export const child = css\`
@@ -377,7 +377,7 @@ test("imported css class binding can be interpolated into another selector", asy
         \`;
       `,
       "/src/base.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const base = css\`display: block;\`;
       `,
@@ -422,7 +422,7 @@ test("css expressions in conditional bindings emit matching css module keys", as
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const enabled = true;
         export const style = enabled ? css\`
@@ -465,7 +465,7 @@ test("css eval uses source transformed before csslit", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = "__TOKEN__";
         export const className = css\`color: \${tone};\`;
@@ -510,7 +510,7 @@ test("css and global css preserve source order in one stylesheet", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const first = css\`color: red;\`;
 
@@ -559,7 +559,7 @@ test("global keyframes remain global and ordered with scoped css", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css.global\`
           @keyframes pulse { to { opacity: 1; } }
@@ -609,7 +609,7 @@ test("css literal hoists and scopes keyframes", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           animation: pulse 1s;
@@ -648,7 +648,7 @@ test("conditional keyframes preserve their media condition", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           @media print {
@@ -691,7 +691,7 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const first = css\`
           animation: pulse 1s;
@@ -749,7 +749,7 @@ test("css literals preserve custom property references", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           --text-color: hotpink;

@@ -20,15 +20,15 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp build",
-        dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
       },
       dev: {
         command: "vp dev",
-        dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
       },
       preview: {
         command: "vp preview",
-        dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
       },
     },
   },

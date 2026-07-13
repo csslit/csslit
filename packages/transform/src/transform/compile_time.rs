@@ -2239,7 +2239,7 @@ mod tests {
 
   #[test]
   fn emits_quasi_content_locations_only_for_css_sourcemaps() {
-    let source = "import { css } from \"csslit\";\ncss`ab${value}\ncd`;";
+    let source = "import { css } from \"@csslit/core\";\ncss`ab${value}\ncd`;";
     let without_map = compile_with_css_sourcemap(source, false);
     let with_map = compile_with_css_sourcemap(source, true);
 
@@ -2254,7 +2254,7 @@ mod tests {
   fn snapshots_top_level_binding_rewrite() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { color, unused } from "./theme";
 
         const tone = color ?? "red";
@@ -2269,7 +2269,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
-        __csslit.css("aKU63j_8_5")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2279,7 +2279,7 @@ mod tests {
   fn snapshots_deferred_scope_and_rejected_param() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const outer = 1;
 
@@ -2299,7 +2299,7 @@ mod tests {
         __csslit.defer(() => {
           const param = __csslit.cellVarErr("param", "runtime-parameter", "5:22:5:35");
           const local = outer + 1;
-          __csslit.css("PJY18l_10_7")`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
+          __csslit.css("PJY18l_8_11")`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
         });
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2310,7 +2310,7 @@ mod tests {
   fn keeps_only_used_imports_and_allows_globals() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { color, unused } from "./theme";
 
         const tone = color ?? globalThis.theme.fallback;
@@ -2325,7 +2325,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
-        __csslit.css("aKU63j_8_5")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2335,7 +2335,7 @@ mod tests {
   fn rejects_mutated_and_destructured_locals() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { color, theme } from "./theme";
 
         let tone = color;
@@ -2353,7 +2353,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
         const border = __csslit.cellVarErr("border", "destructured", "7:14:7:32");
-        __csslit.css("HAXkGd_8_8")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
+        __csslit.css("HAXkGd_9_9")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2363,7 +2363,7 @@ mod tests {
   fn supports_var_bindings_via_read_cell() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         var legacy = "red";
         const stable = "1px";
@@ -2379,7 +2379,7 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
-        __csslit.css("GEZhd6_8_6")`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
+        __csslit.css("GEZhd6_7_9")`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2389,7 +2389,7 @@ mod tests {
   fn supports_var_reads_before_initializer_via_read_cell() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css`color: ${legacy};`;
         var legacy = "red";
@@ -2401,7 +2401,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
+        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -2412,7 +2412,7 @@ mod tests {
   fn rejects_unsupported_interpolations_without_aborting_capture() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = "red";
         css`color: ${tone}; width: ${pickSize()}px; border-color: ${window.theme.border};`;
@@ -2425,7 +2425,7 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         const tone = "red";
-        __csslit.css("bmUxWS_8_4")`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
+        __csslit.css("bmUxWS_5_9")`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2435,7 +2435,7 @@ mod tests {
   fn flattens_non_deferred_scope_without_local_bindings() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         {
           css`color: red;`;
@@ -2448,7 +2448,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("CNgLnJ_10_4")`color: red;`;
+        __csslit.css("CNgLnJ_5_11")`color: red;`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2458,7 +2458,7 @@ mod tests {
   fn css_binding_initializers_emit_class_name_string() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const appStyle = css`color: red;`;
         css`.${appStyle} & { color: blue; }`;
@@ -2470,9 +2470,9 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("VebxKp_25_3")`color: red;`;
-        const appStyle = "__csslit_class_VebxKp_25_3";
-        __csslit.css("bmUxWS_8_4")`.${appStyle} & { color: blue; }`;
+        __csslit.css("VebxKp_4_26")`color: red;`;
+        const appStyle = "__csslit_class_VebxKp_4_26";
+        __csslit.css("bmUxWS_5_9")`.${appStyle} & { color: blue; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2482,7 +2482,7 @@ mod tests {
   fn css_expressions_emit_class_name_strings() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const useFoo = true;
         const appStyle = useFoo ? css`color: red;` : css`color: blue;`;
@@ -2496,10 +2496,10 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         const useFoo = true;
-        __csslit.css("glNCrI_34_4")`color: red;`;
-        __csslit.css("wnfmD7_53_4")`color: blue;`;
-        const appStyle = useFoo ? "__csslit_class_glNCrI_34_4" : "__csslit_class_wnfmD7_53_4";
-        __csslit.css("aKU63j_8_5")`.${appStyle} & { color: hotpink; }`;
+        __csslit.css("glNCrI_5_35")`color: red;`;
+        __csslit.css("wnfmD7_5_54")`color: blue;`;
+        const appStyle = useFoo ? "__csslit_class_glNCrI_5_35" : "__csslit_class_wnfmD7_5_54";
+        __csslit.css("aKU63j_6_9")`.${appStyle} & { color: hotpink; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -2509,7 +2509,7 @@ mod tests {
   fn function_bindings_throw_via_hoisted_thunks() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css`color: ${pick()};`;
 
@@ -2524,7 +2524,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
+        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:27", () => pick("3:21:3:25")())};`;
         function pick() {
           return __csslit.varErr("pick", "function-binding", arguments[0], "5:17:5:21");
         }
@@ -2537,7 +2537,7 @@ mod tests {
   fn class_bindings_throw_via_cell_var_err() {
     let output = compile(
       r#"
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         css`color: ${Theme};`;
 
@@ -2552,7 +2552,7 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_8_3")`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
+        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
         const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,

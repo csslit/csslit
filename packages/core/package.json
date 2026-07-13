@@ -1,6 +1,6 @@
 {
-  "name": "csslit",
-  "version": "0.0.1",
+  "name": "@csslit/core",
+  "version": "0.0.2",
   "description": "Compile-time CSS template literals for Vite.",
   "keywords": [
     "css",
@@ -14,7 +14,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/csslit/csslit.git",
-    "directory": "packages/csslit"
+    "directory": "packages/core"
   },
   "files": [
     "dist"

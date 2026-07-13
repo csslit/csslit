@@ -8,7 +8,7 @@ test("production build emits csslit css", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           color: hotpink;
@@ -36,7 +36,7 @@ test("production build eval uses source transformed before csslit", async () => 
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = "__TOKEN__";
         export const className = css\`color: \${tone};\`;
@@ -76,7 +76,7 @@ test("production build eval imports use comptime transforms", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
         import { tone } from "./theme";
 
         export const className = css\`color: \${tone};\`;
@@ -118,7 +118,7 @@ test("production build preserves global and scoped css source order", async () =
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         const tone = "hotpink";
 
@@ -178,7 +178,7 @@ test("production build hoists csslit keyframes", async () => {
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "csslit";
+        import { css } from "@csslit/core";
 
         export const className = css\`
           animation: pulse 1s infinite;

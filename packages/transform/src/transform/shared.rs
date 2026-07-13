@@ -47,7 +47,7 @@ impl<'alloc> CssImportSymbols<'alloc> {
         Statement::ImportDeclaration(import) => Some(import.as_ref()),
         _ => None,
       })
-      .filter(|import| import.source.value == "csslit" && import.import_kind.is_value())
+      .filter(|import| import.source.value == "@csslit/core" && import.import_kind.is_value())
       .filter_map(|import| import.specifiers.as_ref())
       .flatten()
     {

@@ -10,12 +10,12 @@ export default defineConfig({
     tasks: {
       test: {
         command: "vp test --reporter agent",
-        dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
       check: {
         command: "vp test --reporter ./concise-reporter.ts",
-        dependsOn: ["@csslit/vite-plugin#build", "csslit#build"],
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
     },

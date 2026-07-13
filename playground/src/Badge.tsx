@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { css } from "csslit";
+import { css } from "@csslit/core";
 import { theme } from "./theme.ts";
 
 export function Badge({ children }: { children: ReactNode }) {

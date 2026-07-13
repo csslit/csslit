@@ -12,7 +12,7 @@ Compile-time CSS template literals for Vite. csslit evaluates interpolations dur
 ## Install
 
 ```sh
-npm install csslit @csslit/vite-plugin
+npm install @csslit/core @csslit/vite-plugin
 ```
 
 ## Configure Vite
@@ -30,7 +30,7 @@ export default defineConfig({
 ## Use csslit
 
 ```ts
-import { css } from "csslit";
+import { css } from "@csslit/core";
 
 const accent = "rebeccapurple";
 
