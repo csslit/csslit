@@ -5,7 +5,7 @@ import { expect } from "vite-plus/test";
 import { createBuilder, createServer, normalizePath } from "vite";
 import type { Plugin } from "vite";
 import type { RolldownOutput } from "rolldown";
-import { csslitPlugin } from "@csslit/vite-plugin";
+import csslit from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";
 const REPO_ROOT = normalizePath(path.resolve(import.meta.dirname, "../.."));
@@ -395,7 +395,7 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
         },
       },
       logLevel: "silent",
-      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslitPlugin()],
+      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslit()],
       root: serverRoot,
       server: {
         middlewareMode: true,
@@ -482,7 +482,7 @@ async function runCsslitProductionBuildIsolated(
         },
       },
       logLevel: "silent",
-      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslitPlugin()],
+      plugins: [virtualFilesPlugin(absoluteFiles), ...(input.plugins ?? []), csslit()],
       root: serverRoot,
     });
 

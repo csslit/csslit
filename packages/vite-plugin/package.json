@@ -1,6 +1,6 @@
 {
   "name": "@csslit/vite-plugin",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Vite plugin for compile-time csslit styles.",
   "keywords": [
     "css",
@@ -25,7 +25,8 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     }
   },
   "publishConfig": {
@@ -33,7 +34,7 @@
     "registry": "https://registry.npmjs.org/"
   },
   "dependencies": {
-    "@csslit/transform": "^0.0.2",
+    "@csslit/transform": "^0.0.3",
     "@jridgewell/remapping": "^2.3.5",
     "es-module-lexer": "^1.7.0"
   },

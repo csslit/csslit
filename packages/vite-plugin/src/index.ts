@@ -118,7 +118,7 @@ function watchCssEvalDependencies(
   visit(start);
 }
 
-export function csslitPlugin(): PluginOption {
+export default function csslit(): PluginOption {
   let comptimeEnvironment: RunnableDevEnvironment | null = null;
   let devServer: ViteDevServer | null = null;
   let loadClientModule: LoadModule | null = null;

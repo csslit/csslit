@@ -4,10 +4,10 @@ The Vite plugin for compile-time csslit styles.
 
 ```ts
 import { defineConfig } from "vite";
-import { csslitPlugin } from "@csslit/vite-plugin";
+import csslit from "@csslit/vite-plugin";
 
 export default defineConfig({
-  plugins: [csslitPlugin()],
+  plugins: [csslit()],
 });
 ```
 

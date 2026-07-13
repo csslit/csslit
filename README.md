@@ -20,10 +20,10 @@ npm install @csslit/core @csslit/vite-plugin
 ```ts
 // vite.config.ts
 import { defineConfig } from "vite";
-import { csslitPlugin } from "@csslit/vite-plugin";
+import csslit from "@csslit/vite-plugin";
 
 export default defineConfig({
-  plugins: [csslitPlugin()],
+  plugins: [csslit()],
 });
 ```
 

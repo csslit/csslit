@@ -1,9 +1,9 @@
 import { defineConfig } from "vite-plus";
 import react from "@vitejs/plugin-react";
-import { csslitPlugin } from "@csslit/vite-plugin";
+import csslit from "@csslit/vite-plugin";
 
 export default defineConfig({
-  plugins: [csslitPlugin(), react()],
+  plugins: [csslit(), react()],
   build: {
     minify: false,
     cssMinify: false,
