@@ -1,6 +1,6 @@
 {
   "name": "csslit",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "Compile-time CSS template literals for Vite.",
   "keywords": [
     "css",
