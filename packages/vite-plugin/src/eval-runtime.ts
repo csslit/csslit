@@ -211,6 +211,17 @@ export function init() {
     }
   }
 
+  function once<T>(factory: () => T) {
+    try {
+      const value = factory();
+      return () => value;
+    } catch (error) {
+      return () => {
+        throw error;
+      };
+    }
+  }
+
   function cellVarErr(name: string, predicate: DiagnosticPredicateCode, loc: string) {
     return (useLoc: string) => {
       const issueError = new EvaluationError({
@@ -441,6 +452,7 @@ export function init() {
     exprErr,
     finalize,
     globalCss,
+    once,
     readCell,
     varErr,
   };

@@ -235,9 +235,12 @@ where
   }
 }
 
-impl<'a> QuoteStatements<'a> for Vec<'a, Statement<'a>> {
-  fn into_quoted_statements(self, _ast: AstBuilder<'a>, _span: Span) -> Vec<'a, Statement<'a>> {
-    self
+impl<'a, T> QuoteStatements<'a> for T
+where
+  T: IntoIterator<Item = Statement<'a>>,
+{
+  fn into_quoted_statements(self, ast: AstBuilder<'a>, _span: Span) -> Vec<'a, Statement<'a>> {
+    ast.vec_from_iter(self)
   }
 }
 
@@ -1006,6 +1009,35 @@ macro_rules! __quote_expr_postfix {
 
 #[doc(hidden)]
 #[macro_export]
+macro_rules! __quote_statements_array {
+  ($ast:expr; $span:ident; [$($statements:expr,)*]; []) => {
+    [$($statements,)*]
+  };
+  ($ast:expr; $span:ident; [$($statements:expr,)*]; [$($statement:tt)+]) => {
+    compile_error!("expected `;` after quoted statement")
+  };
+  ($ast:expr; $span:ident; [$($statements:expr,)*]; [$($statement:tt)*]; $($rest:tt)*) => {
+    $crate::__quote_statements_array!(
+      $ast;
+      $span;
+      [$($statements,)* $crate::quote_stmt!($ast, $span, $($statement)*;),];
+      []
+      $($rest)*
+    )
+  };
+  ($ast:expr; $span:ident; [$($statements:expr,)*]; [$($statement:tt)*] $token:tt $($rest:tt)*) => {
+    $crate::__quote_statements_array!(
+      $ast;
+      $span;
+      [$($statements,)*];
+      [$($statement)* $token]
+      $($rest)*
+    )
+  };
+}
+
+#[doc(hidden)]
+#[macro_export]
 macro_rules! __quote_expr_parse {
   ($ast:expr, $span:ident, ($($params:tt)*) => { @{$body:ident} }) => {{
     let __ast = $ast;
@@ -1017,6 +1049,18 @@ macro_rules! __quote_expr_parse {
       __params,
       __rest,
       $crate::quote::quote_statements(__ast, __span, $body),
+    )
+  }};
+  ($ast:expr, $span:ident, ($($params:tt)*) => { $($body:tt)+ }) => {{
+    let __ast = $ast;
+    let __span = $span;
+    let (__params, __rest) = $crate::__quote_arrow_parameters!(__ast; __span; []; $($params)*);
+    $crate::quote::quote_arrow_function_block_expression(
+      __ast,
+      __span,
+      __params,
+      __rest,
+      __ast.vec_from_array($crate::__quote_statements_array!(__ast; __span; []; [] $($body)+)),
     )
   }};
   ($ast:expr, $span:ident, ($($params:tt)*) => $($body:tt)+) => {{
@@ -1161,6 +1205,9 @@ macro_rules! __quote_decl_statement {
 
 #[macro_export]
 macro_rules! quote_stmt {
+  ($allocator:expr, $span:ident, @{$statement:ident};) => {
+    $statement
+  };
   ($allocator:expr, $span:ident, { @{$body:ident} }) => {{
     let __ast = $crate::quote::quote_ast_builder($allocator);
     let __span = $span;

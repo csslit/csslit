@@ -256,27 +256,31 @@ test("reassigned local binding warning", async () => {
   `);
 });
 
-test("destructuring local binding warning", async () => {
+test("destructuring evaluation error warning", async () => {
   const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
-        import { css } from "@csslit/core";
-        import { theme } from "./theme";
+        import { comptime, css } from "@csslit/core";
+        import { fail, theme } from "./theme";
 
-        const { tone } = theme;
+        const { tone = comptime(fail()) } = theme;
 
         css\`color: \${tone};\`;
       `,
       "/src/theme.ts": `
-        export const theme = { tone: "hotpink" };
+        export const theme = { tone: undefined };
+
+        export function fail() {
+          throw new Error("destructuring failed");
+        }
       `,
     },
   });
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which comes from destructuring.
+    warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: Error: destructuring failed.
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
@@ -286,11 +290,16 @@ test("destructuring local binding warning", async () => {
           |              ^^^^ references tone
       
       Root cause:
-        at <root>/src/entry.ts:4:7
+        at <root>/src/entry.ts:4:25
         3 | 
-        4 | const { tone } = theme;
-          |       ^^^^^^^^^^^^^^^^ tone comes from destructuring.
+        4 | const { tone = comptime(fail()) } = theme;
+          |                         ^ Error: destructuring failed
         5 | 
+      
+      Stack trace:
+        Error: destructuring failed
+            at fail (<root>/src/theme.ts:4:9)
+            at tone (<root>/src/entry.ts:4:25)
     "
   `);
 });

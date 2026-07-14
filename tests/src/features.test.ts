@@ -3,6 +3,65 @@ import type { Plugin } from "vite";
 
 import { buildSnapshot } from "../harness/csslit-harness.ts";
 
+test("comptime supports destructuring with computed keys and defaults", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { theme } from "./theme";
+
+        const key = "tone";
+        const fallback = "hotpink";
+        const { [key]: tone = fallback, nested: { border }, ...rest } = theme;
+
+        export const className = css\`
+          color: \${tone};
+          border-width: \${border};
+          opacity: \${rest.opacity};
+        \`;
+      `,
+      "/src/theme.ts": `
+        export const theme = {
+          tone: undefined,
+          nested: { border: "2px" },
+          opacity: 0.5,
+        };
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import { theme } from "/@id/<root>/src/theme.ts";
+    const key = "tone";
+    const fallback = "hotpink";
+    const { [key]: tone = fallback, nested: { border }, ...rest } = theme;
+    export const className = __css_module_import.css_8_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_8_26": "lX2Aol_8_26" };
+
+    # js /src/theme.ts
+    export const theme = {
+    	tone: undefined,
+    	nested: { border: "2px" },
+    	opacity: .5
+    };
+
+    # css /src/entry.ts.csslit.css
+    .lX2Aol_8_26 {
+      color: #ff69b4;
+      border-width: 2px;
+      opacity: .5;
+    }
+    "
+  `);
+});
+
 test("css literal reads from enclosing function scope", async () => {
   const result = await buildSnapshot({
     entry: "/src/entry.ts",

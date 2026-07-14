@@ -51,7 +51,6 @@ export type DiagnosticPredicateCode =
   | "class-binding"
   | "catch-binding"
   | "reassigned"
-  | "destructured"
   | "defaulted-binding-pattern"
   | "unknown-binding-pattern"
   | "loop-binding"
@@ -153,7 +152,6 @@ const predicateStrings: Record<DiagnosticPredicateCode, string> = {
   "class-binding": "is a class binding.",
   "catch-binding": "is a catch binding.",
   reassigned: "is reassigned.",
-  destructured: "comes from destructuring.",
   "defaulted-binding-pattern": "uses a defaulted binding pattern.",
   "unknown-binding-pattern": "uses an unknown binding pattern that csslit does not support.",
   "loop-binding": "comes from a loop binding.",

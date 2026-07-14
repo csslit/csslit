@@ -5,7 +5,8 @@ use oxc_ast::{
   ast::{
     Argument, BindingPattern, ChainElement, ClassType, Expression, FunctionType,
     IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind,
-    Statement, TSModuleDeclarationName, TaggedTemplateExpression, VariableDeclarator,
+    Statement, TSModuleDeclarationName, TaggedTemplateExpression, VariableDeclarationKind,
+    VariableDeclarator,
   },
 };
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
@@ -41,7 +42,6 @@ enum PredicateCode {
   ClassBinding,
   CatchBinding,
   Reassigned,
-  Destructured,
   DefaultedBindingPattern,
   UnknownBindingPattern,
   LoopBinding,
@@ -62,7 +62,6 @@ impl PredicateCode {
       Self::ClassBinding => "class-binding",
       Self::CatchBinding => "catch-binding",
       Self::Reassigned => "reassigned",
-      Self::Destructured => "destructured",
       Self::DefaultedBindingPattern => "defaulted-binding-pattern",
       Self::UnknownBindingPattern => "unknown-binding-pattern",
       Self::LoopBinding => "loop-binding",
@@ -351,22 +350,9 @@ fn build_symbol_state<'alloc>(
   let declarator_span = variable_declarator.span;
   let is_var = variable_declarator.kind.is_var();
 
-  if variable_declarator.id.is_destructuring_pattern() {
-    return make_rejected_state(
-      allocator,
-      is_var,
-      Some(declarator_span),
-      symbol_issue(
-        allocator,
-        scoping,
-        symbol_id,
-        PredicateCode::Destructured,
-        declarator_span,
-      ),
-    );
-  }
-
-  if !variable_declarator.id.is_binding_identifier() {
+  if !variable_declarator.id.is_binding_identifier()
+    && !variable_declarator.id.is_destructuring_pattern()
+  {
     let predicate = if variable_declarator.id.is_assignment_pattern() {
       PredicateCode::DefaultedBindingPattern
     } else {
@@ -411,14 +397,29 @@ fn build_symbol_state<'alloc>(
     );
   };
 
-  let is_plain = match analyze_binding_expression(
-    allocator,
-    css_import_symbols,
-    nodes,
-    scoping,
-    symbol_states,
-    init,
-  ) {
+  let analysis = if variable_declarator.id.is_destructuring_pattern() {
+    analyze_destructuring(
+      allocator,
+      css_import_symbols,
+      nodes,
+      scoping,
+      symbol_states,
+      &variable_declarator.id,
+      init,
+    )
+    .map(|()| false)
+  } else {
+    analyze_binding_expression(
+      allocator,
+      css_import_symbols,
+      nodes,
+      scoping,
+      symbol_states,
+      init,
+    )
+  };
+
+  let is_plain = match analysis {
     Ok(is_plain) => is_plain,
     Err(issue) => {
       return make_rejected_state(allocator, is_var, Some(declarator_span), issue);
@@ -436,6 +437,199 @@ fn build_symbol_state<'alloc>(
   } else {
     SymbolState::AllowedThunk
   }
+}
+
+fn collect_binding_symbol_ids(pattern: &BindingPattern, symbols: &mut std::vec::Vec<SymbolId>) {
+  match pattern {
+    BindingPattern::BindingIdentifier(identifier) => symbols.push(identifier.symbol_id()),
+    BindingPattern::ObjectPattern(pattern) => {
+      for property in &pattern.properties {
+        collect_binding_symbol_ids(&property.value, symbols);
+      }
+      if let Some(rest) = &pattern.rest {
+        collect_binding_symbol_ids(&rest.argument, symbols);
+      }
+    }
+    BindingPattern::ArrayPattern(pattern) => {
+      for element in pattern.elements.iter().flatten() {
+        collect_binding_symbol_ids(element, symbols);
+      }
+      if let Some(rest) = &pattern.rest {
+        collect_binding_symbol_ids(&rest.argument, symbols);
+      }
+    }
+    BindingPattern::AssignmentPattern(pattern) => {
+      collect_binding_symbol_ids(&pattern.left, symbols);
+    }
+  }
+}
+
+fn analyze_destructuring<'alloc>(
+  allocator: &'alloc Allocator,
+  css_import_symbols: &CssImportSymbols<'alloc>,
+  nodes: &AstNodes,
+  scoping: &Scoping,
+  symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  pattern: &BindingPattern,
+  init: &Expression,
+) -> Result<(), Issue<'alloc>> {
+  let mut bound_symbols = std::vec::Vec::new();
+  collect_binding_symbol_ids(pattern, &mut bound_symbols);
+
+  analyze_destructuring_expression(
+    allocator,
+    css_import_symbols,
+    nodes,
+    scoping,
+    symbol_states,
+    init,
+    &bound_symbols,
+  )?;
+  analyze_destructuring_pattern(
+    allocator,
+    css_import_symbols,
+    nodes,
+    scoping,
+    symbol_states,
+    pattern,
+    &bound_symbols,
+  )
+}
+
+fn analyze_destructuring_pattern<'alloc>(
+  allocator: &'alloc Allocator,
+  css_import_symbols: &CssImportSymbols<'alloc>,
+  nodes: &AstNodes,
+  scoping: &Scoping,
+  symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  pattern: &BindingPattern,
+  bound_symbols: &[SymbolId],
+) -> Result<(), Issue<'alloc>> {
+  match pattern {
+    BindingPattern::BindingIdentifier(_) => Ok(()),
+    BindingPattern::ObjectPattern(pattern) => {
+      for property in &pattern.properties {
+        if property.computed
+          && let Some(expression) = property.key.as_expression()
+        {
+          analyze_destructuring_expression(
+            allocator,
+            css_import_symbols,
+            nodes,
+            scoping,
+            symbol_states,
+            expression,
+            bound_symbols,
+          )?;
+        }
+        analyze_destructuring_pattern(
+          allocator,
+          css_import_symbols,
+          nodes,
+          scoping,
+          symbol_states,
+          &property.value,
+          bound_symbols,
+        )?;
+      }
+      if let Some(rest) = &pattern.rest {
+        analyze_destructuring_pattern(
+          allocator,
+          css_import_symbols,
+          nodes,
+          scoping,
+          symbol_states,
+          &rest.argument,
+          bound_symbols,
+        )?;
+      }
+      Ok(())
+    }
+    BindingPattern::ArrayPattern(pattern) => {
+      for element in pattern.elements.iter().flatten() {
+        analyze_destructuring_pattern(
+          allocator,
+          css_import_symbols,
+          nodes,
+          scoping,
+          symbol_states,
+          element,
+          bound_symbols,
+        )?;
+      }
+      if let Some(rest) = &pattern.rest {
+        analyze_destructuring_pattern(
+          allocator,
+          css_import_symbols,
+          nodes,
+          scoping,
+          symbol_states,
+          &rest.argument,
+          bound_symbols,
+        )?;
+      }
+      Ok(())
+    }
+    BindingPattern::AssignmentPattern(pattern) => {
+      analyze_destructuring_expression(
+        allocator,
+        css_import_symbols,
+        nodes,
+        scoping,
+        symbol_states,
+        &pattern.right,
+        bound_symbols,
+      )?;
+      analyze_destructuring_pattern(
+        allocator,
+        css_import_symbols,
+        nodes,
+        scoping,
+        symbol_states,
+        &pattern.left,
+        bound_symbols,
+      )
+    }
+  }
+}
+
+fn analyze_destructuring_expression<'alloc>(
+  allocator: &'alloc Allocator,
+  css_import_symbols: &CssImportSymbols<'alloc>,
+  nodes: &AstNodes,
+  scoping: &Scoping,
+  symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  expr: &Expression,
+  bound_symbols: &[SymbolId],
+) -> Result<bool, Issue<'alloc>> {
+  analyze_supported_expression(
+    expr,
+    ExpressionAnalysisMode::Binding,
+    css_import_symbols,
+    &mut |ident| {
+      let Some((symbol_id, _)) = referenced_value_symbol_id(allocator, scoping, ident)? else {
+        return Ok(false);
+      };
+
+      if bound_symbols.contains(&symbol_id) {
+        return Ok(true);
+      }
+
+      mark_symbol_live(
+        allocator,
+        css_import_symbols,
+        nodes,
+        scoping,
+        symbol_states,
+        symbol_id,
+      );
+      Ok(matches!(
+        symbol_states[symbol_id],
+        SymbolState::AllowedDirect
+      ))
+    },
+    scoping,
+  )
 }
 
 fn analyze_binding_expression<'alloc>(
@@ -824,6 +1018,93 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     }
   }
 
+  fn emit_destructuring_declarator(
+    &mut self,
+    mut pattern: BindingPattern<'ast>,
+    mut init: Expression<'ast>,
+    kind: VariableDeclarationKind,
+    span: Span,
+  ) {
+    let mut bound_symbols = std::vec::Vec::new();
+    collect_binding_symbol_ids(&pattern, &mut bound_symbols);
+
+    self.visit_expression(&mut init);
+    walk_mut::walk_binding_pattern(self, &mut pattern);
+    rewrite_destructuring_references(
+      self.allocator,
+      &mut pattern,
+      &mut init,
+      self.location_context,
+      self.scoping,
+      self.symbol_states,
+      &bound_symbols,
+    );
+
+    let ast = AstBuilder::new(self.allocator);
+    let once_name = oxc_str::format_ident!(self.allocator, "__csslit_once_{}", span.start);
+    let destructuring_statement = Statement::from(ast.declaration_variable(
+      span,
+      kind,
+      ast.vec1(ast.variable_declarator(span, kind, pattern, NONE, Some(init), false)),
+      false,
+    ));
+
+    let values = bound_symbols
+      .iter()
+      .map(|symbol_id| ast.expression_identifier(span, self.scoping.symbol_name(*symbol_id)));
+
+    self.push_binding_statement(quote_stmt!(
+      self.allocator,
+      span,
+      const @{once_name} = (__csslit.once(() => {
+        @{destructuring_statement};
+        return ([@{values}]);
+      }));
+    ));
+
+    for (index, symbol_id) in bound_symbols.iter().copied().enumerate() {
+      if bound_symbols[..index].contains(&symbol_id) {
+        continue;
+      }
+
+      let state = &self.symbol_states[symbol_id];
+      match state {
+        SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. } => {
+          let name = self.scoping.symbol_name(symbol_id);
+          let location =
+            build_runtime_location_expression(self.allocator, span, self.location_context);
+          let statement = if matches!(state, SymbolState::AllowedCallMemo { .. }) {
+            quote_stmt!(
+              self.allocator,
+              span,
+              var @{name} = (__csslit.cell(
+                @{name},
+                @{location},
+                () => @{once_name}()[@{index}]
+              ));
+            )
+          } else {
+            quote_stmt!(
+              self.allocator,
+              span,
+              const @{name} = (__csslit.cell(
+                @{name},
+                @{location},
+                () => @{once_name}()[@{index}]
+              ));
+            )
+          };
+          self.push_binding_statement(statement);
+        }
+        SymbolState::RejectedThunk(_) | SymbolState::RejectedCallMemo(_) => {
+          self.push_binding_statement(self.build_non_owned_symbol_statement(symbol_id));
+        }
+        SymbolState::Unseen | SymbolState::Resolving => {}
+        SymbolState::AllowedDirect | SymbolState::Import => unreachable!(),
+      }
+    }
+  }
+
   fn build_non_owned_symbol_statement(&self, symbol_id: SymbolId) -> Statement<'ast> {
     let name = self.scoping.symbol_name(symbol_id);
 
@@ -1083,6 +1364,25 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
 
         self.visit_expression(&mut init);
         self.push_binding_statement(self.build_owned_symbol_statement(symbol_id, init));
+        return;
+      }
+    }
+
+    if declarator.id.is_destructuring_pattern() {
+      let mut bound_symbols = std::vec::Vec::new();
+      collect_binding_symbol_ids(&declarator.id, &mut bound_symbols);
+      if bound_symbols.iter().any(|symbol_id| {
+        matches!(
+          self.symbol_states[*symbol_id],
+          SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }
+        )
+      }) {
+        let pattern = declarator.id.take_in(self.allocator);
+        let init = declarator
+          .init
+          .take()
+          .expect("live destructuring bindings must have an initializer");
+        self.emit_destructuring_declarator(pattern, init, declarator.kind, declarator.span);
         return;
       }
     }
@@ -1814,6 +2114,57 @@ fn analyze_supported_chain_element<'alloc>(
   }
 }
 
+struct DestructuringReferenceRewriter<'ctx, 'alloc> {
+  allocator: &'alloc Allocator,
+  location_context: &'ctx SourceLocationContext<'alloc>,
+  scoping: &'ctx Scoping,
+  symbol_states: &'ctx IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  bound_symbols: &'ctx [SymbolId],
+}
+
+impl<'ctx, 'alloc> VisitMut<'alloc> for DestructuringReferenceRewriter<'ctx, 'alloc> {
+  fn visit_expression(&mut self, expression: &mut Expression<'alloc>) {
+    if let Expression::Identifier(identifier) = expression {
+      if referenced_symbol_id(self.scoping, identifier)
+        .is_some_and(|symbol_id| self.bound_symbols.contains(&symbol_id))
+      {
+        return;
+      }
+
+      rewrite_local_references(
+        self.allocator,
+        expression,
+        self.location_context,
+        self.scoping,
+        self.symbol_states,
+      );
+      return;
+    }
+
+    walk_mut::walk_expression(self, expression);
+  }
+}
+
+fn rewrite_destructuring_references<'alloc>(
+  allocator: &'alloc Allocator,
+  pattern: &mut BindingPattern<'alloc>,
+  init: &mut Expression<'alloc>,
+  location_context: &SourceLocationContext<'alloc>,
+  scoping: &Scoping,
+  symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  bound_symbols: &[SymbolId],
+) {
+  let mut rewriter = DestructuringReferenceRewriter {
+    allocator,
+    location_context,
+    scoping,
+    symbol_states,
+    bound_symbols,
+  };
+  rewriter.visit_expression(init);
+  rewriter.visit_binding_pattern(pattern);
+}
+
 fn rewrite_local_references<'alloc>(
   allocator: &'alloc Allocator,
   expr: &mut Expression<'alloc>,
@@ -2508,7 +2859,7 @@ mod tests {
   }
 
   #[test]
-  fn rejects_mutated_and_destructured_locals() {
+  fn rejects_mutated_and_supports_destructured_locals() {
     let output = compile(
       r#"
         import { css } from "@csslit/core";
@@ -2527,9 +2878,59 @@ mod tests {
       r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
+        import { theme } from "./theme";
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
-        const border = __csslit.cellVarErr("border", "destructured", "7:14:7:32");
+        const __csslit_once_158 = __csslit.once(() => {
+          const { border } = theme;
+          return [border];
+        });
+        const border = __csslit.cell("border", "7:14:7:32", () => __csslit_once_158()[0]);
         __csslit.css("HAXkGd_9_9")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn supports_nested_destructuring_computed_keys_and_defaults() {
+    let output = compile(
+      r#"
+        import { css } from "@csslit/core";
+        import { fallback, key, theme, values } from "./theme";
+
+        const {
+          [key]: tone = fallback,
+          nested: { border = `${fallback}px` },
+          ...rest
+        } = theme;
+        const [first = "red", second = first] = values;
+        css`color: ${tone}; border-width: ${border}; opacity: ${rest.opacity}; background: ${second};`;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        import { fallback, key, theme, values } from "./theme";
+        const __csslit_once_124 = __csslit.once(() => {
+          const { [key]: tone = fallback, nested: { border = `${fallback}px` }, ...rest } = theme;
+          return [
+            tone,
+            border,
+            rest
+          ];
+        });
+        const tone = __csslit.cell("tone", "4:14:8:17", () => __csslit_once_124()[0]);
+        const border = __csslit.cell("border", "4:14:8:17", () => __csslit_once_124()[1]);
+        const rest = __csslit.cell("rest", "4:14:8:17", () => __csslit_once_124()[2]);
+        const __csslit_once_259 = __csslit.once(() => {
+          const [first = "red", second = first] = values;
+          return [first, second];
+        });
+        const second = __csslit.cell("second", "9:14:9:54", () => __csslit_once_259()[1]);
+        __csslit.css("vGnKZk_11_9")`color: ${__csslit.capture("10:21:10:25", () => tone("10:21:10:25"))}; border-width: ${__csslit.capture("10:44:10:50", () => border("10:44:10:50"))}; opacity: ${__csslit.capture("10:64:10:76", () => rest("10:64:10:68").opacity)}; background: ${__csslit.capture("10:93:10:99", () => second("10:93:10:99"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
