@@ -1,5 +1,5 @@
 use napi_derive::napi;
-use oxc_sourcemap::SourceMap;
+use oxc_sourcemap::napi::SourceMap;
 
 mod quote;
 mod transform;
@@ -49,7 +49,7 @@ struct OxcTransformResult {
 #[napi(object)]
 pub struct TransformResult {
   pub code: String,
-  pub map: Option<RawSourceMap>,
+  pub map: Option<SourceMap>,
   pub exports: Vec<CsslitClassExport>,
 }
 
@@ -89,40 +89,8 @@ pub struct CompileCsslitRequest {
 #[napi(object)]
 pub struct CompileCsslitResult {
   pub code: String,
-  pub map: Option<RawSourceMap>,
+  pub map: Option<SourceMap>,
   pub warnings: Vec<String>,
-}
-
-#[napi(object)]
-pub struct RawSourceMap {
-  pub file: Option<String>,
-  pub mappings: String,
-  pub names: Vec<String>,
-  pub source_root: Option<String>,
-  pub sources: Vec<String>,
-  #[napi(ts_type = "(string | null)[]")]
-  pub sources_content: Option<Vec<Option<String>>>,
-  pub version: u32,
-  #[napi(js_name = "x_google_ignoreList")]
-  pub x_google_ignore_list: Option<Vec<u32>>,
-  pub debug_id: Option<String>,
-}
-
-impl From<SourceMap> for RawSourceMap {
-  fn from(map: SourceMap) -> Self {
-    let json = map.to_json();
-    Self {
-      file: json.file,
-      mappings: json.mappings,
-      names: json.names,
-      source_root: json.source_root,
-      sources: json.sources,
-      sources_content: json.sources_content,
-      version: json.version,
-      x_google_ignore_list: json.x_google_ignore_list,
-      debug_id: json.debug_id,
-    }
-  }
 }
 
 #[napi]
@@ -141,7 +109,7 @@ pub fn transform_runtime(
 
   Ok(TransformResult {
     code: result.code,
-    map: result.map.map(Into::into),
+    map: result.map,
     exports: result.exports,
   })
 }
@@ -163,7 +131,7 @@ pub fn transform_compile_time(
 
   Ok(TransformResult {
     code: result.code,
-    map: result.map.map(Into::into),
+    map: result.map,
     exports: result.exports,
   })
 }
@@ -194,12 +162,12 @@ pub fn transform_client(
   Ok(ClientTransformResult {
     runtime: TransformResult {
       code: runtime.code,
-      map: runtime.map.map(Into::into),
+      map: runtime.map,
       exports: runtime.exports,
     },
     eval: TransformResult {
       code: eval.code,
-      map: eval.map.map(Into::into),
+      map: eval.map,
       exports: eval.exports,
     },
   })

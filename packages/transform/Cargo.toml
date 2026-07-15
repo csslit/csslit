@@ -6,22 +6,22 @@ name = "transform"
 crate-type = ["cdylib"]
 
 [dependencies]
-napi = { version = "3.9.0", features = ["napi10"] }
-napi-derive = "3.5.6"
-oxc_allocator = "0.130.0"
-oxc_parser = "0.130.0"
-oxc_ast = "0.130.0"
-oxc_ast_visit = "0.130.0"
-oxc_traverse = "0.130.0"
-oxc_span = "0.130.0"
-oxc_str = "0.130.0"
-oxc_codegen = "0.130.0"
-oxc_semantic = "0.130.0"
-oxc_syntax = "0.130.0"
-oxc_transformer = "0.130.0"
-oxc_data_structures = { version = "0.130.0", features = ["rope"] }
-oxc_index = "4.1.0"
-oxc_sourcemap = "6.1.1"
+napi = { version = "3.10.5", features = ["napi10"] }
+napi-derive = "3.5.10"
+oxc_allocator = "0.140.0"
+oxc_parser = "0.140.0"
+oxc_ast = "0.140.0"
+oxc_ast_visit = "0.140.0"
+oxc_traverse = "0.140.0"
+oxc_span = "0.140.0"
+oxc_str = "0.140.0"
+oxc_codegen = "0.140.0"
+oxc_semantic = "0.140.0"
+oxc_syntax = "0.140.0"
+oxc_transformer = "0.140.0"
+oxc_data_structures = { version = "0.140.0", features = ["rope"] }
+oxc_index = "5.0.0"
+oxc_sourcemap = { version = "8.1.1", features = ["napi"] }
 cssparser = "0.33.0"
 lightningcss = { version = "1.0.0-alpha.71", features = ["visitor"] }
 parcel_selectors = "0.28.2"

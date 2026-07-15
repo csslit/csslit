@@ -20,9 +20,9 @@ use std::{
 
 const CSSLIT_CLASS_PREFIX: &str = "__csslit_class_";
 
-struct CompiledBlock {
+struct CompiledBlock<'a> {
   code: String,
-  map: Option<SourceMap>,
+  map: Option<SourceMap<'a>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -111,14 +111,14 @@ pub(crate) fn compile_csslit(
   })
 }
 
-fn compile_scoped_block(
-  filename: &str,
+fn compile_scoped_block<'a>(
+  filename: &'a str,
   index: usize,
   scoped_name: &str,
   code: &str,
   mapping_runs: Option<&[u32]>,
   sourcemap: bool,
-) -> Result<CompiledBlock, Box<dyn std::error::Error>> {
+) -> Result<CompiledBlock<'a>, Box<dyn std::error::Error>> {
   let block_filename = format!("{filename}?csslit-block={index}");
   let options: ParserOptions<'_, '_> = ParserOptions {
     filename: block_filename.clone(),
@@ -155,13 +155,13 @@ fn compile_scoped_block(
   })
 }
 
-fn compile_global_block(
-  filename: &str,
+fn compile_global_block<'a>(
+  filename: &'a str,
   index: usize,
   code: &str,
   mapping_runs: Option<&[u32]>,
   sourcemap: bool,
-) -> Result<CompiledBlock, Box<dyn std::error::Error>> {
+) -> Result<CompiledBlock<'a>, Box<dyn std::error::Error>> {
   let block_filename = format!("{filename}?csslit-block={index}");
   let options = ParserOptions {
     filename: block_filename.clone(),
@@ -344,13 +344,13 @@ impl<'i> Visitor<'i> for ClassReferenceRewriter {
   }
 }
 
-fn compose_sparse_map(
-  filename: &str,
+fn compose_sparse_map<'a>(
+  filename: &'a str,
   code: &str,
   output: &str,
   encoded_runs: Option<&[u32]>,
   sparse_map: &ParcelSourceMap,
-) -> SourceMap {
+) -> SourceMap<'a> {
   let (runs, line_starts) = decode_mapping_runs(code, encoded_runs.unwrap());
 
   let mut output_line_starts = vec![0];

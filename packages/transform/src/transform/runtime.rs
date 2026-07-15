@@ -114,7 +114,7 @@ pub(crate) fn transform_runtime(
 
   OxcTransformResult {
     code: result.code,
-    map: result.map,
+    map: result.map.map(Into::into),
     exports: transformer.exports,
   }
 }

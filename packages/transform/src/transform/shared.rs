@@ -36,9 +36,9 @@ impl<'alloc> CssImportSymbols<'alloc> {
     allocator: &'ast Allocator,
     program: &Program<'ast>,
   ) -> CssImportSymbols<'ast> {
-    let mut comptime_named = Vec::new_in(allocator);
-    let mut named = Vec::new_in(allocator);
-    let mut namespaces = Vec::new_in(allocator);
+    let mut comptime_named = Vec::new_in(&allocator);
+    let mut named = Vec::new_in(&allocator);
+    let mut namespaces = Vec::new_in(&allocator);
 
     for specifier in program
       .body

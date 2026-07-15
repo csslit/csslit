@@ -1,4 +1,4 @@
-use oxc_allocator::{AllocatorAccessor, FromIn, Vec};
+use oxc_allocator::{FromIn, GetAllocator, Vec};
 use oxc_ast::{
   AstBuilder, NONE,
   ast::{
@@ -97,7 +97,7 @@ where
 #[doc(hidden)]
 pub fn quote_ast_builder<'a, T>(accessor: T) -> AstBuilder<'a>
 where
-  T: AllocatorAccessor<'a>,
+  T: GetAllocator<'a>,
 {
   AstBuilder::new(accessor.allocator())
 }

@@ -1099,7 +1099,7 @@ fn make_rejected_state<'alloc>(
   decl_span: Option<Span>,
   issue: Issue<'alloc>,
 ) -> SymbolState<'alloc> {
-  let info = Box::new_in(RejectedInfo { decl_span, issue }, allocator);
+  let info = Box::new_in(RejectedInfo { decl_span, issue }, &allocator);
 
   if is_call_memo {
     SymbolState::RejectedCallMemo(info)
@@ -1251,7 +1251,7 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
 
     self.push_binding_statement(Statement::ImportDeclaration(Box::new_in(
       import,
-      self.allocator,
+      &self.allocator,
     )));
   }
 
@@ -1491,13 +1491,13 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
       body.statements.push(return_statement);
     }
 
-    Statement::FunctionDeclaration(Box::new_in(function, self.allocator))
+    Statement::FunctionDeclaration(Box::new_in(function, &self.allocator))
   }
 }
 
 impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
   fn enter_scope(&mut self, flags: ScopeFlags, _scope_id: &std::cell::Cell<Option<ScopeId>>) {
-    let mut body = Vec::new_in(self.allocator);
+    let mut body = Vec::new_in(&self.allocator);
     if self.frames.is_empty() {
       body.push(quote_stmt!(
         self.allocator,
@@ -1545,7 +1545,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
   }
 
   fn visit_import_declaration(&mut self, import: &mut ImportDeclaration<'ast>) {
-    self.emit_import_declaration(import.take_in(self.allocator));
+    self.emit_import_declaration(import.take_in(&self.allocator));
   }
 
   fn visit_expression(&mut self, expr: &mut Expression<'ast>) {
@@ -1573,10 +1573,10 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     let local_line = line + 1;
     let local_column = column + 1;
     let hash = stable_name_hash(self.filename, line, column);
-    let mut template = tagged.quasi.take_in(self.allocator);
+    let mut template = tagged.quasi.take_in(&self.allocator);
     for expression in &mut template.expressions {
       let span = expression.span();
-      let mut rewritten_expression = expression.take_in(self.allocator);
+      let mut rewritten_expression = expression.take_in(&self.allocator);
       self.visit_expression(&mut rewritten_expression);
       let should_capture = match self.analyze_expression_for_synthesis(&rewritten_expression) {
         Ok(is_plain) => {
@@ -1695,7 +1695,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         self.is_declaration_binding(*binding, declaration_node_id)
           && self.symbol_states[binding.symbol_id].needs_cell()
       }) {
-        let pattern = declarator.id.take_in(self.allocator);
+        let pattern = declarator.id.take_in(&self.allocator);
         let init = declarator
           .init
           .take()
@@ -1772,7 +1772,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         .as_ref()
         .is_some_and(|identifier| self.symbol_states[identifier.symbol_id()].is_extracted());
 
-    let mut function = function.take_in(self.allocator);
+    let mut function = function.take_in(&self.allocator);
     walk_mut::walk_function(self, &mut function, flags);
 
     if should_emit_binding {
@@ -1787,7 +1787,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
             symbol_states: self.symbol_states,
           };
           walk_mut::walk_function(&mut rewriter, &mut function, flags);
-          Statement::FunctionDeclaration(Box::new_in(function, self.allocator))
+          Statement::FunctionDeclaration(Box::new_in(function, &self.allocator))
         }
         SymbolState::RejectedThunk(_) => self.build_function_placeholder_statement(function),
         _ => unreachable!(),
@@ -1825,7 +1825,10 @@ pub(crate) fn transform_compile_time(
 
   let mut ret = Parser::new(allocator, &source_text, source_type).parse();
   let (scoping, css_import_symbols, symbol_states) = {
-    let semantic = SemanticBuilder::new().build(&ret.program).semantic;
+    let semantic = SemanticBuilder::new()
+      .with_build_nodes(true)
+      .build(&ret.program)
+      .semantic;
     let css_import_symbols = CssImportSymbols::collect(allocator, &ret.program);
     let (scoping, nodes) = semantic.into_scoping_and_nodes();
 
@@ -1854,9 +1857,9 @@ pub(crate) fn transform_compile_time(
     css_sourcemap,
     css_import_symbols: &css_import_symbols,
     filename: &filename,
-    frames: Vec::new_in(allocator),
+    frames: Vec::new_in(&allocator),
     location_context: &diagnostic_location_context,
-    root_body: Vec::new_in(allocator),
+    root_body: Vec::new_in(&allocator),
     scoping: &scoping,
     symbol_states: &symbol_states,
   };
@@ -1871,9 +1874,9 @@ pub(crate) fn transform_compile_time(
     ret.program.span,
     ret.program.source_type,
     ret.program.source_text,
-    ret.program.comments.take_in(allocator),
+    ret.program.comments.take_in(&allocator),
     ret.program.hashbang.take(),
-    ret.program.directives.take_in(allocator),
+    ret.program.directives.take_in(&allocator),
     emitter.root_body,
     ret.program.scope_id.get().unwrap(),
   );
@@ -1903,7 +1906,7 @@ pub(crate) fn transform_compile_time(
 
   OxcTransformResult {
     code: result.code,
-    map: result.map,
+    map: result.map.map(Into::into),
     exports: std::vec::Vec::new(),
   }
 }
