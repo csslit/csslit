@@ -31,6 +31,15 @@ type IssueDiagnosticInfo = VariableIssueDiagnosticInfo | ExpressionIssueDiagnost
 
 type DiagnosticInfo = StepDiagnosticInfo | IssueDiagnosticInfo;
 
+interface Cell<T> {
+  (useLoc: string): T;
+  readonly initialized: boolean;
+  value: T;
+  error: unknown;
+}
+
+class CellInitializationError extends Error {}
+
 class EvaluationError extends Error {
   diagnostic: DiagnosticInfo;
 
@@ -193,73 +202,96 @@ export function init() {
     });
   }
 
-  function cell<T>(name: string, loc: string, factory: () => T) {
-    try {
-      const value = factory();
-      return () => value;
-    } catch (error) {
-      return (useLoc: string) => {
-        const dependencyError = new EvaluationError({
-          kind: "dependency",
-          name,
-          reference: useLoc,
-          source: loc,
-        });
-        dependencyError.cause = error;
-        throw dependencyError;
-      };
+  function cell<T>(name: string, loc: string, factory?: () => T) {
+    let state:
+      | { kind: "uninitialized" }
+      | { kind: "value"; value: T }
+      | { kind: "error"; error: unknown } = { kind: "uninitialized" };
+    const read = ((useLoc: string) => {
+      switch (state.kind) {
+        case "uninitialized":
+          return varErr(name, "used-before-initializer", useLoc, loc);
+        case "value":
+          return state.value;
+        case "error": {
+          const dependencyError = new EvaluationError({
+            kind: "dependency",
+            name,
+            reference: useLoc,
+            source: loc,
+          });
+          dependencyError.cause = state.error;
+          throw dependencyError;
+        }
+      }
+    }) as Cell<T>;
+
+    Object.defineProperties(read, {
+      initialized: {
+        get() {
+          return state.kind !== "uninitialized";
+        },
+      },
+      value: {
+        set(value: T) {
+          if (state.kind !== "uninitialized") {
+            throw new CellInitializationError(`Cell ${name} was initialized more than once.`);
+          }
+          state = { kind: "value", value };
+        },
+      },
+      error: {
+        set(error: unknown) {
+          if (state.kind !== "uninitialized") {
+            throw new CellInitializationError(`Cell ${name} was initialized more than once.`);
+          }
+          state = { kind: "error", error };
+        },
+      },
+    });
+
+    if (factory !== undefined) {
+      try {
+        read.value = factory();
+      } catch (error) {
+        read.error = error;
+      }
     }
+
+    return read;
   }
 
-  function once<T>(factory: () => T) {
+  function destructure(cells: Array<Cell<unknown>>, run: () => void) {
     try {
-      const value = factory();
-      return () => value;
+      run();
     } catch (error) {
-      return () => {
-        throw error;
-      };
+      if (error instanceof CellInitializationError) throw error;
+      for (const cell of cells) {
+        if (!cell.initialized) cell.error = error;
+      }
     }
   }
 
   function cellVarErr(name: string, predicate: DiagnosticPredicateCode, loc: string) {
-    return (useLoc: string) => {
-      const issueError = new EvaluationError({
-        kind: "variable",
-        name,
-        predicate,
-        reference: loc,
-        source: loc,
-      });
-
-      const error = new EvaluationError({
-        kind: "dependency",
-        name,
-        reference: useLoc,
-        source: loc,
-      });
-      error.cause = issueError;
-      throw error;
-    };
+    const result = cell(name, loc);
+    result.error = new EvaluationError({
+      kind: "variable",
+      name,
+      predicate,
+      reference: loc,
+      source: loc,
+    });
+    return result;
   }
 
   function cellExprErr(name: string, code: ExpressionCode, loc: string) {
-    return (useLoc: string) => {
-      const issueError = new EvaluationError({
-        kind: "expression",
-        code,
-        source: loc,
-      });
-
-      const error = new EvaluationError({
-        kind: "dependency",
-        name,
-        reference: useLoc,
-        source: loc,
-      });
-      error.cause = issueError;
-      throw error;
-    };
+    const result = cell(name, loc);
+    result.error = new EvaluationError({
+      kind: "expression",
+      code,
+      source: loc,
+    });
+    return result;
   }
 
   function readCell<T>(
@@ -449,10 +481,11 @@ export function init() {
     capture,
     css,
     defer,
+    destructure,
+    set discard(_value: unknown) {},
     exprErr,
     finalize,
     globalCss,
-    once,
     readCell,
     varErr,
   };

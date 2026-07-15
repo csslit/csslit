@@ -62,6 +62,56 @@ test("comptime supports destructuring with computed keys and defaults", async ()
   `);
 });
 
+test("destructuring closures observe incrementally initialized bindings", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { comptime, css } from "@csslit/core";
+
+        const { a, b, c } = comptime({
+          a: 1,
+          b: () => a,
+          get c() {
+            return a;
+          },
+        });
+
+        export const className = css\`
+          width: \${b()}px;
+          height: \${c}px;
+        \`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import { comptime } from "/@fs/<root>/packages/core/dist/index.js";
+    const { a, b, c } = comptime({
+    	a: 1,
+    	b: () => a,
+    	get c() {
+    		return a;
+    	}
+    });
+    export const className = __css_module_import.css_11_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_11_26": "NJuKTo_11_26" };
+
+    # css /src/entry.ts.csslit.css
+    .NJuKTo_11_26 {
+      width: 1px;
+      height: 1px;
+    }
+    "
+  `);
+});
+
 test("css literal reads from enclosing function scope", async () => {
   const result = await buildSnapshot({
     entry: "/src/entry.ts",

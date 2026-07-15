@@ -17,6 +17,9 @@ export default defineConfig({
       _check_cargo_check: {
         command: "cargo check -q",
       },
+      _check_cargo_test: {
+        command: "cargo test -q",
+      },
       check: {
         command: "echo check complete",
         dependsOn: [
@@ -24,6 +27,7 @@ export default defineConfig({
           "_check_cargo_fmt",
           "_check_vp_lint",
           "_check_cargo_check",
+          "_check_cargo_test",
           "tests#check",
         ],
       },

@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
 
-import { buildWarningSnapshot } from "../harness/csslit-harness.ts";
+import { buildSnapshot, buildWarningSnapshot } from "../harness/csslit-harness.ts";
 
 test("runtime parameter warning", async () => {
   const result = await buildWarningSnapshot({
@@ -259,6 +259,187 @@ test("destructuring evaluation error warning", async () => {
         Error: destructuring failed
             at fail (<root>/src/theme.ts:4:9)
             at tone (<root>/src/entry.ts:4:25)
+    "
+  `);
+});
+
+test("destructuring preserves values initialized before an error", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { comptime, css } from "@csslit/core";
+
+        const { color, border } = comptime({
+          color: "hotpink",
+          get border() {
+            throw new Error("border failed");
+          },
+        });
+
+        export const className = css\`
+          color: \${color};
+          border-width: \${border};
+        \`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import { comptime } from "/@fs/<root>/packages/core/dist/index.js";
+    const { color, border } = comptime({
+    	color: "hotpink",
+    	get border() {
+    		throw new Error("border failed");
+    	}
+    });
+    export const className = __css_module_import.css_10_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_10_26": "euh629_10_26" };
+
+    # css /src/entry.ts.csslit.css
+    .euh629_10_26 {
+      color: #ff69b4;
+      border-width: /* csslit error 1 */;
+    }
+
+    # warnings
+    warning: CSS literal eval failed: interpolation references border, which threw during evaluation: Error: border failed.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:12:19
+      Interpolation:
+        at <root>/src/entry.ts:12:19
+        11 |   color: #{color};
+        12 |   border-width: #{border};
+           |                   ^^^^^^ references border
+        13 | ';
+      
+      Root cause:
+        at <root>/src/entry.ts:6:11
+        5 |   get border() {
+        6 |     throw new Error("border failed");
+          |           ^ Error: border failed
+        7 |   },
+      
+      Stack trace:
+        Error: border failed
+            at Object.get border (<root>/src/entry.ts:6:11)
+    "
+  `);
+});
+
+test("var destructuring reports reads before initialization", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { empty } from "./theme";
+
+        var { color = color } = empty;
+
+        export const className = css\`color: \${color};\`;
+      `,
+      "/src/theme.ts": `
+        export const empty = {};
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import { empty } from "/@id/<root>/src/theme.ts";
+    var { color = color } = empty;
+    export const className = __css_module_import.css_6_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_6_26": "YONEpD_6_26" };
+
+    # js /src/theme.ts
+    export const empty = {};
+
+    # css /src/entry.ts.csslit.css
+    .YONEpD_6_26 {
+      color: /* csslit error 1 */;
+    }
+
+    # warnings
+    warning: CSS literal eval failed: interpolation references color, depending on color, which is used before its initializer runs.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:6:39
+      Interpolation:
+        at <root>/src/entry.ts:6:39
+        5 | 
+        6 | export const className = css'color: #{color};';
+          |                                       ^^^^^ references color
+      
+      Dependency chain:
+        color  at <root>/src/entry.ts:4:15
+      
+      Root cause:
+        at <root>/src/entry.ts:4:5
+        3 | 
+        4 | var { color = color } = empty;
+          |     ^^^^^^^^^^^^^^^^^^^^^^^^^ color is used before its initializer runs.
+        5 | 
+    "
+  `);
+});
+
+test("duplicate var destructuring binding is a reassignment", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        var { color, color } = { color: "hotpink" };
+
+        export const className = css\`color: \${color};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    var { color, color } = { color: "hotpink" };
+    export const className = __css_module_import.css_5_26;
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_5_26": "XN9bNe_5_26" };
+
+    # css /src/entry.ts.csslit.css
+    .XN9bNe_5_26 {
+      color: /* csslit error 1 */;
+    }
+
+    # warnings
+    warning: CSS literal eval failed: interpolation references color, which is reassigned.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:5:39
+      Interpolation:
+        at <root>/src/entry.ts:5:39
+        4 | 
+        5 | export const className = css'color: #{color};';
+          |                                       ^^^^^ references color
+      
+      Root cause:
+        at <root>/src/entry.ts:3:14
+        2 | 
+        3 | var { color, color } = { color: "hotpink" };
+          |              ^^^^^ color is reassigned.
+        4 | 
     "
   `);
 });

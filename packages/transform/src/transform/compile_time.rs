@@ -3,10 +3,10 @@ use oxc_allocator::{Allocator, Box, CloneIn, TakeIn, Vec};
 use oxc_ast::{
   AstBuilder, AstKind, NONE,
   ast::{
-    Argument, AssignmentTarget, BindingPattern, ChainElement, ClassType, Expression, FunctionType,
-    IdentifierReference, ImportDeclaration, ImportDeclarationSpecifier, ImportOrExportKind,
-    Statement, TSModuleDeclarationName, TaggedTemplateExpression, VariableDeclarationKind,
-    VariableDeclarator,
+    Argument, AssignmentTarget, AssignmentTargetMaybeDefault, BindingPattern, ChainElement,
+    ClassType, Expression, FunctionType, IdentifierReference, ImportDeclaration,
+    ImportDeclarationSpecifier, ImportOrExportKind, Statement, TSModuleDeclarationName,
+    TaggedTemplateExpression, VariableDeclarationKind, VariableDeclarator,
   },
 };
 use oxc_ast_visit::{Visit, VisitMut, walk_mut};
@@ -17,7 +17,8 @@ use oxc_parser::Parser;
 use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::{
-  operator::{BinaryOperator, UnaryOperator},
+  node::NodeId,
+  operator::{AssignmentOperator, BinaryOperator, UnaryOperator},
   scope::{ScopeFlags, ScopeId},
   symbol::{SymbolFlags, SymbolId},
 };
@@ -331,9 +332,7 @@ fn build_symbol_state<'alloc>(
         ),
       );
     }
-    if scoping.symbol_is_mutated(symbol_id) {
-      let span = symbol_span(nodes, scoping, symbol_id);
-      let rejected_span = symbol_write_span(nodes, scoping, symbol_id).unwrap_or(span);
+    if let Some(rejected_span) = symbol_reassignment_span(nodes, scoping, symbol_id) {
       return make_rejected_state(
         allocator,
         false,
@@ -391,13 +390,15 @@ fn build_symbol_state<'alloc>(
     );
   }
 
-  if scoping.symbol_is_mutated(symbol_id) {
-    let span = symbol_span(nodes, scoping, symbol_id);
-    let rejected_span = symbol_write_span(nodes, scoping, symbol_id).unwrap_or(span);
+  let variable_declarator = find_variable_declarator(nodes, scoping, symbol_id);
+
+  if let Some(rejected_span) = symbol_reassignment_span(nodes, scoping, symbol_id) {
+    let is_var = variable_declarator.is_some_and(|declarator| declarator.kind.is_var());
+    let decl_span = variable_declarator.map(|declarator| declarator.span);
     return make_rejected_state(
       allocator,
-      false,
-      None,
+      is_var,
+      decl_span,
       symbol_issue(
         allocator,
         scoping,
@@ -408,7 +409,7 @@ fn build_symbol_state<'alloc>(
     );
   }
 
-  let Some(variable_declarator) = find_variable_declarator(nodes, scoping, symbol_id) else {
+  let Some(variable_declarator) = variable_declarator else {
     let predicate = if flags.is_function_scoped_declaration() {
       PredicateCode::RuntimeParameter
     } else {
@@ -488,6 +489,7 @@ fn build_symbol_state<'alloc>(
       symbol_states,
       &variable_declarator.id,
       init,
+      symbol_id,
     )
     .map(|()| false)
   } else {
@@ -521,29 +523,222 @@ fn build_symbol_state<'alloc>(
   }
 }
 
-fn collect_binding_symbol_ids(pattern: &BindingPattern, symbols: &mut std::vec::Vec<SymbolId>) {
+#[derive(Clone, Copy)]
+struct BindingSymbol {
+  symbol_id: SymbolId,
+  span: Span,
+}
+
+fn collect_binding_symbols(pattern: &BindingPattern, symbols: &mut std::vec::Vec<BindingSymbol>) {
   match pattern {
-    BindingPattern::BindingIdentifier(identifier) => symbols.push(identifier.symbol_id()),
+    BindingPattern::BindingIdentifier(identifier) => symbols.push(BindingSymbol {
+      symbol_id: identifier.symbol_id(),
+      span: identifier.span,
+    }),
     BindingPattern::ObjectPattern(pattern) => {
       for property in &pattern.properties {
-        collect_binding_symbol_ids(&property.value, symbols);
+        collect_binding_symbols(&property.value, symbols);
       }
       if let Some(rest) = &pattern.rest {
-        collect_binding_symbol_ids(&rest.argument, symbols);
+        collect_binding_symbols(&rest.argument, symbols);
       }
     }
     BindingPattern::ArrayPattern(pattern) => {
       for element in pattern.elements.iter().flatten() {
-        collect_binding_symbol_ids(element, symbols);
+        collect_binding_symbols(element, symbols);
       }
       if let Some(rest) = &pattern.rest {
-        collect_binding_symbol_ids(&rest.argument, symbols);
+        collect_binding_symbols(&rest.argument, symbols);
       }
     }
     BindingPattern::AssignmentPattern(pattern) => {
-      collect_binding_symbol_ids(&pattern.left, symbols);
+      collect_binding_symbols(&pattern.left, symbols);
     }
   }
+}
+
+fn binding_pattern_to_assignment_target<'alloc>(
+  allocator: &'alloc Allocator,
+  pattern: BindingPattern<'alloc>,
+  scoping: &Scoping,
+  symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  declaration_node_id: NodeId,
+) -> Option<AssignmentTarget<'alloc>> {
+  let ast = AstBuilder::new(allocator);
+
+  match pattern {
+    BindingPattern::BindingIdentifier(identifier) => {
+      let identifier = identifier.unbox();
+      if !is_symbol_declaration(
+        scoping,
+        identifier.symbol_id(),
+        identifier.span,
+        declaration_node_id,
+      ) || !matches!(
+        symbol_states[identifier.symbol_id()],
+        SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }
+      ) {
+        return None;
+      }
+
+      Some(AssignmentTarget::StaticMemberExpression(
+        ast.alloc_static_member_expression(
+          identifier.span,
+          ast.expression_identifier(identifier.span, identifier.name),
+          ast.identifier_name(identifier.span, "value"),
+          false,
+        ),
+      ))
+    }
+    BindingPattern::ObjectPattern(pattern) => {
+      let pattern = pattern.unbox();
+      let rest = pattern.rest.and_then(|rest| {
+        let rest = rest.unbox();
+        binding_pattern_to_assignment_target(
+          allocator,
+          rest.argument,
+          scoping,
+          symbol_states,
+          declaration_node_id,
+        )
+        .map(|target| ast.alloc_assignment_target_rest(rest.span, target))
+      });
+      let preserve_exclusions = rest.is_some();
+      let properties = ast.vec_from_iter(pattern.properties.into_iter().filter_map(|property| {
+        let binding = binding_pattern_to_assignment_target_maybe_default(
+          allocator,
+          property.value,
+          scoping,
+          symbol_states,
+          declaration_node_id,
+        )
+        .or_else(|| {
+          preserve_exclusions.then(|| {
+            assignment_target_to_maybe_default(discard_assignment_target(allocator, property.span))
+          })
+        })?;
+
+        Some(
+          ast.assignment_target_property_assignment_target_property_property(
+            property.span,
+            property.key,
+            binding,
+            property.computed,
+          ),
+        )
+      }));
+      if properties.is_empty() && rest.is_none() {
+        return None;
+      }
+
+      Some(AssignmentTarget::ObjectAssignmentTarget(
+        ast.alloc_object_assignment_target(pattern.span, properties, rest),
+      ))
+    }
+    BindingPattern::ArrayPattern(pattern) => {
+      let pattern = pattern.unbox();
+      let rest = pattern.rest.and_then(|rest| {
+        let rest = rest.unbox();
+        binding_pattern_to_assignment_target(
+          allocator,
+          rest.argument,
+          scoping,
+          symbol_states,
+          declaration_node_id,
+        )
+        .map(|target| ast.alloc_assignment_target_rest(rest.span, target))
+      });
+      let mut elements = ast.vec_from_iter(pattern.elements.into_iter().map(|element| {
+        element.and_then(|element| {
+          binding_pattern_to_assignment_target_maybe_default(
+            allocator,
+            element,
+            scoping,
+            symbol_states,
+            declaration_node_id,
+          )
+        })
+      }));
+      if rest.is_none() {
+        while elements.last().is_some_and(Option::is_none) {
+          elements.pop();
+        }
+      }
+      if elements.is_empty() && rest.is_none() {
+        return None;
+      }
+
+      Some(AssignmentTarget::ArrayAssignmentTarget(
+        ast.alloc_array_assignment_target(pattern.span, elements, rest),
+      ))
+    }
+    BindingPattern::AssignmentPattern(_) => unreachable!(),
+  }
+}
+
+fn binding_pattern_to_assignment_target_maybe_default<'alloc>(
+  allocator: &'alloc Allocator,
+  pattern: BindingPattern<'alloc>,
+  scoping: &Scoping,
+  symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
+  declaration_node_id: NodeId,
+) -> Option<AssignmentTargetMaybeDefault<'alloc>> {
+  let ast = AstBuilder::new(allocator);
+
+  if let BindingPattern::AssignmentPattern(pattern) = pattern {
+    let pattern = pattern.unbox();
+    let binding = binding_pattern_to_assignment_target(
+      allocator,
+      pattern.left,
+      scoping,
+      symbol_states,
+      declaration_node_id,
+    )?;
+    return Some(
+      ast.assignment_target_maybe_default_assignment_target_with_default(
+        pattern.span,
+        binding,
+        pattern.right,
+      ),
+    );
+  }
+
+  binding_pattern_to_assignment_target(
+    allocator,
+    pattern,
+    scoping,
+    symbol_states,
+    declaration_node_id,
+  )
+  .map(assignment_target_to_maybe_default)
+}
+
+fn assignment_target_to_maybe_default(target: AssignmentTarget) -> AssignmentTargetMaybeDefault {
+  match target {
+    AssignmentTarget::StaticMemberExpression(expression) => {
+      AssignmentTargetMaybeDefault::StaticMemberExpression(expression)
+    }
+    AssignmentTarget::ObjectAssignmentTarget(pattern) => {
+      AssignmentTargetMaybeDefault::ObjectAssignmentTarget(pattern)
+    }
+    AssignmentTarget::ArrayAssignmentTarget(pattern) => {
+      AssignmentTargetMaybeDefault::ArrayAssignmentTarget(pattern)
+    }
+    _ => unreachable!(),
+  }
+}
+
+fn discard_assignment_target<'alloc>(
+  allocator: &'alloc Allocator,
+  span: Span,
+) -> AssignmentTarget<'alloc> {
+  let ast = AstBuilder::new(allocator);
+  AssignmentTarget::StaticMemberExpression(ast.alloc_static_member_expression(
+    span,
+    ast.expression_identifier(span, CSSLIT_STATE_NAME),
+    ast.identifier_name(span, "discard"),
+    false,
+  ))
 }
 
 fn analyze_destructuring<'alloc>(
@@ -554,28 +749,27 @@ fn analyze_destructuring<'alloc>(
   symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
   pattern: &BindingPattern,
   init: &Expression,
+  symbol_id: SymbolId,
 ) -> Result<(), Issue<'alloc>> {
-  let mut bound_symbols = std::vec::Vec::new();
-  collect_binding_symbol_ids(pattern, &mut bound_symbols);
-
-  analyze_destructuring_expression(
+  analyze_binding_expression(
     allocator,
     css_import_symbols,
     nodes,
     scoping,
     symbol_states,
     init,
-    &bound_symbols,
   )?;
-  analyze_destructuring_pattern(
+  let found = analyze_destructuring_pattern(
     allocator,
     css_import_symbols,
     nodes,
     scoping,
     symbol_states,
     pattern,
-    &bound_symbols,
-  )
+    symbol_id,
+  )?;
+  debug_assert!(found);
+  Ok(())
 }
 
 fn analyze_destructuring_pattern<'alloc>(
@@ -585,133 +779,116 @@ fn analyze_destructuring_pattern<'alloc>(
   scoping: &Scoping,
   symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
   pattern: &BindingPattern,
-  bound_symbols: &[SymbolId],
-) -> Result<(), Issue<'alloc>> {
+  symbol_id: SymbolId,
+) -> Result<bool, Issue<'alloc>> {
   match pattern {
-    BindingPattern::BindingIdentifier(_) => Ok(()),
+    BindingPattern::BindingIdentifier(identifier) => Ok(identifier.symbol_id() == symbol_id),
     BindingPattern::ObjectPattern(pattern) => {
-      for property in &pattern.properties {
-        if property.computed
-          && let Some(expression) = property.key.as_expression()
-        {
-          analyze_destructuring_expression(
-            allocator,
-            css_import_symbols,
-            nodes,
-            scoping,
-            symbol_states,
-            expression,
-            bound_symbols,
-          )?;
+      if let Some(rest) = &pattern.rest
+        && analyze_destructuring_pattern(
+          allocator,
+          css_import_symbols,
+          nodes,
+          scoping,
+          symbol_states,
+          &rest.argument,
+          symbol_id,
+        )?
+      {
+        for property in &pattern.properties {
+          if property.computed
+            && let Some(expression) = property.key.as_expression()
+          {
+            analyze_binding_expression(
+              allocator,
+              css_import_symbols,
+              nodes,
+              scoping,
+              symbol_states,
+              expression,
+            )?;
+          }
         }
-        analyze_destructuring_pattern(
+        return Ok(true);
+      }
+
+      for property in &pattern.properties {
+        if analyze_destructuring_pattern(
           allocator,
           css_import_symbols,
           nodes,
           scoping,
           symbol_states,
           &property.value,
-          bound_symbols,
-        )?;
+          symbol_id,
+        )? {
+          if property.computed
+            && let Some(expression) = property.key.as_expression()
+          {
+            analyze_binding_expression(
+              allocator,
+              css_import_symbols,
+              nodes,
+              scoping,
+              symbol_states,
+              expression,
+            )?;
+          }
+          return Ok(true);
+        }
       }
-      if let Some(rest) = &pattern.rest {
-        analyze_destructuring_pattern(
-          allocator,
-          css_import_symbols,
-          nodes,
-          scoping,
-          symbol_states,
-          &rest.argument,
-          bound_symbols,
-        )?;
-      }
-      Ok(())
+      Ok(false)
     }
     BindingPattern::ArrayPattern(pattern) => {
       for element in pattern.elements.iter().flatten() {
-        analyze_destructuring_pattern(
+        if analyze_destructuring_pattern(
           allocator,
           css_import_symbols,
           nodes,
           scoping,
           symbol_states,
           element,
-          bound_symbols,
-        )?;
+          symbol_id,
+        )? {
+          return Ok(true);
+        }
       }
       if let Some(rest) = &pattern.rest {
-        analyze_destructuring_pattern(
+        return analyze_destructuring_pattern(
           allocator,
           css_import_symbols,
           nodes,
           scoping,
           symbol_states,
           &rest.argument,
-          bound_symbols,
-        )?;
+          symbol_id,
+        );
       }
-      Ok(())
+      Ok(false)
     }
     BindingPattern::AssignmentPattern(pattern) => {
-      analyze_destructuring_expression(
-        allocator,
-        css_import_symbols,
-        nodes,
-        scoping,
-        symbol_states,
-        &pattern.right,
-        bound_symbols,
-      )?;
-      analyze_destructuring_pattern(
+      if !analyze_destructuring_pattern(
         allocator,
         css_import_symbols,
         nodes,
         scoping,
         symbol_states,
         &pattern.left,
-        bound_symbols,
-      )
-    }
-  }
-}
-
-fn analyze_destructuring_expression<'alloc>(
-  allocator: &'alloc Allocator,
-  css_import_symbols: &CssImportSymbols<'alloc>,
-  nodes: &AstNodes,
-  scoping: &Scoping,
-  symbol_states: &mut IndexSlice<SymbolId, [SymbolState<'alloc>]>,
-  expr: &Expression,
-  bound_symbols: &[SymbolId],
-) -> Result<bool, Issue<'alloc>> {
-  analyze_supported_expression(
-    expr,
-    ExpressionAnalysisMode::Binding,
-    css_import_symbols,
-    &mut |ident| {
-      let Some((symbol_id, _)) = referenced_value_symbol_id(allocator, scoping, ident)? else {
+        symbol_id,
+      )? {
         return Ok(false);
-      };
-
-      if bound_symbols.contains(&symbol_id) {
-        return Ok(true);
       }
-
-      mark_symbol_live(
+      analyze_binding_expression(
         allocator,
         css_import_symbols,
         nodes,
         scoping,
         symbol_states,
-        symbol_id,
-      );
-      Ok(matches!(
-        symbol_states[symbol_id],
-        SymbolState::AllowedDirect
-      ))
-    },
-    scoping,
-  )
+        &pattern.right,
+      )?;
+      Ok(true)
+    }
+  }
 }
 
 fn analyze_binding_expression<'alloc>(
@@ -980,11 +1157,41 @@ fn symbol_span(nodes: &AstNodes, scoping: &Scoping, symbol_id: SymbolId) -> Span
     .span()
 }
 
-fn symbol_write_span(nodes: &AstNodes, scoping: &Scoping, symbol_id: SymbolId) -> Option<Span> {
-  scoping
+fn symbol_reassignment_span(
+  nodes: &AstNodes,
+  scoping: &Scoping,
+  symbol_id: SymbolId,
+) -> Option<Span> {
+  let write_span = scoping
     .get_resolved_references(symbol_id)
     .find(|reference| reference.is_write())
-    .map(|reference| nodes.get_node(reference.node_id()).kind().span())
+    .map(|reference| nodes.get_node(reference.node_id()).kind().span());
+  let redeclaration_span = if scoping
+    .symbol_flags(symbol_id)
+    .is_function_scoped_declaration()
+  {
+    scoping
+      .symbol_redeclarations(symbol_id)
+      .get(1)
+      .map(|redeclaration| redeclaration.span)
+  } else {
+    None
+  };
+
+  write_span
+    .into_iter()
+    .chain(redeclaration_span)
+    .min_by_key(|span| span.start)
+}
+
+fn is_symbol_declaration(
+  scoping: &Scoping,
+  symbol_id: SymbolId,
+  binding_span: Span,
+  declaration_node_id: NodeId,
+) -> bool {
+  scoping.symbol_declaration(symbol_id) == declaration_node_id
+    && scoping.symbol_span(symbol_id) == binding_span
 }
 
 fn non_declarator_binding_span(
@@ -1184,24 +1391,26 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
 
     match &self.symbol_states[symbol_id] {
       SymbolState::AllowedDirect => {
-        rewrite_local_references(
-          self.allocator,
-          &mut init,
-          self.location_context,
-          self.scoping,
-          self.symbol_states,
-        );
+        ReferenceRewriter {
+          allocator: self.allocator,
+          location_context: self.location_context,
+          mode: ExpressionAnalysisMode::Interpolation(None),
+          scoping: self.scoping,
+          symbol_states: self.symbol_states,
+        }
+        .visit_expression(&mut init);
         quote_stmt!(self.allocator, const @{name} = (@{init});)
       }
       state @ (SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }) => {
         let init_span = init.span();
-        rewrite_local_references(
-          self.allocator,
-          &mut init,
-          self.location_context,
-          self.scoping,
-          self.symbol_states,
-        );
+        ReferenceRewriter {
+          allocator: self.allocator,
+          location_context: self.location_context,
+          mode: ExpressionAnalysisMode::Interpolation(None),
+          scoping: self.scoping,
+          symbol_states: self.symbol_states,
+        }
+        .visit_expression(&mut init);
         let arrow = quote_expr!(self.allocator, init_span, () => @{init});
         let location =
           build_runtime_location_expression(self.allocator, init_span, self.location_context);
@@ -1224,85 +1433,84 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     mut init: Expression<'ast>,
     kind: VariableDeclarationKind,
     span: Span,
+    declaration_node_id: NodeId,
   ) {
     let mut bound_symbols = std::vec::Vec::new();
-    collect_binding_symbol_ids(&pattern, &mut bound_symbols);
+    collect_binding_symbols(&pattern, &mut bound_symbols);
 
     self.visit_expression(&mut init);
     walk_mut::walk_binding_pattern(self, &mut pattern);
-    rewrite_destructuring_references(
-      self.allocator,
-      &mut pattern,
-      &mut init,
-      self.location_context,
-      self.scoping,
-      self.symbol_states,
-      &bound_symbols,
-    );
+    let mut rewriter = ReferenceRewriter {
+      allocator: self.allocator,
+      location_context: self.location_context,
+      mode: ExpressionAnalysisMode::Interpolation(None),
+      scoping: self.scoping,
+      symbol_states: self.symbol_states,
+    };
+    rewriter.visit_expression(&mut init);
+    rewriter.visit_binding_pattern(&mut pattern);
 
     let ast = AstBuilder::new(self.allocator);
-    let once_name = oxc_str::format_ident!(self.allocator, "__csslit_once_{}", span.start);
-    let destructuring_statement = Statement::from(ast.declaration_variable(
-      span,
-      kind,
-      ast.vec1(ast.variable_declarator(span, kind, pattern, NONE, Some(init), false)),
-      false,
-    ));
-
-    let values = bound_symbols
-      .iter()
-      .map(|symbol_id| ast.expression_identifier(span, self.scoping.symbol_name(*symbol_id)));
-
-    self.push_binding_statement(quote_stmt!(
-      self.allocator,
-      span,
-      const @{once_name} = (__csslit.once(() => {
-        @{destructuring_statement};
-        return ([@{values}]);
-      }));
-    ));
-
-    for (index, symbol_id) in bound_symbols.iter().copied().enumerate() {
-      if bound_symbols[..index].contains(&symbol_id) {
+    for binding in bound_symbols.iter().copied() {
+      let symbol_id = binding.symbol_id;
+      if !is_symbol_declaration(self.scoping, symbol_id, binding.span, declaration_node_id) {
         continue;
       }
 
-      let state = &self.symbol_states[symbol_id];
-      match state {
+      match self.symbol_states[symbol_id] {
+        SymbolState::RejectedThunk(_) | SymbolState::RejectedCallMemo(_) => {
+          self.push_binding_statement(self.build_non_owned_symbol_statement(symbol_id));
+        }
         SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. } => {
           let name = self.scoping.symbol_name(symbol_id);
           let location =
             build_runtime_location_expression(self.allocator, span, self.location_context);
-          let statement = if matches!(state, SymbolState::AllowedCallMemo { .. }) {
-            quote_stmt!(
-              self.allocator,
-              span,
-              var @{name} = (__csslit.cell(
-                @{name},
-                @{location},
-                () => @{once_name}()[@{index}]
-              ));
-            )
+          let statement = if kind.is_var() {
+            quote_stmt!(self.allocator, span, var @{name} = (__csslit.cell(@{name}, @{location}));)
           } else {
-            quote_stmt!(
-              self.allocator,
-              span,
-              const @{name} = (__csslit.cell(
-                @{name},
-                @{location},
-                () => @{once_name}()[@{index}]
-              ));
-            )
+            quote_stmt!(self.allocator, span, const @{name} = (__csslit.cell(@{name}, @{location}));)
           };
           self.push_binding_statement(statement);
         }
-        SymbolState::RejectedThunk(_) | SymbolState::RejectedCallMemo(_) => {
-          self.push_binding_statement(self.build_non_owned_symbol_statement(symbol_id));
-        }
-        SymbolState::Unseen | SymbolState::Resolving => {}
-        SymbolState::AllowedDirect | SymbolState::Import => unreachable!(),
+        _ => {}
       }
     }
+
+    let cells = bound_symbols
+      .iter()
+      .filter(|binding| {
+        is_symbol_declaration(
+          self.scoping,
+          binding.symbol_id,
+          binding.span,
+          declaration_node_id,
+        ) && matches!(
+          self.symbol_states[binding.symbol_id],
+          SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }
+        )
+      })
+      .map(|binding| ast.expression_identifier(span, self.scoping.symbol_name(binding.symbol_id)));
+    let assignment = Expression::AssignmentExpression(
+      ast.alloc_assignment_expression(
+        span,
+        AssignmentOperator::Assign,
+        binding_pattern_to_assignment_target(
+          self.allocator,
+          pattern,
+          self.scoping,
+          self.symbol_states,
+          declaration_node_id,
+        )
+        .expect("live destructuring declarators must have a live assignment target"),
+        init,
+      ),
+    );
+
+    self.push_binding_statement(quote_stmt!(
+      self.allocator,
+      span,
+      (__csslit.destructure([@{cells}], () => (@{assignment})));
+    ));
   }
 
   fn build_non_owned_symbol_statement(&self, symbol_id: SymbolId) -> Statement<'ast> {
@@ -1478,13 +1686,14 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         self.symbol_states,
       ) {
         Ok(is_plain) => {
-          rewrite_local_references(
-            self.allocator,
-            &mut rewritten_expression,
-            self.location_context,
-            self.scoping,
-            self.symbol_states,
-          );
+          ReferenceRewriter {
+            allocator: self.allocator,
+            location_context: self.location_context,
+            mode: ExpressionAnalysisMode::Interpolation(None),
+            scoping: self.scoping,
+            symbol_states: self.symbol_states,
+          }
+          .visit_expression(&mut rewritten_expression);
           !is_plain
         }
         Err(issue) => {
@@ -1560,9 +1769,16 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
   }
 
   fn visit_variable_declarator(&mut self, declarator: &mut VariableDeclarator<'ast>) {
+    let declaration_node_id = declarator.node_id.get();
+
     if let BindingPattern::BindingIdentifier(identifier) = &declarator.id {
       let symbol_id = identifier.symbol_id();
-      if matches!(
+      if is_symbol_declaration(
+        self.scoping,
+        symbol_id,
+        identifier.span,
+        declaration_node_id,
+      ) && matches!(
         self.symbol_states[symbol_id],
         SymbolState::AllowedDirect
           | SymbolState::AllowedThunk
@@ -1581,10 +1797,15 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
 
     if declarator.id.is_destructuring_pattern() {
       let mut bound_symbols = std::vec::Vec::new();
-      collect_binding_symbol_ids(&declarator.id, &mut bound_symbols);
-      if bound_symbols.iter().any(|symbol_id| {
-        matches!(
-          self.symbol_states[*symbol_id],
+      collect_binding_symbols(&declarator.id, &mut bound_symbols);
+      if bound_symbols.iter().any(|binding| {
+        is_symbol_declaration(
+          self.scoping,
+          binding.symbol_id,
+          binding.span,
+          declaration_node_id,
+        ) && matches!(
+          self.symbol_states[binding.symbol_id],
           SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }
         )
       }) {
@@ -1593,12 +1814,30 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
           .init
           .take()
           .expect("live destructuring bindings must have an initializer");
-        self.emit_destructuring_declarator(pattern, init, declarator.kind, declarator.span);
+        self.emit_destructuring_declarator(
+          pattern,
+          init,
+          declarator.kind,
+          declarator.span,
+          declaration_node_id,
+        );
         return;
       }
     }
 
-    self.emit_binding_pattern(&declarator.id);
+    let mut bound_symbols = std::vec::Vec::new();
+    collect_binding_symbols(&declarator.id, &mut bound_symbols);
+    for binding in bound_symbols {
+      let symbol_id = binding.symbol_id;
+      if is_symbol_declaration(self.scoping, symbol_id, binding.span, declaration_node_id)
+        && !matches!(
+          self.symbol_states[symbol_id],
+          SymbolState::Unseen | SymbolState::Resolving
+        )
+      {
+        self.push_binding_statement(self.build_non_owned_symbol_statement(symbol_id));
+      }
+    }
     walk_mut::walk_variable_declarator(self, declarator);
   }
 
@@ -1666,7 +1905,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
       let symbol_id = function.id.as_ref().unwrap().symbol_id();
       let statement = match self.symbol_states[symbol_id] {
         SymbolState::AllowedDirect => {
-          let mut rewriter = ClosureReferenceRewriter {
+          let mut rewriter = ReferenceRewriter {
             allocator: self.allocator,
             location_context: self.location_context,
             mode: ExpressionAnalysisMode::Interpolation(None).in_closure(function.scope_id()),
@@ -2452,58 +2691,7 @@ fn analyze_supported_chain_element<'alloc>(
   }
 }
 
-struct DestructuringReferenceRewriter<'ctx, 'alloc> {
-  allocator: &'alloc Allocator,
-  location_context: &'ctx SourceLocationContext<'alloc>,
-  scoping: &'ctx Scoping,
-  symbol_states: &'ctx IndexSlice<SymbolId, [SymbolState<'alloc>]>,
-  bound_symbols: &'ctx [SymbolId],
-}
-
-impl<'ctx, 'alloc> VisitMut<'alloc> for DestructuringReferenceRewriter<'ctx, 'alloc> {
-  fn visit_expression(&mut self, expression: &mut Expression<'alloc>) {
-    if let Expression::Identifier(identifier) = expression {
-      if referenced_symbol_id(self.scoping, identifier)
-        .is_some_and(|symbol_id| self.bound_symbols.contains(&symbol_id))
-      {
-        return;
-      }
-
-      rewrite_local_references(
-        self.allocator,
-        expression,
-        self.location_context,
-        self.scoping,
-        self.symbol_states,
-      );
-      return;
-    }
-
-    walk_mut::walk_expression(self, expression);
-  }
-}
-
-fn rewrite_destructuring_references<'alloc>(
-  allocator: &'alloc Allocator,
-  pattern: &mut BindingPattern<'alloc>,
-  init: &mut Expression<'alloc>,
-  location_context: &SourceLocationContext<'alloc>,
-  scoping: &Scoping,
-  symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
-  bound_symbols: &[SymbolId],
-) {
-  let mut rewriter = DestructuringReferenceRewriter {
-    allocator,
-    location_context,
-    scoping,
-    symbol_states,
-    bound_symbols,
-  };
-  rewriter.visit_expression(init);
-  rewriter.visit_binding_pattern(pattern);
-}
-
-struct ClosureReferenceRewriter<'ctx, 'alloc> {
+struct ReferenceRewriter<'ctx, 'alloc> {
   allocator: &'alloc Allocator,
   location_context: &'ctx SourceLocationContext<'alloc>,
   mode: ExpressionAnalysisMode,
@@ -2511,18 +2699,20 @@ struct ClosureReferenceRewriter<'ctx, 'alloc> {
   symbol_states: &'ctx IndexSlice<SymbolId, [SymbolState<'alloc>]>,
 }
 
-impl<'ctx, 'alloc> VisitMut<'alloc> for ClosureReferenceRewriter<'ctx, 'alloc> {
+impl<'ctx, 'alloc> VisitMut<'alloc> for ReferenceRewriter<'ctx, 'alloc> {
   fn visit_expression(&mut self, expression: &mut Expression<'alloc>) {
     if let Expression::Identifier(identifier) = expression {
       if self.mode.is_local(identifier, self.scoping) {
         return;
       }
-
-      rewrite_local_references(
+      let Some(symbol_id) = referenced_symbol_id(self.scoping, identifier) else {
+        return;
+      };
+      rewrite_identifier_reference(
         self.allocator,
         expression,
         self.location_context,
-        self.scoping,
+        symbol_id,
         self.symbol_states,
       );
       return;
@@ -2530,480 +2720,64 @@ impl<'ctx, 'alloc> VisitMut<'alloc> for ClosureReferenceRewriter<'ctx, 'alloc> {
 
     walk_mut::walk_expression(self, expression);
   }
+
+  fn visit_arrow_function_expression(
+    &mut self,
+    expression: &mut oxc_ast::ast::ArrowFunctionExpression<'alloc>,
+  ) {
+    let mode = self.mode;
+    self.mode = mode.in_closure(expression.scope_id());
+    walk_mut::walk_arrow_function_expression(self, expression);
+    self.mode = mode;
+  }
+
+  fn visit_function(&mut self, function: &mut oxc_ast::ast::Function<'alloc>, flags: ScopeFlags) {
+    let mode = self.mode;
+    self.mode = mode.in_closure(function.scope_id());
+    walk_mut::walk_function(self, function, flags);
+    self.mode = mode;
+  }
 }
 
-fn rewrite_local_references<'alloc>(
+fn rewrite_identifier_reference<'alloc>(
   allocator: &'alloc Allocator,
-  expr: &mut Expression<'alloc>,
+  expression: &mut Expression<'alloc>,
   location_context: &SourceLocationContext<'alloc>,
-  scoping: &Scoping,
+  symbol_id: SymbolId,
   symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
 ) {
-  match expr {
-    Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
-      let scope_id = match expr {
-        Expression::ArrowFunctionExpression(arrow) => arrow.scope_id(),
-        Expression::FunctionExpression(function) => function.scope_id(),
+  let Expression::Identifier(identifier) = expression else {
+    unreachable!();
+  };
+
+  let callee = identifier.name;
+  *expression = match &symbol_states[symbol_id] {
+    SymbolState::AllowedDirect
+    | SymbolState::Import
+    | SymbolState::Unseen
+    | SymbolState::Resolving => return,
+    SymbolState::AllowedThunk | SymbolState::RejectedThunk(_) => {
+      let location =
+        build_runtime_location_expression(allocator, identifier.span, location_context);
+      quote_expr!(allocator, @{callee}(@{location}))
+    }
+    state @ (SymbolState::AllowedCallMemo { .. } | SymbolState::RejectedCallMemo(_)) => {
+      let use_span = identifier.span;
+      let name = identifier.name.as_str();
+      let init_span = match state {
+        SymbolState::AllowedCallMemo { decl_span } => *decl_span,
+        SymbolState::RejectedCallMemo(info) => info.decl_span.unwrap(),
         _ => unreachable!(),
       };
-      let mut rewriter = ClosureReferenceRewriter {
+      let use_location = build_runtime_location_expression(allocator, use_span, location_context);
+      let init_location = build_runtime_location_expression(allocator, init_span, location_context);
+      quote_expr!(
         allocator,
-        location_context,
-        mode: ExpressionAnalysisMode::Interpolation(None).in_closure(scope_id),
-        scoping,
-        symbol_states,
-      };
-      walk_mut::walk_expression(&mut rewriter, expr);
+        use_span,
+        __csslit.readCell(@{name}, @{callee}, @{use_location}, @{init_location})
+      )
     }
-    Expression::Identifier(ident) => {
-      let Some(symbol_id) = referenced_symbol_id(scoping, ident) else {
-        return;
-      };
-
-      let callee = ident.name;
-      *expr = match &symbol_states[symbol_id] {
-        SymbolState::AllowedDirect
-        | SymbolState::Import
-        | SymbolState::Unseen
-        | SymbolState::Resolving => return,
-        SymbolState::AllowedThunk | SymbolState::RejectedThunk(_) => {
-          let location = build_runtime_location_expression(allocator, ident.span, location_context);
-          quote_expr!(allocator, @{callee}(@{location}))
-        }
-        state @ (SymbolState::AllowedCallMemo { .. } | SymbolState::RejectedCallMemo(_)) => {
-          let use_span = ident.span;
-          let name = ident.name.as_str();
-          let init_span = match state {
-            SymbolState::AllowedCallMemo { decl_span } => *decl_span,
-            SymbolState::RejectedCallMemo(info) => info.decl_span.unwrap(),
-            _ => unreachable!(),
-          };
-          let use_location =
-            build_runtime_location_expression(allocator, use_span, location_context);
-          let init_location =
-            build_runtime_location_expression(allocator, init_span, location_context);
-          quote_expr!(
-            allocator,
-            use_span,
-            __csslit.readCell(@{name}, @{callee}, @{use_location}, @{init_location})
-          )
-        }
-      };
-    }
-    Expression::TemplateLiteral(template) => {
-      for expression in &mut template.expressions {
-        rewrite_local_references(
-          allocator,
-          expression,
-          location_context,
-          scoping,
-          symbol_states,
-        );
-      }
-    }
-    Expression::UnaryExpression(unary) => {
-      rewrite_local_references(
-        allocator,
-        &mut unary.argument,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::BinaryExpression(binary) => {
-      rewrite_local_references(
-        allocator,
-        &mut binary.left,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut binary.right,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::LogicalExpression(logical) => {
-      rewrite_local_references(
-        allocator,
-        &mut logical.left,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut logical.right,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::ConditionalExpression(conditional) => {
-      rewrite_local_references(
-        allocator,
-        &mut conditional.test,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut conditional.consequent,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut conditional.alternate,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::ParenthesizedExpression(parenthesized) => {
-      rewrite_local_references(
-        allocator,
-        &mut parenthesized.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::ComputedMemberExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut member.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::StaticMemberExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::ChainExpression(chain) => {
-      rewrite_local_chain_references(
-        allocator,
-        &mut chain.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::ArrayExpression(array) => {
-      for element in &mut array.elements {
-        match element {
-          oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) => {
-            rewrite_local_references(
-              allocator,
-              &mut spread.argument,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-          oxc_ast::ast::ArrayExpressionElement::Elision(_) => {}
-          _ => {
-            let expression = element.to_expression_mut();
-            rewrite_local_references(
-              allocator,
-              expression,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-        }
-      }
-    }
-    Expression::ObjectExpression(object) => {
-      for property in &mut object.properties {
-        match property {
-          oxc_ast::ast::ObjectPropertyKind::ObjectProperty(property) => {
-            if property.computed
-              && let Some(expression) = property.key.as_expression_mut()
-            {
-              rewrite_local_references(
-                allocator,
-                expression,
-                location_context,
-                scoping,
-                symbol_states,
-              );
-            }
-            rewrite_local_references(
-              allocator,
-              &mut property.value,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-          oxc_ast::ast::ObjectPropertyKind::SpreadProperty(property) => {
-            rewrite_local_references(
-              allocator,
-              &mut property.argument,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-        }
-      }
-    }
-    Expression::CallExpression(call) => {
-      rewrite_local_references(
-        allocator,
-        &mut call.callee,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      for argument in &mut call.arguments {
-        match argument {
-          Argument::SpreadElement(spread) => {
-            rewrite_local_references(
-              allocator,
-              &mut spread.argument,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-          _ => {
-            let expression = argument.to_expression_mut();
-            rewrite_local_references(
-              allocator,
-              expression,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-        }
-      }
-    }
-    Expression::PrivateFieldExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::TSAsExpression(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::TSSatisfiesExpression(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::TSTypeAssertion(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::TSNonNullExpression(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::TSInstantiationExpression(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    Expression::NewExpression(new_expr) => {
-      rewrite_local_references(
-        allocator,
-        &mut new_expr.callee,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      for argument in &mut new_expr.arguments {
-        match argument {
-          Argument::SpreadElement(spread) => {
-            rewrite_local_references(
-              allocator,
-              &mut spread.argument,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-          _ => {
-            let expression = argument.to_expression_mut();
-            rewrite_local_references(
-              allocator,
-              expression,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-        }
-      }
-    }
-    Expression::TaggedTemplateExpression(tagged) => {
-      rewrite_local_references(
-        allocator,
-        &mut tagged.tag,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      for expression in &mut tagged.quasi.expressions {
-        rewrite_local_references(
-          allocator,
-          expression,
-          location_context,
-          scoping,
-          symbol_states,
-        );
-      }
-    }
-    Expression::SequenceExpression(sequence) => {
-      for expression in &mut sequence.expressions {
-        rewrite_local_references(
-          allocator,
-          expression,
-          location_context,
-          scoping,
-          symbol_states,
-        );
-      }
-    }
-    _ => {}
-  }
-}
-
-fn rewrite_local_chain_references<'alloc>(
-  allocator: &'alloc Allocator,
-  chain: &mut ChainElement<'alloc>,
-  location_context: &SourceLocationContext<'alloc>,
-  scoping: &Scoping,
-  symbol_states: &IndexSlice<SymbolId, [SymbolState<'alloc>]>,
-) {
-  match chain {
-    ChainElement::CallExpression(call) => {
-      rewrite_local_references(
-        allocator,
-        &mut call.callee,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      for argument in &mut call.arguments {
-        match argument {
-          Argument::SpreadElement(spread) => {
-            rewrite_local_references(
-              allocator,
-              &mut spread.argument,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-          _ => {
-            let expression = argument.to_expression_mut();
-            rewrite_local_references(
-              allocator,
-              expression,
-              location_context,
-              scoping,
-              symbol_states,
-            );
-          }
-        }
-      }
-    }
-    ChainElement::ComputedMemberExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-      rewrite_local_references(
-        allocator,
-        &mut member.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    ChainElement::StaticMemberExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    ChainElement::PrivateFieldExpression(member) => {
-      rewrite_local_references(
-        allocator,
-        &mut member.object,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-    ChainElement::TSNonNullExpression(expression) => {
-      rewrite_local_references(
-        allocator,
-        &mut expression.expression,
-        location_context,
-        scoping,
-        symbol_states,
-      );
-    }
-  }
+  };
 }
 
 fn build_runtime_location_expression<'alloc>(
@@ -3262,11 +3036,8 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         import { theme } from "./theme";
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
-        const __csslit_once_158 = __csslit.once(() => {
-          const { border } = theme;
-          return [border];
-        });
-        const border = __csslit.cell("border", "7:14:7:32", () => __csslit_once_158()[0]);
+        const border = __csslit.cell("border", "7:14:7:32");
+        __csslit.destructure([border], () => ({border: border.value} = theme));
         __csslit.css("HAXkGd_9_9")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
@@ -3296,23 +3067,61 @@ mod tests {
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
         const __csslit = __csslit_eval_runtime.init();
         import { fallback, key, theme, values } from "./theme";
-        const __csslit_once_124 = __csslit.once(() => {
-          const { [key]: tone = fallback, nested: { border = `${fallback}px` }, ...rest } = theme;
-          return [
-            tone,
-            border,
-            rest
-          ];
-        });
-        const tone = __csslit.cell("tone", "4:14:8:17", () => __csslit_once_124()[0]);
-        const border = __csslit.cell("border", "4:14:8:17", () => __csslit_once_124()[1]);
-        const rest = __csslit.cell("rest", "4:14:8:17", () => __csslit_once_124()[2]);
-        const __csslit_once_259 = __csslit.once(() => {
-          const [first = "red", second = first] = values;
-          return [first, second];
-        });
-        const second = __csslit.cell("second", "9:14:9:54", () => __csslit_once_259()[1]);
+        const tone = __csslit.cell("tone", "4:14:8:17");
+        const border = __csslit.cell("border", "4:14:8:17");
+        const rest = __csslit.cell("rest", "4:14:8:17");
+        __csslit.destructure([
+          tone,
+          border,
+          rest
+        ], () => ({[key]: tone.value = fallback, nested: {border: border.value = `${fallback}px`}, ...rest.value} = theme));
+        const first = __csslit.cell("first", "9:14:9:54");
+        const second = __csslit.cell("second", "9:14:9:54");
+        __csslit.destructure([first, second], () => [first.value = "red", second.value = first("9:39:9:44")] = values);
         __csslit.css("vGnKZk_11_9")`color: ${__csslit.capture("10:21:10:25", () => tone("10:21:10:25"))}; border-width: ${__csslit.capture("10:44:10:50", () => border("10:44:10:50"))}; opacity: ${__csslit.capture("10:64:10:76", () => rest("10:64:10:68").opacity)}; background: ${__csslit.capture("10:93:10:99", () => second("10:93:10:99"))};`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn discards_unused_destructuring_bindings_without_cells() {
+    let output = compile(
+      "import { comptime, css } from \"@csslit/core\";\n\nconst { first, unused = first, used } = comptime({ used: \"blue\" });\ncss`color: ${used};`;",
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        import { comptime } from "@csslit/core";
+        const used = __csslit.cell("used", "2:6:2:66");
+        __csslit.destructure([used], () => ({used: used.value} = comptime({ used: "blue" })));
+        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:17", () => used("3:13:3:17"))};`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn retains_discard_target_for_live_object_rest() {
+    let output = compile(
+      "import { comptime, css } from \"@csslit/core\";\n\nconst { unused, ...rest } = comptime({ unused: \"red\", used: \"blue\" });\ncss`color: ${rest.used};`;",
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        import { comptime } from "@csslit/core";
+        const rest = __csslit.cell("rest", "2:6:2:69");
+        __csslit.destructure([rest], () => ({unused: __csslit.discard, ...rest.value} = comptime({
+          unused: "red",
+          used: "blue"
+        })));
+        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:22", () => rest("3:13:3:17").used)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
@@ -3362,6 +3171,74 @@ mod tests {
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn rejects_var_redeclarations() {
+    let output = compile(
+      r#"
+        import { css } from "@csslit/core";
+
+        var value = { value: "red", other: "blue" };
+        var { value, other } = value;
+        css`color: ${value}; background: ${other};`;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        var value = __csslit.cellVarErr("value", "reassigned", "4:14:4:19");
+        var other = __csslit.cell("other", "4:12:4:36");
+        __csslit.destructure([other], () => ({other: other.value} = __csslit.readCell("value", value, "4:31:4:36", "3:12:3:51")));
+        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:51"))}; background: ${__csslit.capture("5:43:5:48", () => __csslit.readCell("other", other, "5:43:5:48", "4:12:4:36"))};`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn emits_only_the_first_duplicate_var_binding() {
+    let output = compile(
+      "import { css } from \"@csslit/core\";\n\nvar { color, color } = { color: \"hotpink\" };\ncss`color: ${color};`;",
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        var color = __csslit.cellVarErr("color", "reassigned", "2:13:2:18");
+        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:18", () => __csslit.readCell("color", color, "3:13:3:18", "2:4:2:43"))};`;
+        export const __csslit_eval_result = __csslit.finalize(null);
+      "#,
+    );
+  }
+
+  #[test]
+  fn rejects_uninitialized_var_redeclarations() {
+    let output = compile(
+      r#"
+        import { css } from "@csslit/core";
+
+        var value = "red";
+        var value;
+        css`color: ${value};`;
+      "#,
+    );
+
+    assert_snapshot(
+      &output,
+      r#"
+        import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        const __csslit = __csslit_eval_runtime.init();
+        var value = __csslit.cellVarErr("value", "reassigned", "4:12:4:17");
+        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:25"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
       "#,
     );
