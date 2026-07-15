@@ -1,6 +1,6 @@
 {
   "name": "@csslit/transform",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Native and WebAssembly transforms used by csslit.",
   "keywords": [
     "css",
@@ -41,10 +41,10 @@
     "vite-plus": "^0.2.0"
   },
   "optionalDependencies": {
-    "@csslit/transform-linux-x64-gnu": "0.0.3",
-    "@csslit/transform-linux-x64-musl": "0.0.3",
-    "@csslit/transform-wasm32-wasi": "0.0.3",
-    "@csslit/transform-win32-x64-msvc": "0.0.3"
+    "@csslit/transform-linux-x64-gnu": "0.0.4",
+    "@csslit/transform-linux-x64-musl": "0.0.4",
+    "@csslit/transform-wasm32-wasi": "0.0.4",
+    "@csslit/transform-win32-x64-msvc": "0.0.4"
   },
   "napi": {
     "binaryName": "csslit-transformer",
