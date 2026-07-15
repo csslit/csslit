@@ -3,7 +3,7 @@ use oxc_allocator::Allocator;
 use oxc_ast::{ast::Expression, builder::AstBuilder};
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::SemanticBuilder;
 use oxc_span::SourceType;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
@@ -67,6 +67,10 @@ pub(crate) fn transform_runtime(
     &source_text,
     SourceType::from_path(&options.filename).unwrap(),
   )
+  .with_options(ParseOptions {
+    preserve_parens: false,
+    ..ParseOptions::default()
+  })
   .parse();
 
   let mut program = ret.program;

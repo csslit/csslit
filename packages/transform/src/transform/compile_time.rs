@@ -16,7 +16,7 @@ use oxc_ast_visit::{Visit, VisitMut, walk_mut};
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_index::{IndexBox, IndexSlice, IndexVec};
-use oxc_parser::Parser;
+use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
 use oxc_span::{GetSpan, SourceType, Span};
 use oxc_syntax::{
@@ -1335,7 +1335,7 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
           symbol_states: self.symbol_states,
         }
         .visit_expression(&mut init);
-        quote_stmt!(self, const @{name} = (@{init});)
+        quote_stmt!(self, const @{name} = @{init};)
       }
       state @ (SymbolState::AllowedThunk | SymbolState::AllowedCallMemo { .. }) => {
         let init_span = init.span();
@@ -1355,9 +1355,9 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
           quote_expr!(self, init_span, __csslit.cell(@{name}, @{location}, @{arrow}));
 
         if state.is_call_memo() {
-          quote_stmt!(self, var @{name} = (@{expression});)
+          quote_stmt!(self, var @{name} = @{expression};)
         } else {
-          quote_stmt!(self, const @{name} = (@{expression});)
+          quote_stmt!(self, const @{name} = @{expression};)
         }
       }
       _ => unreachable!(),
@@ -1401,9 +1401,9 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
             .location_context
             .runtime_location_expression(self, span);
           let statement = if kind.is_var() {
-            quote_stmt!(self, span, var @{name} = (__csslit.cell(@{name}, @{location}));)
+            quote_stmt!(self, span, var @{name} = __csslit.cell(@{name}, @{location});)
           } else {
-            quote_stmt!(self, span, const @{name} = (__csslit.cell(@{name}, @{location}));)
+            quote_stmt!(self, span, const @{name} = __csslit.cell(@{name}, @{location});)
           };
           self.push_binding_statement(statement);
         }
@@ -1433,7 +1433,7 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     self.push_binding_statement(quote_stmt!(
       self,
       span,
-      (__csslit.destructure([@{cells}], () => (@{assignment})));
+      __csslit.destructure([@{..cells}], () => @{assignment});
     ));
   }
 
@@ -1466,9 +1466,9 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
         };
 
         if state.is_call_memo() {
-          quote_stmt!(self, var @{name} = (@{expression});)
+          quote_stmt!(self, var @{name} = @{expression};)
         } else {
-          quote_stmt!(self, const @{name} = (@{expression});)
+          quote_stmt!(self, const @{name} = @{expression};)
         }
       }
       SymbolState::AllowedDirect
@@ -1509,7 +1509,7 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
         quote_expr!(self, span, __csslit.exprErr(@{code_text}, @{issue_location}))
       }
     };
-    let return_statement = quote_stmt!(self, span, return (@{err_expr}););
+    let return_statement = quote_stmt!(self, span, return @{err_expr};);
 
     if let Some(body) = function.body.as_mut() {
       body.directives.clear();
@@ -1530,7 +1530,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         import * as @{CSSLIT_RUNTIME_NAME} from @"virtual:csslit-eval-runtime";
       ));
       let state_init = quote_expr!(self, __csslit_eval_runtime.init());
-      body.push(quote_stmt!(self, const @{CSSLIT_STATE_NAME} = (@{state_init});));
+      body.push(quote_stmt!(self, const @{CSSLIT_STATE_NAME} = @{state_init};));
     }
 
     self.frames.push(EmitFrame {
@@ -1554,15 +1554,15 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
 
     if frame.flags.is_function() || frame.flags.is_arrow() || frame.flags.is_class_static_block() {
       let body = frame.body;
-      let task = quote_expr!(self, () => { @{body} });
-      let statement = quote_stmt!(self, (__csslit.defer(@{task})););
+      let task = quote_expr!(self, () => { @{..body} });
+      let statement = quote_stmt!(self, __csslit.defer(@{task}););
       self.frames.last_mut().unwrap().body.push(statement);
       return;
     }
 
     if frame.has_live_bindings {
       let body = frame.body;
-      let statement = quote_stmt!(self, { @{body} });
+      let statement = quote_stmt!(self, { @{..body} });
       self.frames.last_mut().unwrap().body.push(statement);
       return;
     }
@@ -1666,12 +1666,12 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
       });
 
       if is_global_css {
-        quote_expr!(self, span, __csslit.globalCss([@{quasi_locations}]))
+        quote_expr!(self, span, __csslit.globalCss([@{..quasi_locations}]))
       } else {
         quote_expr!(
           self,
           span,
-          __csslit.css(@"{hash}_{local_line}_{local_column}", [@{quasi_locations}])
+          __csslit.css(@"{hash}_{local_line}_{local_column}", [@{..quasi_locations}])
         )
       }
     } else if is_global_css {
@@ -1849,7 +1849,12 @@ pub(crate) fn transform_compile_time(
   let allocator = &Allocator::default();
   let ast = AstBuilder::new(allocator);
 
-  let mut ret = Parser::new(allocator, &source_text, source_type).parse();
+  let mut ret = Parser::new(allocator, &source_text, source_type)
+    .with_options(ParseOptions {
+      preserve_parens: false,
+      ..ParseOptions::default()
+    })
+    .parse();
   let (scoping, css_import_symbols, symbol_states) = {
     let semantic = SemanticBuilder::new()
       .with_build_nodes(true)
@@ -1894,7 +1899,7 @@ pub(crate) fn transform_compile_time(
   let finalize = quote_expr!(&ast, __csslit.finalize(null));
   emitter
     .root_body
-    .push(quote_stmt!(&ast, export const @{CSSLIT_EVAL_RESULT_NAME} = (@{finalize});));
+    .push(quote_stmt!(&ast, export const @{CSSLIT_EVAL_RESULT_NAME} = @{finalize};));
 
   let mut output_program = Program::new_with_scope_id(
     ret.program.span,
@@ -2135,7 +2140,6 @@ where
         let alternate_plain = self.analyze(&conditional.alternate)?;
         Ok(test_plain && consequent_plain && alternate_plain)
       }
-      Expression::ParenthesizedExpression(parenthesized) => self.analyze(&parenthesized.expression),
       Expression::ComputedMemberExpression(member) => {
         self.analyze(&member.object)?;
         self.analyze(&member.expression)?;

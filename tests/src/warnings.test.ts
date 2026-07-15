@@ -863,12 +863,12 @@ test("assignment expression warning", async () => {
     "
     warning: CSS literal eval failed: interpolation contains an assignment expression.
       Plugin: vite-plugin-csslit
-      File: <root>/src/entry.ts:5:14
+      File: <root>/src/entry.ts:5:15
       Interpolation:
-        at <root>/src/entry.ts:5:14
+        at <root>/src/entry.ts:5:15
         4 | 
         5 | css'color: #{(tone = "blue")};';
-          |              ^^^^^^^^^^^^^^^ contains an assignment expression
+          |               ^^^^^^^^^^^^^ contains an assignment expression
     "
   `);
 });
