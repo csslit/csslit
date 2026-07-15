@@ -908,3 +908,77 @@ test("css template nested directly in an interpolation becomes its class name", 
     "
   `);
 });
+
+test("closures in interpolations evaluate with outer constants and local state", async () => {
+  const result = await buildSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { sizes } from "./theme";
+
+        const scale = (value: number) => value * 4;
+
+        export const className = css\`
+          padding: \${sizes.map((size) => \`\${scale(size)}px\`).join(" ")};
+          width: \${(() => {
+            let total = 0;
+            for (const size of sizes) {
+              total += size;
+            }
+            total++;
+            return (() => total)() - 1;
+          })()}px;
+          gap: \${[...(function* () { yield 4; yield 8; })()].join("px ")}px;
+          content: "\${(async () => await 4)().constructor.name}";
+          margin: \${offset(3)}px;
+          display: \${false ? (() => css\`color: red;\`)() : "block"};
+        \`;
+
+        function offset(value: number) {
+          return value + 1;
+        }
+      `,
+      "/src/theme.ts": `
+        export const sizes = [1, 2, 3];
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    # js /src/entry.ts
+    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    const scale = (value) => value * 4;
+    export const className = __css_module_import.css_6_26;
+    function offset(value) {
+    	return value + 1;
+    }
+
+    # js /src/entry.ts.csslit.module.js
+    import "/@id/<root>/src/entry.ts.csslit.css";
+    export default { "css_6_26": "YONEpD_6_26" };
+
+    # js /src/theme.ts
+    export const sizes = [
+    	1,
+    	2,
+    	3
+    ];
+
+    # css /src/entry.ts.csslit.css
+    .YONEpD_6_26 {
+      padding: 4px 8px 12px;
+      width: 6px;
+      gap: 4px 8px;
+      content: "Promise";
+      margin: 4px;
+      display: block;
+    }
+
+    .Asnmh9_19_29 {
+      color: red;
+    }
+    "
+  `);
+});

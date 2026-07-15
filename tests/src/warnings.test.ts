@@ -38,74 +38,33 @@ test("runtime parameter warning", async () => {
   `);
 });
 
-test("function binding warning", async () => {
+test("function declaration with unsupported body warning", async () => {
   const result = await buildWarningSnapshot({
     entry: "/src/entry.ts",
     files: {
       "/src/entry.ts": `
         import { css } from "@csslit/core";
 
-        function tone() {}
-
-        css\`color: \${tone};\`;
-      `,
-    },
-  });
-
-  expect(result).toMatchInlineSnapshot(`
-    "
-    warning: CSS literal eval failed: interpolation references tone, which is a function binding.
-      Plugin: vite-plugin-csslit
-      File: <root>/src/entry.ts:5:14
-      Interpolation:
-        at <root>/src/entry.ts:5:14
-        4 | 
-        5 | css'color: #{tone};';
-          |              ^^^^ references tone
-      
-      Root cause:
-        at <root>/src/entry.ts:3:10
-        2 | 
-        3 | function tone() {}
-          |          ^^^^ tone is a function binding.
-        4 | 
-    "
-  `);
-});
-
-test("function binding warning through call access", async () => {
-  const result = await buildWarningSnapshot({
-    entry: "/src/entry.ts",
-    files: {
-      "/src/entry.ts": `
-        import { css } from "@csslit/core";
-
-        function tone() {
-          return "red";
+        function tone(value: { color: string }) {
+          value.color = "red";
+          return value.color;
         }
 
-        css\`color: \${tone()};\`;
+        css\`color: \${tone({ color: "blue" })};\`;
       `,
     },
   });
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which is a function binding.
+    warning: CSS literal eval failed: interpolation contains an assignment expression.
       Plugin: vite-plugin-csslit
-      File: <root>/src/entry.ts:7:14
+      File: <root>/src/entry.ts:8:14
       Interpolation:
-        at <root>/src/entry.ts:7:14
-        6 | 
-        7 | css'color: #{tone()};';
-          |              ^^^^ references tone
-      
-      Root cause:
-        at <root>/src/entry.ts:3:10
-        2 | 
-        3 | function tone() {
-          |          ^^^^ tone is a function binding.
-        4 |   return "red";
+        at <root>/src/entry.ts:8:14
+        7 | 
+        8 | css'color: #{tone({ color: "blue" })};';
+          |              ^^^^^^^^^^^^^^^^^^^^^^^ contains an assignment expression
     "
   `);
 });
@@ -523,81 +482,6 @@ test("var initializer order warning", async () => {
         4 | 
         5 | var tone = "hotpink";
           |     ^^^^^^^^^^^^^^^^ tone is used before its initializer runs.
-    "
-  `);
-});
-
-test("locally defined function direct interpolation warning", async () => {
-  const result = await buildWarningSnapshot({
-    entry: "/src/entry.ts",
-    files: {
-      "/src/entry.ts": `
-        import { css } from "@csslit/core";
-
-        function pickColor() { return "red"; }
-
-        css\`color: \${pickColor()};\`;
-      `,
-    },
-  });
-
-  expect(result).toMatchInlineSnapshot(`
-    "
-    warning: CSS literal eval failed: interpolation references pickColor, which is a function binding.
-      Plugin: vite-plugin-csslit
-      File: <root>/src/entry.ts:5:14
-      Interpolation:
-        at <root>/src/entry.ts:5:14
-        4 | 
-        5 | css'color: #{pickColor()};';
-          |              ^^^^^^^^^ references pickColor
-      
-      Root cause:
-        at <root>/src/entry.ts:3:10
-        2 | 
-        3 | function pickColor() { return "red"; }
-          |          ^^^^^^^^^ pickColor is a function binding.
-        4 | 
-    "
-  `);
-});
-
-test("locally defined function comptime binding warning", async () => {
-  const result = await buildWarningSnapshot({
-    entry: "/src/entry.ts",
-    files: {
-      "/src/entry.ts": `
-        import { comptime, css } from "@csslit/core";
-
-        function pickColor() { return "red"; }
-
-        const tone = comptime(pickColor());
-
-        css\`color: \${tone};\`;
-      `,
-    },
-  });
-
-  expect(result).toMatchInlineSnapshot(`
-    "
-    warning: CSS literal eval failed: interpolation references tone, depending on pickColor, which is a function binding.
-      Plugin: vite-plugin-csslit
-      File: <root>/src/entry.ts:7:14
-      Interpolation:
-        at <root>/src/entry.ts:7:14
-        6 | 
-        7 | css'color: #{tone};';
-          |              ^^^^ references tone
-      
-      Dependency chain:
-        pickColor  at <root>/src/entry.ts:5:23
-      
-      Root cause:
-        at <root>/src/entry.ts:3:10
-        2 | 
-        3 | function pickColor() { return "red"; }
-          |          ^^^^^^^^^ pickColor is a function binding.
-        4 | 
     "
   `);
 });
@@ -1038,6 +922,268 @@ test("global css evaluation warning", async () => {
       Stack trace:
         ReferenceError: pickColor is not defined
             at pickColor() (<root>/src/entry.ts:3:28)
+    "
+  `);
+});
+
+test("closure assigning to an outer binding warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { sizes } from "./theme";
+
+        let total = 0;
+        css\`width: \${sizes.forEach((size) => { total += size; }) ?? total}px;\`;
+      `,
+      "/src/theme.ts": `
+        export const sizes = [1, 2, 3];
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains an assignment expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:5:14
+      Interpolation:
+        at <root>/src/entry.ts:5:14
+        4 | let total = 0;
+        5 | css'width: #{sizes.forEach((size) => { total += size; }) ?? total}px;';
+          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains an assignment expression
+    "
+  `);
+});
+
+test("nested closure assigning to an enclosing local warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { sizes } from "./theme";
+
+        css\`width: \${(() => {
+          let total = 0;
+          function add(size: number) {
+            total += size;
+          }
+          sizes.forEach(add);
+          return total;
+        })()}px;\`;
+      `,
+      "/src/theme.ts": `
+        export const sizes = [1, 2, 3];
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains an assignment expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:4:14
+      Interpolation:
+        at <root>/src/entry.ts:4:14
+         3 | 
+         4 | css'width: #{(() => {
+           |              ^^^^^^^^ contains an assignment expression
+         5 |   let total = 0;
+           | ^^^^^^^^^^^^^^^^
+         6 |   function add(size: number) {
+           | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+         7 |     total += size;
+           | ^^^^^^^^^^^^^^^^^^
+         8 |   }
+           | ^^^
+         9 |   sizes.forEach(add);
+           | ^^^^^^^^^^^^^^^^^^^^^
+        10 |   return total;
+           | ^^^^^^^^^^^^^^^
+        11 | })()}px;';
+           | ^^^^
+    "
+  `);
+});
+
+test("closure assigning to a member warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { theme } from "./theme";
+
+        css\`color: \${((value) => {
+          value.color = "blue";
+          return value.color;
+        })(theme)};\`;
+      `,
+      "/src/theme.ts": `
+        export const theme = { color: "red" };
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains an assignment expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:4:14
+      Interpolation:
+        at <root>/src/entry.ts:4:14
+        3 | 
+        4 | css'color: #{((value) => {
+          |              ^^^^^^^^^^^^^ contains an assignment expression
+        5 |   value.color = "blue";
+          | ^^^^^^^^^^^^^^^^^^^^^^^
+        6 |   return value.color;
+          | ^^^^^^^^^^^^^^^^^^^^^
+        7 | })(theme)};';
+          | ^^^^^^^^^
+    "
+  `);
+});
+
+test("class inside closure warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        css\`content: \${(() => {
+          class Tone {}
+          return Tone.name;
+        })()};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains a class expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:3:16
+      Interpolation:
+        at <root>/src/entry.ts:3:16
+        2 | 
+        3 | css'content: #{(() => {
+          |                ^^^^^^^^ contains a class expression
+        4 |   class Tone {}
+          | ^^^^^^^^^^^^^^^
+        5 |   return Tone.name;
+          | ^^^^^^^^^^^^^^^^^^^
+        6 | })()};';
+          | ^^^^
+    "
+  `);
+});
+
+test("closure uses interpolation expression rules", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        css\`content: \${(() => import("./theme"))()};\`;
+      `,
+      "/src/theme.ts": `
+        export const theme = "dark";
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains an import expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:3:16
+      Interpolation:
+        at <root>/src/entry.ts:3:16
+        2 | 
+        3 | css'content: #{(() => import("./theme"))()};';
+          |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains an import expression
+    "
+  `);
+});
+
+test("await and yield outside retained closures warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        css\`width: \${await Promise.resolve(1)}px;\`;
+
+        function* styles() {
+          css\`height: \${yield 2}px;\`;
+        }
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation contains an await expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:3:14
+      Interpolation:
+        at <root>/src/entry.ts:3:14
+        2 | 
+        3 | css'width: #{await Promise.resolve(1)}px;';
+          |              ^^^^^^^^^^^^^^^^^^^^^^^^ contains an await expression
+        4 | 
+
+    warning: CSS literal eval failed: interpolation contains a yield expression.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:6:17
+      Interpolation:
+        at <root>/src/entry.ts:6:17
+        5 | function* styles() {
+        6 |   css'height: #{yield 2}px;';
+          |                 ^^^^^^^ contains a yield expression
+        7 | }
+    "
+  `);
+});
+
+test("nested css interpolation referencing a closure local warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { colors } from "./theme";
+
+        css\`content: \${colors.map((color) => css\`color: \${color};\`).join(" ")};\`;
+      `,
+      "/src/theme.ts": `
+        export const colors = ["red", "blue"];
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: CSS literal eval failed: interpolation references color, which is a runtime parameter.
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:4:51
+      Interpolation:
+        at <root>/src/entry.ts:4:51
+        3 | 
+        4 | css'content: #{colors.map((color) => css'color: #{color};').join(" ")};';
+          |                                                   ^^^^^ references color
+      
+      Root cause:
+        at <root>/src/entry.ts:4:28
+        3 | 
+        4 | css'content: #{colors.map((color) => css'color: #{color};').join(" ")};';
+          |                            ^^^^^ color is a runtime parameter.
     "
   `);
 });
