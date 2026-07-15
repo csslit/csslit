@@ -3,12 +3,9 @@ import { defineConfig } from "vite-plus";
 export default defineConfig({
   run: {
     tasks: {
-      _check_vp_fmt: {
-        command: "vp fmt --list-different",
-        input: [{ auto: true }, "!node_modules/.vite-temp/**"],
-      },
-      _check_cargo_fmt: {
-        command: "cargo fmt --check",
+      format: {
+        command: "vp fmt && cargo fmt",
+        cache: false,
       },
       _check_vp_lint: {
         command: "vp lint --format agent",
@@ -22,14 +19,7 @@ export default defineConfig({
       },
       check: {
         command: "echo check complete",
-        dependsOn: [
-          "_check_vp_fmt",
-          "_check_cargo_fmt",
-          "_check_vp_lint",
-          "_check_cargo_check",
-          "_check_cargo_test",
-          "tests#check",
-        ],
+        dependsOn: ["_check_vp_lint", "_check_cargo_check", "_check_cargo_test", "tests#check"],
       },
       clean: {
         command: "echo clean complete",

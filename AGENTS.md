@@ -15,7 +15,9 @@ Unified toolchain from voidzero combining vite, vitest, oxcfmt, oxclint and a at
 
 Run tasks have `dependsOn` specified to build dependencies first. For tests, use `vp run tests#test` (or `vp run -w test`) so dirty Rust/NAPI and package artifacts are rebuilt. Running `vp test` directly bypasses the task graph and can test against stale `dist/` artifacts. Pass test-runner arguments after the task, for example `vp run tests#test -- -u` to update snapshots.
 
-Run `vp run -w check` before manually running individual test commands. It covers formatting, linting, compilation, Rust tests, and integration tests, and is fast on repeat runs because the task graph caches clean work. If it reports a failure, use the relevant narrower command for detailed output; use `vp run tests#test` when you need full integration-test output or snapshot updates. Keep tool output limits small for successful checks and request full output only when a command fails.
+Run `vp run -w check` before manually running individual test commands. It covers linting, compilation, Rust tests, and integration tests, and is fast on repeat runs because the task graph caches clean work. If it reports a failure, use the relevant narrower command for detailed output; use `vp run tests#test` when you need full integration-test output or snapshot updates. Keep tool output limits small for successful checks and request full output only when a command fails.
+
+Formatting is intentionally excluded from `check` so routine verification does not move code during development. Do not run formatters before routine checks. Immediately before committing, run `vp run -w format` to format both TypeScript and Rust, inspect the resulting diff, then run `vp run -w check` once more before committing.
 
 ## Build Artifacts
 
