@@ -1,6 +1,6 @@
 use crate::{CsslitClassExport, RuntimeTransformOptions, quote_expr, quote_stmt};
 use oxc_allocator::Allocator;
-use oxc_ast::{AstBuilder, ast::Expression};
+use oxc_ast::{ast::Expression, builder::AstBuilder};
 use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_parser::Parser;
@@ -43,13 +43,13 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
           local_name,
           scoped_name,
         });
-        *expr = quote_expr!(ctx.ast, __css_module_import.@"css_{local_line}_{local_column}");
+        *expr = quote_expr!(ctx, __css_module_import.@"css_{local_line}_{local_column}");
       }
       Expression::TaggedTemplateExpression(tagged)
         if self.css_import_symbols.is_global_css(&tagged.tag, ctx) =>
       {
         self.has_global_css = true;
-        *expr = quote_expr!(ctx.ast, undefined);
+        *expr = quote_expr!(ctx, undefined);
       }
       _ => {}
     }
