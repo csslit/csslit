@@ -9,6 +9,7 @@ export default defineConfig({
       },
       _check_vp_lint: {
         command: "vp lint --format agent",
+        dependsOn: ["@csslit/vite-plugin#build", "@csslit/core#build"],
         input: [{ auto: true }, "!node_modules/.vite-temp/**"],
       },
       _check_cargo_check: {
