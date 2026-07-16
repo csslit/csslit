@@ -42,6 +42,7 @@ interface CsslitModuleMetadata {
 type LoadModule = PluginContext["load"];
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
+const isWebContainer = !!process.versions?.webcontainer;
 
 const csslitErrorResolutionOptions = {
   normalizeStackLine(line: string) {
@@ -149,6 +150,7 @@ export default function csslit(): PluginOption {
           createRunnableDevEnvironment(name, config, {
             runnerOptions: {
               hmr: false,
+              sourcemapInterceptor: isWebContainer ? "prepareStackTrace" : undefined,
             },
           });
 
@@ -157,6 +159,7 @@ export default function csslit(): PluginOption {
           const environment = createRunnableDevEnvironment(name, config, {
             runnerOptions: {
               hmr: false,
+              sourcemapInterceptor: isWebContainer ? "prepareStackTrace" : undefined,
             },
           });
 
