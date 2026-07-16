@@ -1,6 +1,6 @@
 {
   "name": "@csslit/core",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "description": "Compile-time CSS template literals for Vite.",
   "keywords": [
     "css",
