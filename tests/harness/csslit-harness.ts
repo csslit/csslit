@@ -2,9 +2,9 @@ import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import { expect } from "vite-plus/test";
-import { createBuilder, createServer, normalizePath } from "vite";
+import { buildErrorMessage, createBuilder, createServer, normalizePath } from "vite";
 import type { Plugin } from "vite";
-import type { RolldownOutput } from "rolldown";
+import type { RollupError, RolldownOutput } from "rolldown";
 import csslit from "@csslit/vite-plugin";
 
 const ROOT_TOKEN = "<root>";
@@ -37,26 +37,23 @@ type SnapshotJsModule = {
 type CsslitSnapshotReportData = {
   css?: SnapshotCssModule[];
   js?: SnapshotJsModule[];
-  warnings?: string[];
 };
 
 class CsslitSnapshotReport {
   readonly css?: SnapshotCssModule[];
   readonly js?: SnapshotJsModule[];
-  readonly warnings?: string[];
 
-  constructor({ css, js, warnings }: CsslitSnapshotReportData) {
+  constructor({ css, js }: CsslitSnapshotReportData) {
     this.css = css;
     this.js = js;
-    this.warnings = warnings;
   }
 }
 
-class CsslitWarningSnapshot {
-  readonly warnings?: string[];
+class CsslitErrorSnapshot {
+  readonly error: string;
 
-  constructor(warnings?: string[]) {
-    this.warnings = warnings;
+  constructor(error: string) {
+    this.error = error;
   }
 }
 
@@ -94,47 +91,11 @@ function renderSnapshotReport(report: CsslitSnapshotReport) {
     hasContent = true;
   }
 
-  const warnings = report.warnings ?? [];
-  if (warnings.length > 0) {
-    if (hasContent) {
-      output += "\n";
-    }
-
-    output += "# warnings\n";
-    for (let index = 0; index < warnings.length; index += 1) {
-      if (index > 0) {
-        output += "\n";
-      }
-
-      output += `warning: ${normalizeWarningText(warnings[index])}`;
-      if (!output.endsWith("\n")) {
-        output += "\n";
-      }
-    }
-    hasContent = true;
-  }
-
   return `${output}"`;
 }
 
-function renderWarningSnapshot(snapshot: CsslitWarningSnapshot) {
-  if (!snapshot.warnings?.length) {
-    return '""';
-  }
-
-  let output = '"\n';
-  for (let index = 0; index < snapshot.warnings.length; index += 1) {
-    if (index > 0) {
-      output += "\n";
-    }
-
-    output += `warning: ${normalizeWarningText(snapshot.warnings[index])}`;
-    if (!output.endsWith("\n")) {
-      output += "\n";
-    }
-  }
-
-  return `${output}"`;
+function renderErrorSnapshot(snapshot: CsslitErrorSnapshot) {
+  return `"\nerror: ${normalizeDiagnosticText(snapshot.error)}\n"`;
 }
 
 expect.addSnapshotSerializer({
@@ -143,8 +104,8 @@ expect.addSnapshotSerializer({
 });
 
 expect.addSnapshotSerializer({
-  test: (value) => value instanceof CsslitWarningSnapshot,
-  serialize: (value) => renderWarningSnapshot(value as CsslitWarningSnapshot),
+  test: (value) => value instanceof CsslitErrorSnapshot,
+  serialize: (value) => renderErrorSnapshot(value as CsslitErrorSnapshot),
 });
 
 type VirtualFiles = Record<`/${string}`, string>;
@@ -347,7 +308,7 @@ function normalizeSnapshotText(value: string, root = SYNTHETIC_ROOT) {
   return normalized.replace(/(?:[A-Za-z]:)?\/__csslit_test_root__/g, ROOT_TOKEN);
 }
 
-function normalizeWarningText(value: string) {
+function normalizeDiagnosticText(value: string) {
   return normalizeSnapshotText(
     value
       // oxlint-disable-next-line no-control-regex
@@ -355,7 +316,20 @@ function normalizeWarningText(value: string) {
       .replaceAll("\\", "/")
       .replaceAll("`", "'")
       .replaceAll("${", "#{"),
-  ).replace(/^warning:\s*/u, "");
+  ).replace(/^error:\s*/u, "");
+}
+
+function formatError(error: unknown) {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("message" in error) ||
+    typeof error.message !== "string"
+  ) {
+    return String(error);
+  }
+
+  return buildErrorMessage(error as RollupError, [`error: ${error.message}`], false);
 }
 
 let runCsslitCaseQueue: Promise<unknown> = Promise.resolve();
@@ -365,7 +339,6 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
   const files = normalizeInputFiles(input.files);
   const absoluteFiles = absolutizeFiles(files, fileRoot);
   const serverRoot = input.root ? absolutizeFile(input.root) : TESTS_ROOT;
-  const warnings: string[] = [];
   const restoreReadFile = installReadFileMock(absoluteFiles);
 
   try {
@@ -387,11 +360,11 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
         info() {},
         warn(message) {
           hasWarned = true;
-          warnings.push(message);
+          throw new Error(`Unexpected Vite warning: ${message}`);
         },
         warnOnce(message) {
           hasWarned = true;
-          warnings.push(message);
+          throw new Error(`Unexpected Vite warning: ${message}`);
         },
       },
       logLevel: "silent",
@@ -430,7 +403,6 @@ async function runCsslitCaseIsolated(input: HarnessCase): Promise<CsslitSnapshot
       return {
         css: cssModules.length > 0 ? cssModules : undefined,
         js: jsModules,
-        warnings: warnings.length > 0 ? warnings : undefined,
       };
     } finally {
       await server.close();
@@ -448,7 +420,6 @@ async function runCsslitProductionBuildIsolated(
   const absoluteFiles = absolutizeFiles(files, fileRoot);
   const entryId = absolutizeFile(input.entry, fileRoot);
   const serverRoot = input.root ? absolutizeFile(input.root) : TESTS_ROOT;
-  const warnings: string[] = [];
   const restoreReadFile = installReadFileMock(absoluteFiles);
 
   try {
@@ -474,11 +445,11 @@ async function runCsslitProductionBuildIsolated(
         info() {},
         warn(message) {
           hasWarned = true;
-          warnings.push(message);
+          throw new Error(`Unexpected Vite warning: ${message}`);
         },
         warnOnce(message) {
           hasWarned = true;
-          warnings.push(message);
+          throw new Error(`Unexpected Vite warning: ${message}`);
         },
       },
       logLevel: "silent",
@@ -518,7 +489,6 @@ async function runCsslitProductionBuildIsolated(
     return {
       css: css.length > 0 ? css : undefined,
       js: js.length > 0 ? js : undefined,
-      warnings: warnings.length > 0 ? warnings : undefined,
     };
   } finally {
     restoreReadFile();
@@ -563,9 +533,14 @@ export async function buildSnapshot(input: HarnessCase) {
   return new CsslitSnapshotReport(result);
 }
 
-export async function buildWarningSnapshot(input: HarnessCase) {
-  const result = await build(input);
-  return new CsslitWarningSnapshot(result.warnings);
+export async function buildErrorSnapshot(input: HarnessCase) {
+  try {
+    await build(input);
+  } catch (error) {
+    return new CsslitErrorSnapshot(formatError(error));
+  }
+
+  throw new Error("Expected csslit evaluation to fail");
 }
 
 export async function buildProduction(input: HarnessCase) {

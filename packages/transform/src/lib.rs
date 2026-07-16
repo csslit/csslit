@@ -1,9 +1,95 @@
+use annotate_snippets::renderer::DecorStyle;
+use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 use napi_derive::napi;
+use oxc_data_structures::rope::{Rope, get_offset_from_line_and_column};
 use oxc_sourcemap::napi::SourceMap;
 
 mod bit_set;
 mod quote;
 mod transform;
+
+#[napi(object)]
+pub struct DiagnosticLocation {
+  pub row: u32,
+  pub col: u32,
+}
+
+#[napi(object)]
+pub struct DiagnosticSpan {
+  pub start: DiagnosticLocation,
+  pub end: DiagnosticLocation,
+}
+
+#[napi(object)]
+pub struct DiagnosticAnnotation {
+  pub span: DiagnosticSpan,
+  pub label: String,
+  pub primary: bool,
+}
+
+#[napi(object)]
+pub struct DiagnosticSource {
+  pub path: String,
+  pub source: String,
+  pub annotations: Vec<DiagnosticAnnotation>,
+}
+
+#[napi(object)]
+pub struct FormatDiagnosticRequest {
+  pub name: String,
+  pub title: String,
+  pub sources: Vec<DiagnosticSource>,
+  pub notes: Vec<String>,
+  pub helps: Vec<String>,
+}
+
+#[napi]
+pub fn format_diagnostic(request: FormatDiagnosticRequest) -> String {
+  let mut group = Group::with_title(
+    Level::ERROR
+      .with_name(request.name)
+      .primary_title(request.title),
+  );
+
+  for source in &request.sources {
+    let rope = Rope::from_str(&source.source);
+    let annotations = source.annotations.iter().map(|annotation| {
+      let start = get_offset_from_line_and_column(
+        &rope,
+        annotation.span.start.row,
+        annotation.span.start.col,
+      ) as usize;
+      let end =
+        get_offset_from_line_and_column(&rope, annotation.span.end.row, annotation.span.end.col)
+          as usize;
+      let kind = if annotation.primary {
+        AnnotationKind::Primary
+      } else {
+        AnnotationKind::Context
+      };
+
+      kind.span(start..end).label(&annotation.label)
+    });
+
+    group = group.element(
+      Snippet::source(&source.source)
+        .path(&source.path)
+        .annotations(annotations),
+    );
+  }
+
+  for note in request.notes {
+    group = group.element(Level::NOTE.message(note));
+  }
+  for help in request.helps {
+    group = group.element(Level::HELP.message(help));
+  }
+
+  Renderer::plain()
+    .decor_style(DecorStyle::Ascii)
+    .render(&[group])
+    .to_string()
+}
 
 #[napi(object)]
 pub struct RuntimeTransformRequest {
@@ -91,7 +177,6 @@ pub struct CompileCsslitRequest {
 pub struct CompileCsslitResult {
   pub code: String,
   pub map: Option<SourceMap>,
-  pub warnings: Vec<String>,
 }
 
 #[napi]

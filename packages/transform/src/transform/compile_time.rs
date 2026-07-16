@@ -193,6 +193,8 @@ enum Issue<'alloc> {
   BindingMutation {
     code: ExpressionCode,
     binding: &'alloc str,
+    declaration: Option<Span>,
+    closure: Option<Span>,
     span: Span,
   },
 }
@@ -316,6 +318,7 @@ struct RejectedInfo<'alloc> {
 struct ClosureScopes {
   local: ScopeId,
   writable: ScopeId,
+  writable_start: Span,
 }
 
 #[derive(Clone, Copy)]
@@ -325,15 +328,17 @@ enum ExpressionAnalysisMode {
 }
 
 impl ExpressionAnalysisMode {
-  fn in_closure(self, scope_id: ScopeId) -> Self {
+  fn in_closure(self, scope_id: ScopeId, start: Span) -> Self {
     match self {
       Self::Binding | Self::Interpolation(None) => Self::Interpolation(Some(ClosureScopes {
         local: scope_id,
         writable: scope_id,
+        writable_start: start,
       })),
       Self::Interpolation(Some(scopes)) => Self::Interpolation(Some(ClosureScopes {
         local: scopes.local,
         writable: scope_id,
+        writable_start: start,
       })),
     }
   }
@@ -359,6 +364,21 @@ impl ExpressionAnalysisMode {
       ExpressionCode::BindingMutationOutsideClosure
     }
   }
+
+  fn capturing_closure(self) -> Option<Span> {
+    let Self::Interpolation(Some(scopes)) = self else {
+      return None;
+    };
+    Some(scopes.writable_start)
+  }
+}
+
+fn arrow_closure_start_span(arrow: &ArrowFunctionExpression) -> Span {
+  Span::new(arrow.span.start, arrow.span.start + 1)
+}
+
+fn function_header_span(function: &Function) -> Span {
+  Span::new(function.span.start, function.params.span.start)
 }
 
 fn symbol_is_declared_in_scope(
@@ -1006,7 +1026,8 @@ impl<'ast, 'alloc> SymbolAnalyzer<'ast, 'alloc> {
     let mut expressions = ExpressionAnalyzer {
       allocator,
       css_import_symbols,
-      mode: ExpressionAnalysisMode::Binding.in_closure(function.scope_id()),
+      mode: ExpressionAnalysisMode::Binding
+        .in_closure(function.scope_id(), function_header_span(function)),
       on_identifier: &mut on_identifier,
       scoping,
     };
@@ -1135,7 +1156,7 @@ where
     }
 
     let mode = self.expressions.mode;
-    self.expressions.mode = mode.in_closure(function.scope_id());
+    self.expressions.mode = mode.in_closure(function.scope_id(), function_header_span(function));
     oxc_ast_visit::walk::walk_function(self, function, flags);
     self.expressions.mode = mode;
   }
@@ -1283,6 +1304,51 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
     let result = visit(self);
     self.preserve_source_ast = previous;
     result
+  }
+
+  fn binding_mutation_issue_expression(
+    &self,
+    span: Span,
+    code: ExpressionCode,
+    binding: &'alloc str,
+    declaration: Option<Span>,
+    closure: Option<Span>,
+  ) -> Expression<'ast> {
+    let code = code.as_code();
+    let declaration = declaration.map(|span| {
+      self
+        .location_context
+        .runtime_location_expression(self, span)
+    });
+    let closure = closure.map(|span| {
+      self
+        .location_context
+        .runtime_location_expression(self, span)
+    });
+
+    match (declaration, closure) {
+      (Some(declaration), Some(closure)) => quote_expr!(
+        self,
+        span,
+        ({
+          code: @{code},
+          binding: @{binding},
+          declaration: @{declaration},
+          closure: @{closure}
+        })
+      ),
+      (Some(declaration), None) => quote_expr!(
+        self,
+        span,
+        ({ code: @{code}, binding: @{binding}, declaration: @{declaration} })
+      ),
+      (None, Some(closure)) => quote_expr!(
+        self,
+        span,
+        ({ code: @{code}, binding: @{binding}, closure: @{closure} })
+      ),
+      (None, None) => quote_expr!(self, span, ({ code: @{code}, binding: @{binding} })),
+    }
   }
 
   fn visit_emitted_expression(&mut self, expression: &mut Expression<'ast>) {
@@ -1620,16 +1686,19 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
               __csslit.cellExprErr(@{name}, @{location_expr}, { code: @{code} })
             )
           }
-          Issue::BindingMutation { code, binding, .. } => {
-            let code = code.as_code();
+          Issue::BindingMutation {
+            code,
+            binding,
+            declaration,
+            closure,
+            ..
+          } => {
+            let issue =
+              self.binding_mutation_issue_expression(span, code, binding, declaration, closure);
             quote_expr!(
               self,
               span,
-              __csslit.cellExprErr(
-                @{name},
-                @{location_expr},
-                { code: @{code}, binding: @{binding} }
-              )
+              __csslit.cellExprErr(@{name}, @{location_expr}, @{issue})
             )
           }
         };
@@ -1673,16 +1742,16 @@ impl<'ast, 'alloc> CompileTimeEmitter<'ast, 'alloc> {
         let code = code.as_code();
         quote_expr!(self, span, __csslit.exprErr(@{issue_location}, { code: @{code} }))
       }
-      Issue::BindingMutation { code, binding, .. } => {
-        let code = code.as_code();
-        quote_expr!(
-          self,
-          span,
-          __csslit.exprErr(
-            @{issue_location},
-            { code: @{code}, binding: @{binding} }
-          )
-        )
+      Issue::BindingMutation {
+        code,
+        binding,
+        declaration,
+        closure,
+        ..
+      } => {
+        let issue =
+          self.binding_mutation_issue_expression(span, code, binding, declaration, closure);
+        quote_expr!(self, span, __csslit.exprErr(@{issue_location}, @{issue}))
       }
     };
     let return_statement = quote_stmt!(self, span, return @{err_expr};);
@@ -1813,16 +1882,16 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
               let code = code.as_code();
               quote_expr!(self, span, __csslit.exprErr(@{location_expr}, { code: @{code} }))
             }
-            Issue::BindingMutation { code, binding, .. } => {
-              let code = code.as_code();
-              quote_expr!(
-                self,
-                span,
-                __csslit.exprErr(
-                  @{location_expr},
-                  { code: @{code}, binding: @{binding} }
-                )
-              )
+            Issue::BindingMutation {
+              code,
+              binding,
+              declaration,
+              closure,
+              ..
+            } => {
+              let issue =
+                self.binding_mutation_issue_expression(span, code, binding, declaration, closure);
+              quote_expr!(self, span, __csslit.exprErr(@{location_expr}, @{issue}))
             }
           };
 
@@ -1994,7 +2063,8 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
           let mut rewriter = ReferenceRewriter {
             ast: AstBuilder::new(self.allocator()),
             location_context: self.location_context,
-            mode: ExpressionAnalysisMode::Interpolation(None).in_closure(function.scope_id()),
+            mode: ExpressionAnalysisMode::Interpolation(None)
+              .in_closure(function.scope_id(), function_header_span(&function)),
             scoping: self.scoping,
             symbol_states: self.symbol_states,
           };
@@ -2141,6 +2211,9 @@ where
     Issue::BindingMutation {
       code: self.mode.binding_mutation_code(),
       binding: identifier.name.as_str().clone_in(self.allocator),
+      declaration: referenced_symbol_id(self.scoping, identifier)
+        .map(|symbol_id| self.scoping.symbol_span(symbol_id)),
+      closure: self.mode.capturing_closure(),
       span,
     }
   }
@@ -2405,12 +2478,16 @@ where
         }
       },
       Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
-        let scope_id = match expr {
-          Expression::ArrowFunctionExpression(arrow) => arrow.scope_id(),
-          Expression::FunctionExpression(function) => function.scope_id(),
+        let (scope_id, start) = match expr {
+          Expression::ArrowFunctionExpression(arrow) => {
+            (arrow.scope_id(), arrow_closure_start_span(arrow))
+          }
+          Expression::FunctionExpression(function) => {
+            (function.scope_id(), function_header_span(function))
+          }
           _ => unreachable!(),
         };
-        self.mode = mode.in_closure(scope_id);
+        self.mode = mode.in_closure(scope_id, start);
         let result = {
           let mut body = ClosureBodyAnalyzer {
             expressions: self,
@@ -2561,14 +2638,14 @@ impl<'ctx, 'alloc> VisitMut<'alloc> for ReferenceRewriter<'ctx, 'alloc> {
 
   fn visit_arrow_function_expression(&mut self, expression: &mut ArrowFunctionExpression<'alloc>) {
     let mode = self.mode;
-    self.mode = mode.in_closure(expression.scope_id());
+    self.mode = mode.in_closure(expression.scope_id(), arrow_closure_start_span(expression));
     walk_mut::walk_arrow_function_expression(self, expression);
     self.mode = mode;
   }
 
   fn visit_function(&mut self, function: &mut Function<'alloc>, flags: ScopeFlags) {
     let mode = self.mode;
-    self.mode = mode.in_closure(function.scope_id());
+    self.mode = mode.in_closure(function.scope_id(), function_header_span(function));
     walk_mut::walk_function(self, function, flags);
     self.mode = mode;
   }

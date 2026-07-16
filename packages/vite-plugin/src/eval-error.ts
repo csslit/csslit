@@ -1,3 +1,6 @@
+import { formatDiagnostic } from "@csslit/transform";
+import type { DiagnosticAnnotation, DiagnosticSource } from "@csslit/transform";
+
 export interface Location {
   row: number;
   col: number;
@@ -15,7 +18,14 @@ export interface FileLocation {
 
 interface StackLine {
   line: string;
+  callee?: string;
   location?: FileLocation;
+}
+
+interface StackFrame {
+  callee?: string;
+  file: string;
+  location: Location;
 }
 
 interface BuiltErrorLocation {
@@ -84,6 +94,17 @@ type BindingMutationExpressionCode =
   | "binding-mutation-outside-closure"
   | "captured-binding-mutation";
 
+export type RawExpressionIssue =
+  | {
+      code: Exclude<ExpressionCode, BindingMutationExpressionCode>;
+    }
+  | {
+      code: BindingMutationExpressionCode;
+      binding: string;
+      declaration?: string;
+      closure?: string;
+    };
+
 export type ExpressionIssue =
   | {
       code: Exclude<ExpressionCode, BindingMutationExpressionCode>;
@@ -91,6 +112,8 @@ export type ExpressionIssue =
   | {
       code: BindingMutationExpressionCode;
       binding: string;
+      declaration?: Span;
+      closure?: Span;
     };
 
 export interface Dependency {
@@ -151,12 +174,12 @@ const stableValueNote = "stable CSS values contain no state that changes after t
 const expressionDescriptions: Record<ExpressionCode, DiagnosticDescription> = {
   "delete-expression": {
     headline: "cannot delete an object property during CSS evaluation",
-    label: "deleting a property modifies the object",
+    label: "modifies the object",
     note: "objects used during CSS evaluation are assumed to remain unchanged",
   },
   "call-expression": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "the stability of a function's return value cannot be inferred",
+    label: "return value may not be stable",
     note: stableValueNote,
     help: "wrap this call in `comptime(...)` to assert that its return value is stable",
   },
@@ -170,23 +193,23 @@ const expressionDescriptions: Record<ExpressionCode, DiagnosticDescription> = {
   },
   "array-expression": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "new arrays can contain state that changes later",
+    label: "may change later",
     note: stableValueNote,
     help: "wrap this expression in `comptime(...)` to assert that the resulting array is stable",
   },
   "binding-mutation-outside-closure": {
     headline: "cannot modify binding during CSS evaluation",
-    label: "only bindings declared inside a closure can be modified",
+    label: "modified here",
     note: "stateful calculations must be contained in closure-local bindings",
   },
   "captured-binding-mutation": {
     headline: "cannot modify captured binding during CSS evaluation",
-    label: "this binding is captured by the closure",
+    label: "modified here",
     note: "closures may read captured bindings, but may only modify their own locals",
   },
   "property-mutation": {
     headline: "cannot modify an object property during CSS evaluation",
-    label: "object properties cannot be modified during CSS evaluation",
+    label: "modified here",
     note: "objects used during CSS evaluation are assumed to remain unchanged",
     help: "construct the object in a single expression, using immutable patterns such as spreads or `Object.fromEntries`",
   },
@@ -207,25 +230,25 @@ const expressionDescriptions: Record<ExpressionCode, DiagnosticDescription> = {
   },
   "new-expression": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "constructed instances can contain state that changes later",
+    label: "may change later",
     note: stableValueNote,
     help: "wrap this expression in `comptime(...)` to assert that the resulting instance is stable",
   },
   "object-expression": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "new objects can contain state that changes later",
+    label: "may change later",
     note: stableValueNote,
     help: "wrap this expression in `comptime(...)` to assert that the resulting object is stable",
   },
   "sequence-expression": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "the stability of a sequence expression's result cannot be inferred",
+    label: "result may not be stable",
     note: stableValueNote,
     help: "wrap this expression in `comptime(...)` to assert that its result is stable",
   },
   "tagged-template": {
     headline: "expression is not known to produce a stable CSS value",
-    label: "the stability of a tag function's return value cannot be inferred",
+    label: "return value may not be stable",
     note: stableValueNote,
     help: "wrap this expression in `comptime(...)` to assert that the tag's return value is stable",
   },
@@ -303,11 +326,11 @@ const variableDescriptions: Record<DiagnosticPredicateCode, VariableDiagnosticDe
   },
   "unknown-local-binding-kind": {
     headline: (name) => `binding \`${name}\` is not supported during CSS evaluation`,
-    label: () => "this kind of local binding cannot be extracted",
+    label: () => "unsupported binding kind",
   },
   "not-value-binding": {
     headline: (name) => `\`${name}\` does not refer to a runtime value`,
-    label: () => "type-only bindings cannot be used as CSS values",
+    label: () => "type-only binding",
   },
   "used-before-initializer": {
     headline: (name) => `binding \`${name}\` is read before its initializer runs`,
@@ -337,10 +360,6 @@ function formatHeadline(diagnostic: EvalDiagnostic) {
   }
 }
 
-function locationEq(left: Location, right: Location) {
-  return left.row === right.row && left.col === right.col;
-}
-
 function spanContainsLocation(span: Span, location: Location) {
   const boundaryStart = span.start;
   const boundaryEnd = span.end;
@@ -361,11 +380,12 @@ function analyzeThrownStack(
   file: string,
   span: Span,
   options: ErrorOptions,
-): { location: Location; stack: string } {
+): { location?: Location; frames: StackFrame[] } {
   let location: Location | undefined;
+  const frames: StackFrame[] = [];
 
   const lines = stack.split("\n");
-  let trimmedStack = lines.shift() ?? "";
+  lines.shift();
 
   for (const line of lines) {
     const stackLine = options.normalizeStackLine(line);
@@ -373,19 +393,91 @@ function analyzeThrownStack(
       break;
     }
 
-    trimmedStack += `\n${stackLine.line}`;
-
     const fileLocation = stackLine.location;
-    if (fileLocation?.file === file && spanContainsLocation(span, fileLocation.location)) {
+    if (!fileLocation) {
+      continue;
+    }
+    if (fileLocation.file === file && spanContainsLocation(span, fileLocation.location)) {
       location = fileLocation.location;
       break;
     }
+    frames.push({
+      callee: stackLine.callee,
+      file: fileLocation.file,
+      location: fileLocation.location,
+    });
   }
 
   return {
-    location: location ?? span.start,
-    stack: trimmedStack,
+    location,
+    frames,
   };
+}
+
+function isSameFrame(a: StackFrame, b: StackFrame) {
+  return (
+    a.callee === b.callee &&
+    a.file === b.file &&
+    a.location.row === b.location.row &&
+    a.location.col === b.location.col
+  );
+}
+
+function stackFrameSources(frames: StackFrame[], options: ErrorOptions): DiagnosticSource[] {
+  const sources: DiagnosticSource[] = [];
+  // The snippets continue the dependency chain from the interpolation towards
+  // the throw site, so callers come before callees.
+  const chain = [...frames].reverse();
+
+  for (let index = 0; index < chain.length; ) {
+    const frame = chain[index]!;
+    let run = 1;
+    while (index + run < chain.length && isSameFrame(frame, chain[index + run]!)) {
+      run += 1;
+    }
+    index += run;
+
+    let source;
+    try {
+      source = options.readSource(frame.file);
+    } catch {
+      // The frame may be in a virtual module with no readable source.
+      continue;
+    }
+
+    const insideLabel = frame.callee ? `inside \`${frame.callee}\`` : "called from here";
+    const labels: string[] = [];
+    if (run > 3) {
+      labels.push(
+        `[... ${run - 1} additional calls${frame.callee ? ` inside \`${frame.callee}\`` : ""} ...]`,
+      );
+    } else {
+      for (let copy = 1; copy < run; copy += 1) {
+        labels.push(insideLabel);
+      }
+    }
+    labels.push(
+      index === chain.length
+        ? `thrown here${frame.callee ? `, inside \`${frame.callee}\`` : ""}`
+        : insideLabel,
+    );
+
+    for (const label of labels) {
+      sources.push({
+        annotations: [
+          {
+            label,
+            primary: false,
+            span: { start: frame.location, end: frame.location },
+          },
+        ],
+        path: frame.file,
+        source,
+      });
+    }
+  }
+
+  return sources;
 }
 
 function analyzeStack(stack: string, options: StackOptions) {
@@ -408,79 +500,32 @@ function analyzeStack(stack: string, options: StackOptions) {
   };
 }
 
-function formatLink(file: string, location: Location) {
-  return `${file}:${location.row + 1}:${location.col + 1}`;
+function dependencyAnnotations(dependencies: Dependency[]): DiagnosticAnnotation[] {
+  return dependencies.map((dependency, index) => ({
+    label:
+      index === 0
+        ? `CSS reads \`${dependency.name}\``
+        : `evaluating \`${dependencies[index - 1]!.name}\` reads \`${dependency.name}\``,
+    primary: index === 0,
+    span: dependency.reference,
+  }));
 }
 
-function formatSection(
-  title: string,
-  file: string,
-  span: Span,
-  label: string | undefined,
+function formatFrame(
+  diagnostic: EvalDiagnostic,
+  name: string,
+  source: string,
   options: ErrorOptions,
 ) {
-  // Underlining a span that stretches over many lines drowns the frame in
-  // carets, and clamping it mid-span would suggest an unintended boundary, so
-  // point at where the span starts instead.
-  if (span.end.row - span.start.row > 2) {
-    span = { start: span.start, end: span.start };
-  }
-
-  let frame = `${title}:\n  at ${formatLink(file, span.start)}`;
-
-  const sourceText = options.readSource(file);
-  const sourceLines = sourceText.split(/\r\n?|\n/);
-
-  const startLine = Math.max(1, span.start.row);
-  const endLine = Math.min(sourceLines.length, span.end.row + 2);
-  const width = String(endLine).length;
-  const pointOnly = locationEq(span.start, span.end);
-
-  for (let lineNumber = startLine; lineNumber <= endLine; lineNumber += 1) {
-    const sourceLine = sourceLines[lineNumber - 1] ?? "";
-
-    frame += `\n  ${String(lineNumber).padStart(width)} | ${sourceLine}`;
-
-    if (lineNumber < span.start.row + 1 || lineNumber > span.end.row + 1) {
-      continue;
-    }
-
-    const start = lineNumber === span.start.row + 1 ? span.start.col : 0;
-
-    const end = pointOnly
-      ? start
-      : lineNumber === span.end.row + 1
-        ? Math.min(sourceLine.length, span.end.col)
-        : sourceLine.length;
-
-    const caretWidth = end === start ? 1 : end - start;
-
-    frame += `\n  ${" ".repeat(width)} | ${" ".repeat(start)}${"^".repeat(caretWidth)}`;
-
-    if (lineNumber === span.start.row + 1 && label) {
-      frame += ` ${label}`;
-    }
-  }
-
-  return frame;
-}
-
-function appendAdvice(frame: string, description: DiagnosticAdvice) {
-  if (description.note) frame += `\n\n= note: ${description.note}`;
-  if (description.help) {
-    frame += `${description.note ? "\n" : "\n\n"}= help: ${description.help}`;
-  }
-  return frame;
-}
-
-function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
   const dependencies = diagnostic.dependencies;
   const rootCause = diagnostic.rootCause;
+  const annotations = dependencyAnnotations(dependencies);
+  const extraSources: DiagnosticSource[] = [];
+  let advice: DiagnosticAdvice = {};
 
   switch (rootCause.kind) {
     case "thrown": {
       let thrownLocation = rootCause.source.start;
-      let trimmedStack: string | undefined;
       if (rootCause.stack) {
         const analyzedStack = analyzeThrownStack(
           rootCause.stack,
@@ -488,179 +533,150 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
           rootCause.source,
           options,
         );
-        thrownLocation = analyzedStack.location;
-        trimmedStack = analyzedStack.stack;
-      }
-
-      let frame;
-      if (dependencies.length === 0) {
-        frame = formatSection(
-          "Interpolation",
-          options.sourceFile,
-          { start: thrownLocation, end: thrownLocation },
-          rootCause.text,
-          options,
-        );
-      } else {
-        let deps = [...dependencies];
-        const primary = deps.shift()!;
-        frame = formatSection(
-          "Interpolation",
-          options.sourceFile,
-          primary.reference,
-          `references \`${primary.name}\``,
-          options,
-        );
-
-        if (deps.length !== 0) {
-          let width = 0;
-          for (const d of deps) if (d.name.length > width) width = d.name.length;
-          frame += "\n\nDependency chain:";
-          for (const dependency of deps) {
-            frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
-          }
+        if (analyzedStack.location) {
+          thrownLocation = analyzedStack.location;
         }
-
-        frame +=
-          "\n\n" +
-          formatSection(
-            "Root cause",
-            options.sourceFile,
-            { start: thrownLocation, end: thrownLocation },
-            rootCause.text,
-            options,
-          );
+        extraSources.push(...stackFrameSources(analyzedStack.frames, options));
       }
 
-      if (trimmedStack) {
-        frame += "\n\nStack trace:";
-        for (const line of trimmedStack.split("\n")) {
-          frame += `\n  ${line}`;
-        }
-      }
-
-      return frame;
+      annotations.push({
+        label: rootCause.text,
+        primary: dependencies.length === 0,
+        span: { start: thrownLocation, end: thrownLocation },
+      });
+      break;
     }
     case "variable": {
       if (dependencies.length === 0)
         throw new Error("Expected variable issue to have at least one dependency");
 
-      let deps = [...dependencies];
-      const primary = deps.shift()!;
       const description = variableDescriptions[rootCause.predicate];
-
-      let frame = formatSection(
-        "Interpolation",
-        options.sourceFile,
-        primary.reference,
-        `references \`${primary.name}\``,
-        options,
-      );
-
-      if (deps.length !== 0) {
-        let width = 0;
-        for (const d of deps) if (d.name.length > width) width = d.name.length;
-
-        frame += "\n\nDependency chain:";
-        for (const dependency of deps) {
-          frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
-        }
-      }
-
-      frame +=
-        "\n\n" +
-        formatSection(
-          "Root cause",
-          options.sourceFile,
-          rootCause.source,
-          description.label(rootCause.name),
-          options,
-        );
-
-      return appendAdvice(frame, description);
+      annotations.push({
+        label: description.label(rootCause.name),
+        primary: false,
+        span: rootCause.source,
+      });
+      advice = description;
+      break;
     }
     case "expression": {
       const description = expressionDescriptions[rootCause.issue.code];
       if (dependencies.length === 0) {
-        let frame;
         if (spanContainsSpan(diagnostic.interpolation, rootCause.source)) {
-          frame = formatSection(
-            "Interpolation",
-            options.sourceFile,
-            rootCause.source,
-            description.label,
-            options,
-          );
+          annotations.push({
+            label: description.label,
+            primary: true,
+            span: rootCause.source,
+          });
         } else {
-          frame = formatSection(
-            "Interpolation",
-            options.sourceFile,
-            diagnostic.interpolation,
-            "evaluation reaches rejected code",
-            options,
+          annotations.push(
+            {
+              label: "evaluation reaches rejected code",
+              primary: true,
+              span: diagnostic.interpolation,
+            },
+            {
+              label: description.label,
+              primary: false,
+              span: rootCause.source,
+            },
           );
-          frame +=
-            "\n\n" +
-            formatSection(
-              "Root cause",
-              options.sourceFile,
-              rootCause.source,
-              description.label,
-              options,
-            );
         }
-
-        return appendAdvice(frame, description);
       } else {
-        let deps = [...dependencies];
-        const primary = deps.shift()!;
-        let frame = formatSection(
-          "Interpolation",
-          options.sourceFile,
-          primary.reference,
-          `references \`${primary.name}\``,
-          options,
-        );
-
-        if (deps.length !== 0) {
-          let width = 0;
-          for (const d of deps) if (d.name.length > width) width = d.name.length;
-
-          frame += "\n\nDependency chain:";
-          for (const dependency of deps) {
-            frame += `\n  ${dependency.name.padEnd(width, " ")}  at ${formatLink(options.sourceFile, dependency.reference.start)}`;
-          }
-        }
-
-        frame +=
-          "\n\n" +
-          formatSection(
-            "Root cause",
-            options.sourceFile,
-            rootCause.source,
-            description.label,
-            options,
-          );
-
-        return appendAdvice(frame, description);
+        annotations.push({
+          label: description.label,
+          primary: false,
+          span: rootCause.source,
+        });
       }
+
+      if ("declaration" in rootCause.issue && rootCause.issue.declaration) {
+        annotations.push({
+          label: "declared here",
+          primary: false,
+          span: rootCause.issue.declaration,
+        });
+      }
+      if (
+        "closure" in rootCause.issue &&
+        rootCause.issue.closure &&
+        rootCause.issue.closure.start.row !== rootCause.source.start.row
+      ) {
+        annotations.push({
+          label: "captured by this function",
+          primary: false,
+          span: rootCause.issue.closure,
+        });
+      }
+      advice = description;
+      break;
     }
     default:
-      return assertNever(rootCause, "Unsupported csslit root cause");
+      assertNever(rootCause, "Unsupported csslit root cause");
   }
+
+  const frame = formatDiagnostic({
+    helps: advice.help ? [advice.help] : [],
+    name,
+    notes: advice.note ? [advice.note] : [],
+    sources: [
+      {
+        annotations,
+        path: options.sourceFile,
+        source,
+      },
+      ...extraSources,
+    ],
+    title: formatHeadline(diagnostic),
+  });
+
+  const primary = annotations.find((annotation) => annotation.primary);
+  return { frame, primary: primary?.span ?? diagnostic.interpolation };
 }
 
-export function buildCsslitError(diagnostic: EvalDiagnostic, options: ErrorOptions): BuiltError {
-  const loc = diagnostic.dependencies[0]?.reference ?? diagnostic.interpolation;
+function buildSingleCsslitError(
+  diagnostic: EvalDiagnostic,
+  name: string,
+  source: string,
+  options: ErrorOptions,
+): BuiltError {
+  const { frame, primary } = formatFrame(diagnostic, name, source, options);
 
   return {
-    frame: formatFrame(diagnostic, options),
+    frame,
     loc: {
       file: options.sourceFile,
-      line: loc.start.row + 1,
-      column: loc.start.col + 1,
+      line: primary.start.row + 1,
+      column: primary.start.col + 1,
     },
     message: formatHeadline(diagnostic),
+  };
+}
+
+export function buildCsslitError(diagnostics: EvalDiagnostic[], options: ErrorOptions): BuiltError {
+  const displayedDiagnostics = diagnostics.slice(0, 5);
+  const source = options.readSource(options.sourceFile);
+  const first = buildSingleCsslitError(diagnostics[0], "error", source, options);
+
+  const omitted = diagnostics.length - displayedDiagnostics.length;
+  let frame = displayedDiagnostics
+    .map((diagnostic, index) => {
+      const name = diagnostics.length === 1 ? "error" : `error ${index + 1}`;
+      const error = buildSingleCsslitError(diagnostic, name, source, options);
+      return `${index === 0 ? "\n" : ""}${error.frame.trimEnd()}`;
+    })
+    .join(diagnostics.length === 1 ? "\n" : "\n\n");
+  if (omitted > 0) {
+    frame += `\n\n... ${omitted} more ${omitted === 1 ? "error" : "errors"} not shown`;
+  }
+
+  return {
+    frame,
+    loc: first.loc,
+    message:
+      diagnostics.length === 1
+        ? first.message
+        : `${diagnostics.length} CSS evaluation errors: ${first.message} (+${diagnostics.length - 1} more)`,
   };
 }
 

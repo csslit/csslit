@@ -1,7 +1,7 @@
 import type {
   Dependency,
   DiagnosticPredicateCode,
-  ExpressionIssue,
+  RawExpressionIssue,
   EvalDiagnostic,
   Span,
 } from "./eval-error";
@@ -23,7 +23,7 @@ interface VariableIssueDiagnosticInfo {
 
 interface ExpressionIssueDiagnosticInfo {
   kind: "expression";
-  issue: ExpressionIssue;
+  issue: RawExpressionIssue;
   source: string;
 }
 
@@ -112,12 +112,25 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
         };
       }
       case "expression": {
+        const issue = diagnostic.issue;
         return {
           dependencies,
           interpolation: interpolationLocation,
           rootCause: {
             kind: "expression",
-            issue: diagnostic.issue,
+            issue:
+              "binding" in issue
+                ? {
+                    binding: issue.binding,
+                    code: issue.code,
+                    declaration:
+                      issue.declaration === undefined
+                        ? undefined
+                        : decodeLocationToken(issue.declaration),
+                    closure:
+                      issue.closure === undefined ? undefined : decodeLocationToken(issue.closure),
+                  }
+                : issue,
             source: decodeLocationToken(diagnostic.source),
           },
         };
@@ -203,7 +216,7 @@ export function init() {
     });
   }
 
-  function exprErr(loc: string, issue: ExpressionIssue): never {
+  function exprErr(loc: string, issue: RawExpressionIssue): never {
     throw new EvaluationError({
       kind: "expression",
       issue,
@@ -317,7 +330,7 @@ export function init() {
     return result;
   }
 
-  function cellExprErr(name: string, loc: string, issue: ExpressionIssue) {
+  function cellExprErr(name: string, loc: string, issue: RawExpressionIssue) {
     const result = cell(name, loc);
     result.error = new EvaluationError({
       kind: "expression",

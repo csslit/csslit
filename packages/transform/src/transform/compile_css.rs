@@ -107,7 +107,6 @@ pub(crate) fn compile_csslit(
   Ok(CompileCsslitResult {
     code,
     map: map.map(Into::into),
-    warnings: Vec::new(),
   })
 }
 

@@ -49,14 +49,17 @@ const csslitErrorResolutionOptions = {
       id.slice(0, -".csslit".length),
     );
 
-    const match = /^    at (.+) \((.+):([0-9]+):([0-9]+)\)$/.exec(stackLine);
+    const match = /^    at (?:(.+) \((.+):([0-9]+):([0-9]+)\)|(.+):([0-9]+):([0-9]+))$/.exec(
+      stackLine,
+    );
 
+    let callee: string | undefined = undefined;
     let location: { file: string; location: Location } | undefined = undefined;
     if (match) {
-      const callee = match[1]!;
-      const file = match[2]!;
-      const line = Number(match[3]!);
-      const column = Number(match[4]!);
+      callee = match[1];
+      const file = (match[2] ?? match[5])!;
+      const line = Number((match[3] ?? match[6])!);
+      const column = Number((match[4] ?? match[7])!);
 
       if (
         callee === "ESModulesEvaluator.runInlinedModule" ||
@@ -75,6 +78,7 @@ const csslitErrorResolutionOptions = {
     }
 
     return {
+      callee,
       line: stackLine,
       location: location,
     };
@@ -122,7 +126,6 @@ export default function csslit(): PluginOption {
   let comptimeEnvironment: RunnableDevEnvironment | null = null;
   let devServer: ViteDevServer | null = null;
   let loadClientModule: LoadModule | null = null;
-  const warnedEvalIds = new Set<string>();
 
   return [
     {
@@ -191,7 +194,6 @@ export default function csslit(): PluginOption {
           await comptimeEnvironment?.close();
           comptimeEnvironment = null;
           loadClientModule = null;
-          warnedEvalIds.clear();
         }
       },
 
@@ -386,24 +388,20 @@ export default function csslit(): PluginOption {
 
             result = mod.__csslit_eval_result as EvalResult;
 
-            if (result.errors.length > 0 && !warnedEvalIds.has(evalId)) {
-              warnedEvalIds.add(evalId);
-              if (this.environment.name !== "comptime") {
-                for (const error of result.errors) {
-                  const warning = buildCsslitError(error, {
-                    ...csslitErrorResolutionOptions,
-                    sourceFile,
-                  });
+            if (result.errors.length > 0) {
+              const error = buildCsslitError(result.errors, {
+                ...csslitErrorResolutionOptions,
+                sourceFile,
+              });
 
-                  this.warn({
-                    cause: error,
-                    frame: warning.frame,
-                    id: sourceId,
-                    loc: warning.loc,
-                    message: warning.message,
-                  });
-                }
-              }
+              this.error({
+                code: "CSS_EVALUATION_ERROR",
+                frame: error.frame,
+                hook: "load",
+                id: sourceId,
+                loc: error.loc,
+                message: error.message,
+              });
             }
 
             const compiled = compileCsslit({
@@ -411,13 +409,6 @@ export default function csslit(): PluginOption {
               filename: sourceId,
               sourcemap: metadata.sourceMap !== null,
             });
-
-            for (const warning of compiled.warnings) {
-              this.warn({
-                id: sourceId,
-                message: warning,
-              });
-            }
 
             return {
               code: compiled.code,

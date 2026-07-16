@@ -6,6 +6,7 @@ name = "transform"
 crate-type = ["cdylib"]
 
 [dependencies]
+annotate-snippets = "0.12.16"
 napi = { version = "3.10.5", features = ["napi10"] }
 napi-derive = "3.5.10"
 oxc_allocator = "0.140.0"
