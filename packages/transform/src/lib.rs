@@ -1,6 +1,7 @@
 use napi_derive::napi;
 use oxc_sourcemap::napi::SourceMap;
 
+mod bit_set;
 mod quote;
 mod transform;
 

@@ -18,22 +18,24 @@ test("runtime parameter warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references param, which is a runtime parameter.
+    warning: runtime parameter 'param' is unavailable during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:16
       Interpolation:
         at <root>/src/entry.ts:4:16
         3 | function demo(param: string) {
         4 |   css'color: #{param};';
-          |                ^^^^^ references param
+          |                ^^^^^ references 'param'
         5 | }
       
       Root cause:
         at <root>/src/entry.ts:3:15
         2 | 
         3 | function demo(param: string) {
-          |               ^^^^^^^^^^^^^ param is a runtime parameter.
+          |               ^^^^^^^^^^^^^ only exists when this function is called
         4 |   css'color: #{param};';
+      
+      = note: CSS literals are evaluated independently at build time
     "
   `);
 });
@@ -57,14 +59,24 @@ test("function declaration with unsupported body warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an assignment expression.
+    warning: cannot modify an object property during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:8:14
       Interpolation:
         at <root>/src/entry.ts:8:14
         7 | 
         8 | css'color: #{tone({ color: "blue" })};';
-          |              ^^^^^^^^^^^^^^^^^^^^^^^ contains an assignment expression
+          |              ^^^^^^^^^^^^^^^^^^^^^^^ evaluation reaches rejected code
+      
+      Root cause:
+        at <root>/src/entry.ts:4:3
+        3 | function tone(value: { color: string }) {
+        4 |   value.color = "red";
+          |   ^^^^^^^^^^^ object properties cannot be modified during CSS evaluation
+        5 |   return value.color;
+      
+      = note: objects used during CSS evaluation are assumed to remain unchanged
+      = help: construct the object in a single expression, using immutable patterns such as spreads or 'Object.fromEntries'
     "
   `);
 });
@@ -85,21 +97,23 @@ test("class binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references Tone, which is a class binding.
+    warning: classes are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | css'color: #{Tone};';
-          |              ^^^^ references Tone
+          |              ^^^^ references 'Tone'
       
       Root cause:
         at <root>/src/entry.ts:3:7
         2 | 
         3 | class Tone {}
-          |       ^^^^ Tone is a class binding.
+          |       ^^^^ declared as a class
         4 | 
+      
+      = help: declare the class in a separate module and import it
     "
   `);
 });
@@ -122,21 +136,23 @@ test("class binding warning through member access", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references Tone, which is a class binding.
+    warning: classes are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{Tone.name};';
-          |              ^^^^ references Tone
+          |              ^^^^ references 'Tone'
       
       Root cause:
         at <root>/src/entry.ts:3:7
         2 | 
         3 | class Tone {
-          |       ^^^^ Tone is a class binding.
+          |       ^^^^ declared as a class
         4 |   value = "hotpink";
+      
+      = help: declare the class in a separate module and import it
     "
   `);
 });
@@ -159,22 +175,24 @@ test("catch binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references error, which is a catch binding.
+    warning: catch binding 'error' is unavailable during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:16
       Interpolation:
         at <root>/src/entry.ts:6:16
         5 | } catch (error) {
         6 |   css'color: #{error};';
-          |                ^^^^^ references error
+          |                ^^^^^ references 'error'
         7 | }
       
       Root cause:
         at <root>/src/entry.ts:5:10
         4 |   throw new Error("boom");
         5 | } catch (error) {
-          |          ^^^^^ error is a catch binding.
+          |          ^^^^^ only exists while the catch block runs
         6 |   css'color: #{error};';
+      
+      = note: CSS literals are evaluated independently at build time
     "
   `);
 });
@@ -196,21 +214,23 @@ test("reassigned local binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which is reassigned.
+    warning: binding 'tone' does not provide a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
         5 | 
         6 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:4:1
         3 | let tone = "hotpink";
         4 | tone = "blue";
-          | ^^^^ tone is reassigned.
+          | ^^^^ reassigned here
         5 | 
+      
+      = note: bindings used by CSS must retain one value
     "
   `);
 });
@@ -239,14 +259,14 @@ test("destructuring evaluation error warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: Error: destructuring failed.
+    warning: evaluating 'tone' threw: Error: destructuring failed
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
         5 | 
         6 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:4:25
@@ -309,26 +329,121 @@ test("destructuring preserves values initialized before an error", async () => {
     }
 
     # warnings
-    warning: CSS literal eval failed: interpolation references border, which threw during evaluation: Error: border failed.
+    warning: evaluating 'border' threw: Error: border failed
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:12:19
       Interpolation:
         at <root>/src/entry.ts:12:19
         11 |   color: #{color};
         12 |   border-width: #{border};
-           |                   ^^^^^^ references border
+           |                   ^^^^^^ references 'border'
         13 | ';
       
       Root cause:
-        at <root>/src/entry.ts:6:11
-        5 |   get border() {
-        6 |     throw new Error("border failed");
-          |           ^ Error: border failed
-        7 |   },
+        at <root>/src/entry.ts:3:16
+        2 | 
+        3 | const { color, border } = comptime({
+          |                ^ Error: border failed
+        4 |   color: "hotpink",
       
       Stack trace:
         Error: border failed
             at Object.get border (<root>/src/entry.ts:6:11)
+            at border (<root>/src/entry.ts:3:16)
+    "
+  `);
+});
+
+test("destructuring attributes imported getter errors to the pattern", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+        import { theme } from "./theme";
+
+        const { border } = theme;
+
+        css\`border-width: \${border};\`;
+      `,
+      "/src/theme.ts": `
+        export const theme = {
+          get border() {
+            throw new Error("border failed");
+          },
+        };
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: evaluating 'border' threw: Error: border failed
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:6:21
+      Interpolation:
+        at <root>/src/entry.ts:6:21
+        5 | 
+        6 | css'border-width: #{border};';
+          |                     ^^^^^^ references 'border'
+      
+      Root cause:
+        at <root>/src/entry.ts:4:9
+        3 | 
+        4 | const { border } = theme;
+          |         ^ Error: border failed
+        5 | 
+      
+      Stack trace:
+        Error: border failed
+            at Object.get border (<root>/src/theme.ts:3:11)
+            at border (<root>/src/entry.ts:4:9)
+    "
+  `);
+});
+
+test("destructuring attributes initializer errors to the initializer", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { comptime, css } from "@csslit/core";
+        import { loadTheme } from "./theme";
+
+        const { border } = comptime(loadTheme());
+
+        css\`border-width: \${border};\`;
+      `,
+      "/src/theme.ts": `
+        export function loadTheme() {
+          throw new Error("theme failed");
+        }
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: evaluating 'border' threw: Error: theme failed
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:6:21
+      Interpolation:
+        at <root>/src/entry.ts:6:21
+        5 | 
+        6 | css'border-width: #{border};';
+          |                     ^^^^^^ references 'border'
+      
+      Root cause:
+        at <root>/src/entry.ts:4:29
+        3 | 
+        4 | const { border } = comptime(loadTheme());
+          |                             ^ Error: theme failed
+        5 | 
+      
+      Stack trace:
+        Error: theme failed
+            at loadTheme (<root>/src/theme.ts:2:9)
+            at border (<root>/src/entry.ts:4:29)
     "
   `);
 });
@@ -372,14 +487,14 @@ test("var destructuring reports reads before initialization", async () => {
     }
 
     # warnings
-    warning: CSS literal eval failed: interpolation references color, depending on color, which is used before its initializer runs.
+    warning: binding 'color' is read before its initializer runs
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:39
       Interpolation:
         at <root>/src/entry.ts:6:39
         5 | 
         6 | export const className = css'color: #{color};';
-          |                                       ^^^^^ references color
+          |                                       ^^^^^ references 'color'
       
       Dependency chain:
         color  at <root>/src/entry.ts:4:15
@@ -388,7 +503,7 @@ test("var destructuring reports reads before initialization", async () => {
         at <root>/src/entry.ts:4:5
         3 | 
         4 | var { color = color } = empty;
-          |     ^^^^^^^^^^^^^^^^^^^^^^^^^ color is used before its initializer runs.
+          |     ^^^^^^^^^^^^^^^^^ initializer has not run yet
         5 | 
     "
   `);
@@ -425,21 +540,23 @@ test("duplicate var destructuring binding is a reassignment", async () => {
     }
 
     # warnings
-    warning: CSS literal eval failed: interpolation references color, which is reassigned.
+    warning: binding 'color' does not provide a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:39
       Interpolation:
         at <root>/src/entry.ts:5:39
         4 | 
         5 | export const className = css'color: #{color};';
-          |                                       ^^^^^ references color
+          |                                       ^^^^^ references 'color'
       
       Root cause:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | var { color, color } = { color: "hotpink" };
-          |              ^^^^^ color is reassigned.
+          |              ^^^^^ reassigned here
         4 | 
+      
+      = note: bindings used by CSS must retain one value
     "
   `);
 });
@@ -460,22 +577,24 @@ test("loop binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which comes from a loop binding.
+    warning: loop binding 'tone' is unavailable during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:16
       Interpolation:
         at <root>/src/entry.ts:4:16
         3 | for (const tone of ["hotpink"]) {
         4 |   css'color: #{tone};';
-          |                ^^^^ references tone
+          |                ^^^^ references 'tone'
         5 | }
       
       Root cause:
         at <root>/src/entry.ts:3:12
         2 | 
         3 | for (const tone of ["hotpink"]) {
-          |            ^^^^ tone comes from a loop binding.
+          |            ^^^^ only exists for a loop iteration
         4 |   css'color: #{tone};';
+      
+      = note: CSS literals are evaluated independently at build time
     "
   `);
 });
@@ -496,20 +615,20 @@ test("no initializer warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which has no initializer.
+    warning: binding 'tone' has no initializer
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:3:5
         2 | 
         3 | let tone: string;
-          |     ^^^^^^^^^^^^ tone has no initializer.
+          |     ^^^^^^^^^^^^ declared without a value
         4 | 
     "
   `);
@@ -533,21 +652,23 @@ test("enum declaration warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references Tone, which is an enum declaration.
+    warning: TypeScript enums are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{Tone};';
-          |              ^^^^ references Tone
+          |              ^^^^ references 'Tone'
       
       Root cause:
         at <root>/src/entry.ts:3:6
         2 | 
         3 | enum Tone {
-          |      ^^^^ Tone is an enum declaration.
+          |      ^^^^ declared as an enum
         4 |   Hotpink = "hotpink",
+      
+      = help: move the enum to a separate module and import it
     "
   `);
 });
@@ -570,20 +691,20 @@ test("namespace declaration warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references Tone, which is a namespace/module declaration.
+    warning: TypeScript namespaces are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{Tone};';
-          |              ^^^^ references Tone
+          |              ^^^^ references 'Tone'
       
       Root cause:
         at <root>/src/entry.ts:3:11
         2 | 
         3 | namespace Tone {
-          |           ^^^^ Tone is a namespace/module declaration.
+          |           ^^^^ declared as a namespace
         4 |   export const value = "hotpink";
     "
   `);
@@ -608,14 +729,14 @@ test("circular dependency warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: ReferenceError: Cannot access 'border' before initialization.
+    warning: evaluating 'tone' threw: ReferenceError: Cannot access 'border' before initialization
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:16
       Interpolation:
         at <root>/src/entry.ts:7:16
         6 | 
         7 |   css'color: #{tone};';
-          |                ^^^^ references tone
+          |                ^^^^ references 'tone'
         8 | }
       
       Root cause:
@@ -648,21 +769,21 @@ test("var initializer order warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which is used before its initializer runs.
+    warning: binding 'tone' is read before its initializer runs
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
         4 | 
       
       Root cause:
         at <root>/src/entry.ts:5:5
         4 | 
         5 | var tone = "hotpink";
-          |     ^^^^^^^^^^^^^^^^ tone is used before its initializer runs.
+          |     ^^^^^^^^^^^^^^^^ initializer has not run yet
     "
   `);
 });
@@ -683,21 +804,24 @@ test("dependent call warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which depends on a call expression.
+    warning: expression is not known to produce a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | const tone = pickColor();
-          |              ^^^^^^^^^^^ tone depends on a call expression.
+          |              ^^^^^^^^^^^ the stability of a function's return value cannot be inferred
         4 | 
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this call in 'comptime(...)' to assert that its return value is stable
     "
   `);
 });
@@ -720,21 +844,24 @@ test("locally defined function call binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which depends on a call expression.
+    warning: expression is not known to produce a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | const tone = pickColor();
-          |              ^^^^^^^^^^^ tone depends on a call expression.
+          |              ^^^^^^^^^^^ the stability of a function's return value cannot be inferred
         6 | 
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this call in 'comptime(...)' to assert that its return value is stable
     "
   `);
 });
@@ -756,14 +883,14 @@ test("dependent dependency chain warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references color, depending on tone, which depends on a call expression.
+    warning: expression is not known to produce a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
         5 | 
         6 | css'color: #{color};';
-          |              ^^^^^ references color
+          |              ^^^^^ references 'color'
       
       Dependency chain:
         tone  at <root>/src/entry.ts:4:15
@@ -772,8 +899,11 @@ test("dependent dependency chain warning", async () => {
         at <root>/src/entry.ts:3:14
         2 | 
         3 | const tone = pickColor();
-          |              ^^^^^^^^^^^ tone depends on a call expression.
+          |              ^^^^^^^^^^^ the stability of a function's return value cannot be inferred
         4 | const color = tone;
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this call in 'comptime(...)' to assert that its return value is stable
     "
   `);
 });
@@ -796,14 +926,14 @@ test("multi-step dependency chain warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references className, depending on accent, which depends on a call expression.
+    warning: expression is not known to produce a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{className};';
-          |              ^^^^^^^^^ references className
+          |              ^^^^^^^^^ references 'className'
       
       Dependency chain:
         tone    at <root>/src/entry.ts:5:19
@@ -813,8 +943,11 @@ test("multi-step dependency chain warning", async () => {
         at <root>/src/entry.ts:3:16
         2 | 
         3 | const accent = pickColor();
-          |                ^^^^^^^^^^^ accent depends on a call expression.
+          |                ^^^^^^^^^^^ the stability of a function's return value cannot be inferred
         4 | const tone = accent;
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this call in 'comptime(...)' to assert that its return value is stable
     "
   `);
 });
@@ -833,14 +966,16 @@ test("delete expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains a delete expression.
+    warning: cannot delete an object property during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'color: #{delete globalThis.theme.color};';
-          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains a delete expression
+          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ deleting a property modifies the object
+      
+      = note: objects used during CSS evaluation are assumed to remain unchanged
     "
   `);
 });
@@ -861,14 +996,16 @@ test("assignment expression warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an assignment expression.
+    warning: cannot modify binding 'tone' during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:15
       Interpolation:
         at <root>/src/entry.ts:5:15
         4 | 
         5 | css'color: #{(tone = "blue")};';
-          |               ^^^^^^^^^^^^^ contains an assignment expression
+          |               ^^^^ only bindings declared inside a closure can be modified
+      
+      = note: stateful calculations must be contained in closure-local bindings
     "
   `);
 });
@@ -889,20 +1026,162 @@ test("tagged template binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references token, which depends on a tagged template.
+    warning: expression is not known to produce a stable CSS value
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
         at <root>/src/entry.ts:5:14
         4 | 
         5 | css'color: #{token};';
-          |              ^^^^^ references token
+          |              ^^^^^ references 'token'
       
       Root cause:
         at <root>/src/entry.ts:3:15
         2 | 
         3 | const token = String.raw'hotpink';
-          |               ^^^^^^^^^^^^^^^^^^^ token depends on a tagged template.
+          |               ^^^^^^^^^^^^^^^^^^^ the stability of a tag function's return value cannot be inferred
+        4 | 
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that the tag's return value is stable
+    "
+  `);
+});
+
+test("stable CSS value initializer warnings", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        const arrayValue = ["hotpink"];
+        const objectValue = { color: "hotpink" };
+        const instanceValue = new Map([["color", "hotpink"]]);
+        const sequenceValue = ("red", "hotpink");
+
+        css\`color: \${arrayValue[0]};\`;
+        css\`color: \${objectValue.color};\`;
+        css\`color: \${instanceValue.get("color")};\`;
+        css\`color: \${sequenceValue};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: expression is not known to produce a stable CSS value
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:8:14
+      Interpolation:
+        at <root>/src/entry.ts:8:14
+        7 | 
+        8 | css'color: #{arrayValue[0]};';
+          |              ^^^^^^^^^^ references 'arrayValue'
+        9 | css'color: #{objectValue.color};';
+      
+      Root cause:
+        at <root>/src/entry.ts:3:20
+        2 | 
+        3 | const arrayValue = ["hotpink"];
+          |                    ^^^^^^^^^^^ new arrays can contain state that changes later
+        4 | const objectValue = { color: "hotpink" };
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that the resulting array is stable
+
+    warning: expression is not known to produce a stable CSS value
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:9:14
+      Interpolation:
+        at <root>/src/entry.ts:9:14
+         8 | css'color: #{arrayValue[0]};';
+         9 | css'color: #{objectValue.color};';
+           |              ^^^^^^^^^^^ references 'objectValue'
+        10 | css'color: #{instanceValue.get("color")};';
+      
+      Root cause:
+        at <root>/src/entry.ts:4:21
+        3 | const arrayValue = ["hotpink"];
+        4 | const objectValue = { color: "hotpink" };
+          |                     ^^^^^^^^^^^^^^^^^^^^ new objects can contain state that changes later
+        5 | const instanceValue = new Map([["color", "hotpink"]]);
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that the resulting object is stable
+
+    warning: expression is not known to produce a stable CSS value
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:10:14
+      Interpolation:
+        at <root>/src/entry.ts:10:14
+         9 | css'color: #{objectValue.color};';
+        10 | css'color: #{instanceValue.get("color")};';
+           |              ^^^^^^^^^^^^^ references 'instanceValue'
+        11 | css'color: #{sequenceValue};';
+      
+      Root cause:
+        at <root>/src/entry.ts:5:23
+        4 | const objectValue = { color: "hotpink" };
+        5 | const instanceValue = new Map([["color", "hotpink"]]);
+          |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ constructed instances can contain state that changes later
+        6 | const sequenceValue = ("red", "hotpink");
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that the resulting instance is stable
+
+    warning: expression is not known to produce a stable CSS value
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:11:14
+      Interpolation:
+        at <root>/src/entry.ts:11:14
+        10 | css'color: #{instanceValue.get("color")};';
+        11 | css'color: #{sequenceValue};';
+           |              ^^^^^^^^^^^^^ references 'sequenceValue'
+      
+      Root cause:
+        at <root>/src/entry.ts:6:24
+        5 | const instanceValue = new Map([["color", "hotpink"]]);
+        6 | const sequenceValue = ("red", "hotpink");
+          |                        ^^^^^^^^^^^^^^^^ the stability of a sequence expression's result cannot be inferred
+        7 | 
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that its result is stable
+    "
+  `);
+});
+
+test("invalid comptime assertion warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { comptime, css } from "@csslit/core";
+
+        const tone = comptime();
+
+        css\`color: \${tone};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: invalid 'comptime' assertion
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:5:14
+      Interpolation:
+        at <root>/src/entry.ts:5:14
+        4 | 
+        5 | css'color: #{tone};';
+          |              ^^^^ references 'tone'
+      
+      Root cause:
+        at <root>/src/entry.ts:3:14
+        2 | 
+        3 | const tone = comptime();
+          |              ^^^^^^^^^^ 'comptime' expects exactly one non-spread argument
         4 | 
     "
   `);
@@ -925,15 +1204,100 @@ test("private field warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains private field access.
+    warning: private fields are unavailable during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:35
       Interpolation:
         at <root>/src/entry.ts:5:35
         4 |   static #value = "hotpink";
         5 |   static className = css'color: #{this.#value};';
-          |                                   ^^^^^^^^^^^ contains private field access
+          |                                   ^^^^^^^^^^^ private names cannot be moved outside their class
         6 | }
+    "
+  `);
+});
+
+test("private name comparison warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        class Tone {
+          #value = "hotpink";
+          className = css\`color: \${#value in this};\`;
+        }
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: private names are unavailable during CSS evaluation
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:5:28
+      Interpolation:
+        at <root>/src/entry.ts:5:28
+        4 |   #value = "hotpink";
+        5 |   className = css'color: #{#value in this};';
+          |                            ^^^^^^^^^^^^^^ private names cannot be moved outside their class
+        6 | }
+    "
+  `);
+});
+
+test("JSX warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.tsx",
+    files: {
+      "/src/entry.tsx": `
+        import { css } from "@csslit/core";
+
+        css\`content: \${<div />};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: JSX is not supported during CSS evaluation
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.tsx:3:16
+      Interpolation:
+        at <root>/src/entry.tsx:3:16
+        2 | 
+        3 | css'content: #{<div />};';
+          |                ^^^^^^^ JSX cannot be evaluated as a CSS value
+    "
+  `);
+});
+
+test("super expression warning", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        class Tone extends Object {
+          className = css\`content: \${super.name};\`;
+        }
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: 'super' is not supported during CSS evaluation
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:4:30
+      Interpolation:
+        at <root>/src/entry.ts:4:30
+        3 | class Tone extends Object {
+        4 |   className = css'content: #{super.name};';
+          |                              ^^^^^ 'super' cannot be evaluated by csslit
+        5 | }
     "
   `);
 });
@@ -960,7 +1324,7 @@ test("direct thrown evaluation warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation threw during evaluation: Error: boom.
+    warning: evaluation threw: Error: boom
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:14
       Interpolation:
@@ -1001,14 +1365,14 @@ test("dependent thrown evaluation warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references tone, which threw during evaluation: Error: boom.
+    warning: evaluating 'tone' threw: Error: boom
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:14
       Interpolation:
         at <root>/src/entry.ts:6:14
         5 | 
         6 | css'color: #{tone};';
-          |              ^^^^ references tone
+          |              ^^^^ references 'tone'
       
       Root cause:
         at <root>/src/entry.ts:4:22
@@ -1050,14 +1414,14 @@ test("dependent thrown dependency chain warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references color, depending on tone, which threw during evaluation: Error: boom.
+    warning: evaluating 'color' threw: Error: boom
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:7:14
       Interpolation:
         at <root>/src/entry.ts:7:14
         6 | 
         7 | css'color: #{color};';
-          |              ^^^^^ references color
+          |              ^^^^^ references 'color'
       
       Dependency chain:
         tone  at <root>/src/entry.ts:5:15
@@ -1091,7 +1455,7 @@ test("global css evaluation warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation threw during evaluation: ReferenceError: pickColor is not defined.
+    warning: evaluation threw: ReferenceError: pickColor is not defined
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:28
       Interpolation:
@@ -1126,14 +1490,16 @@ test("closure assigning to an outer binding warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an assignment expression.
+    warning: cannot modify captured binding 'total' during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:5:14
       Interpolation:
-        at <root>/src/entry.ts:5:14
+        at <root>/src/entry.ts:5:40
         4 | let total = 0;
         5 | css'width: #{sizes.forEach((size) => { total += size; }) ?? total}px;';
-          |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains an assignment expression
+          |                                        ^^^^^ this binding is captured by the closure
+      
+      = note: closures may read captured bindings, but may only modify their own locals
     "
   `);
 });
@@ -1163,28 +1529,17 @@ test("nested closure assigning to an enclosing local warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an assignment expression.
+    warning: cannot modify captured binding 'total' during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:14
       Interpolation:
-        at <root>/src/entry.ts:4:14
-         3 | 
-         4 | css'width: #{(() => {
-           |              ^^^^^^^^ contains an assignment expression
-         5 |   let total = 0;
-           | ^^^^^^^^^^^^^^^^
-         6 |   function add(size: number) {
-           | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-         7 |     total += size;
-           | ^^^^^^^^^^^^^^^^^^
-         8 |   }
-           | ^^^
-         9 |   sizes.forEach(add);
-           | ^^^^^^^^^^^^^^^^^^^^^
-        10 |   return total;
-           | ^^^^^^^^^^^^^^^
-        11 | })()}px;';
-           | ^^^^
+        at <root>/src/entry.ts:7:5
+        6 |   function add(size: number) {
+        7 |     total += size;
+          |     ^^^^^ this binding is captured by the closure
+        8 |   }
+      
+      = note: closures may read captured bindings, but may only modify their own locals
     "
   `);
 });
@@ -1210,20 +1565,18 @@ test("closure assigning to a member warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an assignment expression.
+    warning: cannot modify an object property during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:14
       Interpolation:
-        at <root>/src/entry.ts:4:14
-        3 | 
+        at <root>/src/entry.ts:5:3
         4 | css'color: #{((value) => {
-          |              ^^^^^^^^^^^^^ contains an assignment expression
         5 |   value.color = "blue";
-          | ^^^^^^^^^^^^^^^^^^^^^^^
+          |   ^^^^^^^^^^^ object properties cannot be modified during CSS evaluation
         6 |   return value.color;
-          | ^^^^^^^^^^^^^^^^^^^^^
-        7 | })(theme)};';
-          | ^^^^^^^^^
+      
+      = note: objects used during CSS evaluation are assumed to remain unchanged
+      = help: construct the object in a single expression, using immutable patterns such as spreads or 'Object.fromEntries'
     "
   `);
 });
@@ -1245,20 +1598,17 @@ test("class inside closure warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains a class expression.
+    warning: classes are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:16
       Interpolation:
-        at <root>/src/entry.ts:3:16
-        2 | 
+        at <root>/src/entry.ts:4:3
         3 | css'content: #{(() => {
-          |                ^^^^^^^^ contains a class expression
         4 |   class Tone {}
-          | ^^^^^^^^^^^^^^^
+          |   ^^^^^^^^^^ class evaluation is not supported
         5 |   return Tone.name;
-          | ^^^^^^^^^^^^^^^^^^^
-        6 | })()};';
-          | ^^^^
+      
+      = help: declare the class in a separate module and import it
     "
   `);
 });
@@ -1280,14 +1630,16 @@ test("closure uses interpolation expression rules", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an import expression.
+    warning: dynamic imports are not supported during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:16
       Interpolation:
-        at <root>/src/entry.ts:3:16
+        at <root>/src/entry.ts:3:23
         2 | 
         3 | css'content: #{(() => import("./theme"))()};';
-          |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^ contains an import expression
+          |                       ^^^^^^^^^^^^^^^^^ dynamic import produces an asynchronous value
+      
+      = help: use a static import instead
     "
   `);
 });
@@ -1310,24 +1662,26 @@ test("await and yield outside retained closures warning", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation contains an await expression.
+    warning: 'await' is not supported in CSS interpolations
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:3:14
       Interpolation:
         at <root>/src/entry.ts:3:14
         2 | 
         3 | css'width: #{await Promise.resolve(1)}px;';
-          |              ^^^^^^^^^^^^^^^^^^^^^^^^ contains an await expression
+          |              ^^^^^^^^^^^^^^^^^^^^^^^^ direct compile-time 'await' is not supported
         4 | 
+      
+      = note: CSS evaluation is synchronous; a promise cannot resolve before the CSS is produced
 
-    warning: CSS literal eval failed: interpolation contains a yield expression.
+    warning: 'yield' cannot provide a value during compile-time CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:6:17
       Interpolation:
         at <root>/src/entry.ts:6:17
         5 | function* styles() {
         6 |   css'height: #{yield 2}px;';
-          |                 ^^^^^^^ contains a yield expression
+          |                 ^^^^^^^ a yielded value only exists when its generator is iterated
         7 | }
     "
   `);
@@ -1351,20 +1705,64 @@ test("nested css interpolation referencing a closure local warning", async () =>
 
   expect(result).toMatchInlineSnapshot(`
     "
-    warning: CSS literal eval failed: interpolation references color, which is a runtime parameter.
+    warning: runtime parameter 'color' is unavailable during CSS evaluation
       Plugin: vite-plugin-csslit
       File: <root>/src/entry.ts:4:51
       Interpolation:
         at <root>/src/entry.ts:4:51
         3 | 
         4 | css'content: #{colors.map((color) => css'color: #{color};').join(" ")};';
-          |                                                   ^^^^^ references color
+          |                                                   ^^^^^ references 'color'
       
       Root cause:
         at <root>/src/entry.ts:4:28
         3 | 
         4 | css'content: #{colors.map((color) => css'color: #{color};').join(" ")};';
-          |                            ^^^^^ color is a runtime parameter.
+          |                            ^^^^^ only exists when this function is called
+      
+      = note: CSS literals are evaluated independently at build time
+    "
+  `);
+});
+
+test("multi-line initializer span points at its start", async () => {
+  const result = await buildWarningSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import { css } from "@csslit/core";
+
+        const theme = {
+          color: "hotpink",
+          border: "red",
+          background: "blue",
+          outline: "green",
+        };
+        css\`color: \${theme.color};\`;
+      `,
+    },
+  });
+
+  expect(result).toMatchInlineSnapshot(`
+    "
+    warning: expression is not known to produce a stable CSS value
+      Plugin: vite-plugin-csslit
+      File: <root>/src/entry.ts:9:14
+      Interpolation:
+        at <root>/src/entry.ts:9:14
+        8 | };
+        9 | css'color: #{theme.color};';
+          |              ^^^^^ references 'theme'
+      
+      Root cause:
+        at <root>/src/entry.ts:3:15
+        2 | 
+        3 | const theme = {
+          |               ^ new objects can contain state that changes later
+        4 |   color: "hotpink",
+      
+      = note: stable CSS values contain no state that changes after they are produced
+      = help: wrap this expression in 'comptime(...)' to assert that the resulting object is stable
     "
   `);
 });

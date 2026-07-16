@@ -47,44 +47,51 @@ interface ErrorOptions extends StackOptions {
 
 export type DiagnosticPredicateCode =
   | "runtime-parameter"
-  | "function-binding"
   | "class-binding"
   | "catch-binding"
   | "reassigned"
-  | "defaulted-binding-pattern"
-  | "unknown-binding-pattern"
   | "loop-binding"
   | "no-initializer"
   | "enum-declaration"
-  | "enum-member"
   | "namespace-declaration"
   | "unknown-local-binding-kind"
   | "not-value-binding"
-  | "not-extracted-scope"
-  | "circular-dependency"
-  | "used-before-initializer"
-  | "unsupported";
+  | "used-before-initializer";
 
 export type ExpressionCode =
   | "delete-expression"
   | "call-expression"
+  | "invalid-comptime-call"
   | "private-field"
   | "array-expression"
-  | "arrow-function"
-  | "assignment-expression"
+  | "binding-mutation-outside-closure"
+  | "captured-binding-mutation"
+  | "property-mutation"
   | "await-expression"
   | "class-expression"
-  | "function-expression"
   | "import-expression"
   | "new-expression"
   | "object-expression"
   | "sequence-expression"
   | "tagged-template"
-  | "update-expression"
   | "yield-expression"
   | "private-in-expression"
   | "jsx"
+  | "super-expression"
   | "unsupported-expression";
+
+type BindingMutationExpressionCode =
+  | "binding-mutation-outside-closure"
+  | "captured-binding-mutation";
+
+export type ExpressionIssue =
+  | {
+      code: Exclude<ExpressionCode, BindingMutationExpressionCode>;
+    }
+  | {
+      code: BindingMutationExpressionCode;
+      binding: string;
+    };
 
 export interface Dependency {
   name: string;
@@ -101,7 +108,7 @@ interface VariableIssueRootCause {
 
 interface ExpressionIssueRootCause {
   kind: "expression";
-  code: ExpressionCode;
+  issue: ExpressionIssue;
   source: Span;
 }
 
@@ -124,97 +131,206 @@ function assertNever(value: never, message: string): never {
   throw new Error(`${message}: ${JSON.stringify(value)}`);
 }
 
-const expressionStrings: Record<ExpressionCode, string> = {
-  "delete-expression": "a delete expression",
-  "call-expression": "a call expression",
-  "private-field": "private field access",
-  "array-expression": "an array expression",
-  "arrow-function": "an arrow function",
-  "assignment-expression": "an assignment expression",
-  "await-expression": "an await expression",
-  "class-expression": "a class expression",
-  "function-expression": "a function expression",
-  "import-expression": "an import expression",
-  "new-expression": "a new expression",
-  "object-expression": "an object expression",
-  "sequence-expression": "a sequence expression",
-  "tagged-template": "a tagged template",
-  "update-expression": "an update expression",
-  "yield-expression": "a yield expression",
-  "private-in-expression": "a private in expression",
-  jsx: "JSX",
-  "unsupported-expression": "an unsupported expression",
+interface DiagnosticAdvice {
+  note?: string;
+  help?: string;
+}
+
+interface DiagnosticDescription extends DiagnosticAdvice {
+  headline: string;
+  label: string;
+}
+
+interface VariableDiagnosticDescription extends DiagnosticAdvice {
+  headline: (name: string) => string;
+  label: (name: string) => string;
+}
+
+const stableValueNote = "stable CSS values contain no state that changes after they are produced";
+
+const expressionDescriptions: Record<ExpressionCode, DiagnosticDescription> = {
+  "delete-expression": {
+    headline: "cannot delete an object property during CSS evaluation",
+    label: "deleting a property modifies the object",
+    note: "objects used during CSS evaluation are assumed to remain unchanged",
+  },
+  "call-expression": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "the stability of a function's return value cannot be inferred",
+    note: stableValueNote,
+    help: "wrap this call in `comptime(...)` to assert that its return value is stable",
+  },
+  "invalid-comptime-call": {
+    headline: "invalid `comptime` assertion",
+    label: "`comptime` expects exactly one non-spread argument",
+  },
+  "private-field": {
+    headline: "private fields are unavailable during CSS evaluation",
+    label: "private names cannot be moved outside their class",
+  },
+  "array-expression": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "new arrays can contain state that changes later",
+    note: stableValueNote,
+    help: "wrap this expression in `comptime(...)` to assert that the resulting array is stable",
+  },
+  "binding-mutation-outside-closure": {
+    headline: "cannot modify binding during CSS evaluation",
+    label: "only bindings declared inside a closure can be modified",
+    note: "stateful calculations must be contained in closure-local bindings",
+  },
+  "captured-binding-mutation": {
+    headline: "cannot modify captured binding during CSS evaluation",
+    label: "this binding is captured by the closure",
+    note: "closures may read captured bindings, but may only modify their own locals",
+  },
+  "property-mutation": {
+    headline: "cannot modify an object property during CSS evaluation",
+    label: "object properties cannot be modified during CSS evaluation",
+    note: "objects used during CSS evaluation are assumed to remain unchanged",
+    help: "construct the object in a single expression, using immutable patterns such as spreads or `Object.fromEntries`",
+  },
+  "await-expression": {
+    headline: "`await` is not supported in CSS interpolations",
+    label: "direct compile-time `await` is not supported",
+    note: "CSS evaluation is synchronous; a promise cannot resolve before the CSS is produced",
+  },
+  "class-expression": {
+    headline: "classes are not supported during CSS evaluation",
+    label: "class evaluation is not supported",
+    help: "declare the class in a separate module and import it",
+  },
+  "import-expression": {
+    headline: "dynamic imports are not supported during CSS evaluation",
+    label: "dynamic import produces an asynchronous value",
+    help: "use a static import instead",
+  },
+  "new-expression": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "constructed instances can contain state that changes later",
+    note: stableValueNote,
+    help: "wrap this expression in `comptime(...)` to assert that the resulting instance is stable",
+  },
+  "object-expression": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "new objects can contain state that changes later",
+    note: stableValueNote,
+    help: "wrap this expression in `comptime(...)` to assert that the resulting object is stable",
+  },
+  "sequence-expression": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "the stability of a sequence expression's result cannot be inferred",
+    note: stableValueNote,
+    help: "wrap this expression in `comptime(...)` to assert that its result is stable",
+  },
+  "tagged-template": {
+    headline: "expression is not known to produce a stable CSS value",
+    label: "the stability of a tag function's return value cannot be inferred",
+    note: stableValueNote,
+    help: "wrap this expression in `comptime(...)` to assert that the tag's return value is stable",
+  },
+  "yield-expression": {
+    headline: "`yield` cannot provide a value during compile-time CSS evaluation",
+    label: "a yielded value only exists when its generator is iterated",
+  },
+  "private-in-expression": {
+    headline: "private names are unavailable during CSS evaluation",
+    label: "private names cannot be moved outside their class",
+  },
+  jsx: {
+    headline: "JSX is not supported during CSS evaluation",
+    label: "JSX cannot be evaluated as a CSS value",
+  },
+  "super-expression": {
+    headline: "`super` is not supported during CSS evaluation",
+    label: "`super` cannot be evaluated by csslit",
+  },
+  "unsupported-expression": {
+    headline: "expression is not supported by csslit",
+    label: "unsupported expression kind",
+    note: "this most likely indicates a gap in csslit itself",
+    help: "report this at https://github.com/csslit/csslit/issues",
+  },
 };
 
-const predicateStrings: Record<DiagnosticPredicateCode, string> = {
-  "runtime-parameter": "is a runtime parameter.",
-  "function-binding": "is a function binding.",
-  "class-binding": "is a class binding.",
-  "catch-binding": "is a catch binding.",
-  reassigned: "is reassigned.",
-  "defaulted-binding-pattern": "uses a defaulted binding pattern.",
-  "unknown-binding-pattern": "uses an unknown binding pattern that csslit does not support.",
-  "loop-binding": "comes from a loop binding.",
-  "no-initializer": "has no initializer.",
-  "enum-declaration": "is an enum declaration.",
-  "enum-member": "is an enum member.",
-  "namespace-declaration": "is a namespace/module declaration.",
-  "unknown-local-binding-kind": "has an unknown local binding kind that csslit does not support.",
-  "not-value-binding": "does not resolve to a value binding.",
-  "not-extracted-scope": "is not available in the extracted scope.",
-  "circular-dependency": "participates in a circular dependency.",
-  "used-before-initializer": "is used before its initializer runs.",
-  unsupported: "is not supported here.",
+function expressionHeadline(issue: ExpressionIssue) {
+  if ("binding" in issue) {
+    const bindingKind = issue.code === "captured-binding-mutation" ? "captured binding" : "binding";
+    return `cannot modify ${bindingKind} \`${issue.binding}\` during CSS evaluation`;
+  }
+
+  return expressionDescriptions[issue.code].headline;
+}
+
+const variableDescriptions: Record<DiagnosticPredicateCode, VariableDiagnosticDescription> = {
+  "runtime-parameter": {
+    headline: (name) => `runtime parameter \`${name}\` is unavailable during CSS evaluation`,
+    label: () => "only exists when this function is called",
+    note: "CSS literals are evaluated independently at build time",
+  },
+  "class-binding": {
+    headline: () => "classes are not supported during CSS evaluation",
+    label: () => "declared as a class",
+    help: "declare the class in a separate module and import it",
+  },
+  "catch-binding": {
+    headline: (name) => `catch binding \`${name}\` is unavailable during CSS evaluation`,
+    label: () => "only exists while the catch block runs",
+    note: "CSS literals are evaluated independently at build time",
+  },
+  reassigned: {
+    headline: (name) => `binding \`${name}\` does not provide a stable CSS value`,
+    label: () => "reassigned here",
+    note: "bindings used by CSS must retain one value",
+  },
+  "loop-binding": {
+    headline: (name) => `loop binding \`${name}\` is unavailable during CSS evaluation`,
+    label: () => "only exists for a loop iteration",
+    note: "CSS literals are evaluated independently at build time",
+  },
+  "no-initializer": {
+    headline: (name) => `binding \`${name}\` has no initializer`,
+    label: () => "declared without a value",
+  },
+  "enum-declaration": {
+    headline: () => "TypeScript enums are not supported during CSS evaluation",
+    label: () => "declared as an enum",
+    help: "move the enum to a separate module and import it",
+  },
+  "namespace-declaration": {
+    headline: () => "TypeScript namespaces are not supported during CSS evaluation",
+    label: () => "declared as a namespace",
+  },
+  "unknown-local-binding-kind": {
+    headline: (name) => `binding \`${name}\` is not supported during CSS evaluation`,
+    label: () => "this kind of local binding cannot be extracted",
+  },
+  "not-value-binding": {
+    headline: (name) => `\`${name}\` does not refer to a runtime value`,
+    label: () => "type-only bindings cannot be used as CSS values",
+  },
+  "used-before-initializer": {
+    headline: (name) => `binding \`${name}\` is read before its initializer runs`,
+    label: () => "initializer has not run yet",
+  },
 };
 
 function formatHeadline(diagnostic: EvalDiagnostic) {
-  const prefix = "CSS literal eval failed:";
-  const dependencies = diagnostic.dependencies;
-  const primary = dependencies[0];
-  const primaryName = primary?.name;
-  const hasDependencyChain = dependencies.length > 1;
-
   const rootCause = diagnostic.rootCause;
   switch (rootCause.kind) {
     case "thrown": {
-      const suffix = rootCause.text ? `: ${rootCause.text}.` : ".";
-
-      if (primaryName === undefined) {
-        return `${prefix} interpolation threw during evaluation${suffix}`;
+      const suffix = rootCause.text ? `: ${rootCause.text}` : "";
+      const primary = diagnostic.dependencies[0];
+      if (primary) {
+        return `evaluating \`${primary.name}\` threw${suffix}`;
       }
-
-      if (hasDependencyChain) {
-        const root = dependencies.at(-1)!;
-        return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which threw during evaluation${suffix}`;
-      }
-
-      return `${prefix} interpolation references ${primaryName}, which threw during evaluation${suffix}`;
+      return `evaluation threw${suffix}`;
     }
     case "expression": {
-      const expression = expressionStrings[rootCause.code];
-      if (primaryName === undefined) {
-        return `${prefix} interpolation contains ${expression}.`;
-      }
-
-      if (hasDependencyChain) {
-        const root = dependencies.at(-1)!;
-        return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which depends on ${expression}.`;
-      }
-
-      return `${prefix} interpolation references ${primaryName}, which depends on ${expression}.`;
+      return expressionHeadline(rootCause.issue);
     }
     case "variable": {
-      const predicate = predicateStrings[rootCause.predicate];
-      if (primaryName === undefined) {
-        return `${prefix} interpolation references ${rootCause.name}, which ${predicate}`;
-      }
-
-      if (hasDependencyChain) {
-        const root = dependencies.at(-1)!;
-        return `${prefix} interpolation references ${primaryName}, depending on ${root.name}, which ${predicate}`;
-      }
-
-      return `${prefix} interpolation references ${primaryName}, which ${predicate}`;
+      return variableDescriptions[rootCause.predicate].headline(rootCause.name);
     }
     default:
       return assertNever(rootCause, "Unsupported csslit root cause");
@@ -234,6 +350,10 @@ function spanContainsLocation(span: Span, location: Location) {
     (location.row < boundaryEnd.row ||
       (location.row === boundaryEnd.row && location.col <= boundaryEnd.col))
   );
+}
+
+function spanContainsSpan(outer: Span, inner: Span) {
+  return spanContainsLocation(outer, inner.start) && spanContainsLocation(outer, inner.end);
 }
 
 function analyzeThrownStack(
@@ -299,6 +419,13 @@ function formatSection(
   label: string | undefined,
   options: ErrorOptions,
 ) {
+  // Underlining a span that stretches over many lines drowns the frame in
+  // carets, and clamping it mid-span would suggest an unintended boundary, so
+  // point at where the span starts instead.
+  if (span.end.row - span.start.row > 2) {
+    span = { start: span.start, end: span.start };
+  }
+
   let frame = `${title}:\n  at ${formatLink(file, span.start)}`;
 
   const sourceText = options.readSource(file);
@@ -338,6 +465,14 @@ function formatSection(
   return frame;
 }
 
+function appendAdvice(frame: string, description: DiagnosticAdvice) {
+  if (description.note) frame += `\n\n= note: ${description.note}`;
+  if (description.help) {
+    frame += `${description.note ? "\n" : "\n\n"}= help: ${description.help}`;
+  }
+  return frame;
+}
+
 function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
   const dependencies = diagnostic.dependencies;
   const rootCause = diagnostic.rootCause;
@@ -373,7 +508,7 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
           "Interpolation",
           options.sourceFile,
           primary.reference,
-          `references ${primary.name}`,
+          `references \`${primary.name}\``,
           options,
         );
 
@@ -412,12 +547,13 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
 
       let deps = [...dependencies];
       const primary = deps.shift()!;
+      const description = variableDescriptions[rootCause.predicate];
 
       let frame = formatSection(
         "Interpolation",
         options.sourceFile,
         primary.reference,
-        `references ${primary.name}`,
+        `references \`${primary.name}\``,
         options,
       );
 
@@ -437,30 +573,52 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
           "Root cause",
           options.sourceFile,
           rootCause.source,
-          `${rootCause.name} ${predicateStrings[rootCause.predicate]}`,
+          description.label(rootCause.name),
           options,
         );
 
-      return frame;
+      return appendAdvice(frame, description);
     }
     case "expression": {
+      const description = expressionDescriptions[rootCause.issue.code];
       if (dependencies.length === 0) {
-        return formatSection(
-          "Interpolation",
-          options.sourceFile,
-          diagnostic.interpolation,
-          `contains ${expressionStrings[rootCause.code]}`,
-          options,
-        );
+        let frame;
+        if (spanContainsSpan(diagnostic.interpolation, rootCause.source)) {
+          frame = formatSection(
+            "Interpolation",
+            options.sourceFile,
+            rootCause.source,
+            description.label,
+            options,
+          );
+        } else {
+          frame = formatSection(
+            "Interpolation",
+            options.sourceFile,
+            diagnostic.interpolation,
+            "evaluation reaches rejected code",
+            options,
+          );
+          frame +=
+            "\n\n" +
+            formatSection(
+              "Root cause",
+              options.sourceFile,
+              rootCause.source,
+              description.label,
+              options,
+            );
+        }
+
+        return appendAdvice(frame, description);
       } else {
         let deps = [...dependencies];
-        const root = deps.at(-1)!;
         const primary = deps.shift()!;
         let frame = formatSection(
           "Interpolation",
           options.sourceFile,
           primary.reference,
-          `references ${primary.name}`,
+          `references \`${primary.name}\``,
           options,
         );
 
@@ -480,11 +638,11 @@ function formatFrame(diagnostic: EvalDiagnostic, options: ErrorOptions) {
             "Root cause",
             options.sourceFile,
             rootCause.source,
-            `${root.name} depends on ${expressionStrings[rootCause.code]}.`,
+            description.label,
             options,
           );
 
-        return frame;
+        return appendAdvice(frame, description);
       }
     }
     default:

@@ -1,7 +1,7 @@
 import type {
   Dependency,
   DiagnosticPredicateCode,
-  ExpressionCode,
+  ExpressionIssue,
   EvalDiagnostic,
   Span,
 } from "./eval-error";
@@ -23,13 +23,18 @@ interface VariableIssueDiagnosticInfo {
 
 interface ExpressionIssueDiagnosticInfo {
   kind: "expression";
-  code: ExpressionCode;
+  issue: ExpressionIssue;
+  source: string;
+}
+
+interface SourceDiagnosticInfo {
+  kind: "source";
   source: string;
 }
 
 type IssueDiagnosticInfo = VariableIssueDiagnosticInfo | ExpressionIssueDiagnosticInfo;
 
-type DiagnosticInfo = StepDiagnosticInfo | IssueDiagnosticInfo;
+type DiagnosticInfo = StepDiagnosticInfo | IssueDiagnosticInfo | SourceDiagnosticInfo;
 
 interface Cell<T> {
   (useLoc: string): T;
@@ -112,10 +117,14 @@ function buildCsslitDiagnosticData(error: unknown, interpolation: string): EvalD
           interpolation: interpolationLocation,
           rootCause: {
             kind: "expression",
-            code: diagnostic.code,
+            issue: diagnostic.issue,
             source: decodeLocationToken(diagnostic.source),
           },
         };
+      }
+      case "source": {
+        rootCauseSource = decodeLocationToken(diagnostic.source);
+        break;
       }
       default:
         throw new Error(`Unsupported csslit diagnostic info: ${JSON.stringify(diagnostic)}`);
@@ -194,10 +203,10 @@ export function init() {
     });
   }
 
-  function exprErr(code: ExpressionCode, loc: string): never {
+  function exprErr(loc: string, issue: ExpressionIssue): never {
     throw new EvaluationError({
       kind: "expression",
-      code,
+      issue,
       source: loc,
     });
   }
@@ -235,7 +244,7 @@ export function init() {
       value: {
         set(value: T) {
           if (state.kind !== "uninitialized") {
-            throw new CellInitializationError(`Cell ${name} was initialized more than once.`);
+            throw new CellInitializationError(`Cell \`${name}\` was initialized more than once.`);
           }
           state = { kind: "value", value };
         },
@@ -243,7 +252,7 @@ export function init() {
       error: {
         set(error: unknown) {
           if (state.kind !== "uninitialized") {
-            throw new CellInitializationError(`Cell ${name} was initialized more than once.`);
+            throw new CellInitializationError(`Cell \`${name}\` was initialized more than once.`);
           }
           state = { kind: "error", error };
         },
@@ -261,9 +270,33 @@ export function init() {
     return read;
   }
 
-  function destructure(cells: Array<Cell<unknown>>, run: () => void) {
+  function destructure<T>(
+    cells: Array<Cell<unknown>>,
+    initializerLoc: string,
+    initialize: () => T,
+    applyPattern: (value: T) => void,
+  ) {
+    let value: T;
+
     try {
-      run();
+      value = initialize();
+    } catch (error) {
+      if (error instanceof CellInitializationError) throw error;
+
+      const sourceError = new EvaluationError({
+        kind: "source",
+        source: initializerLoc,
+      });
+      sourceError.cause = error;
+
+      for (const cell of cells) {
+        if (!cell.initialized) cell.error = sourceError;
+      }
+      return;
+    }
+
+    try {
+      applyPattern(value);
     } catch (error) {
       if (error instanceof CellInitializationError) throw error;
       for (const cell of cells) {
@@ -284,11 +317,11 @@ export function init() {
     return result;
   }
 
-  function cellExprErr(name: string, code: ExpressionCode, loc: string) {
+  function cellExprErr(name: string, loc: string, issue: ExpressionIssue) {
     const result = cell(name, loc);
     result.error = new EvaluationError({
       kind: "expression",
-      code,
+      issue,
       source: loc,
     });
     return result;
