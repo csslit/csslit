@@ -429,7 +429,7 @@ function stackFrameSources(frames: StackFrame[], options: ErrorOptions): Diagnos
   // the throw site, so callers come before callees.
   const chain = [...frames].reverse();
 
-  for (let index = 0; index < chain.length; ) {
+  for (let index = 0; index < chain.length;) {
     const frame = chain[index]!;
     let run = 1;
     while (index + run < chain.length && isSameFrame(frame, chain[index + run]!)) {
@@ -656,7 +656,7 @@ function buildSingleCsslitError(
 export function buildCsslitError(diagnostics: EvalDiagnostic[], options: ErrorOptions): BuiltError {
   const displayedDiagnostics = diagnostics.slice(0, 5);
   const source = options.readSource(options.sourceFile);
-  const first = buildSingleCsslitError(diagnostics[0], "error", source, options);
+  const first = buildSingleCsslitError(diagnostics[0]!, "error", source, options);
 
   const omitted = diagnostics.length - displayedDiagnostics.length;
   let frame = displayedDiagnostics

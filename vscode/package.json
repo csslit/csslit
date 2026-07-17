@@ -1,0 +1,39 @@
+{
+  "name": "csslit-vscode",
+  "displayName": "csslit",
+  "version": "0.0.1",
+  "private": true,
+  "description": "VS Code support for csslit.",
+  "categories": [
+    "Other"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GabbeV/csslit.git",
+    "directory": "vscode"
+  },
+  "publisher": "csslit",
+  "main": "./dist/extension.js",
+  "scripts": {
+    "vscode:prepublish": "vp run package"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/vscode": "^1.125.0",
+    "@vscode/vsce": "^3.9.2",
+    "vite-plus": "^0.2.5"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "csslit.helloWorld",
+        "title": "Hello World",
+        "category": "csslit"
+      }
+    ]
+  },
+  "engines": {
+    "vscode": "^1.125.0"
+  }
+}

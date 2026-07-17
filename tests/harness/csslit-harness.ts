@@ -459,9 +459,11 @@ async function runCsslitProductionBuildIsolated(
 
     let result: Awaited<ReturnType<typeof builder.build>>;
     try {
-      result = await builder.build(builder.environments.client);
+      result = await builder.build(builder.environments["client"]!);
     } finally {
-      await (builder.environments.comptime as { close?: () => Promise<void> }).close?.();
+      await (
+        builder.environments["comptime"] as { close?: () => Promise<void> } | undefined
+      )?.close?.();
     }
 
     const js: SnapshotJsModule[] = [];

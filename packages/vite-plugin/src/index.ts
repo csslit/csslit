@@ -6,9 +6,9 @@ import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath }
 import type { BuildEnvironment, PluginOption, RunnableDevEnvironment, ViteDevServer } from "vite";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite/module-runner";
 import type { PluginContext, SourceMapInput } from "rolldown";
-import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error";
-import type { EvalDiagnostic, Location } from "./eval-error";
-import { csslitComptimeBuildImportNormalizer } from "./import-normalizer";
+import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error.ts";
+import type { EvalDiagnostic, Location } from "./eval-error.ts";
+import { csslitComptimeBuildImportNormalizer } from "./import-normalizer.ts";
 
 interface EvalResult {
   blocks: Array<
@@ -42,7 +42,7 @@ interface CsslitModuleMetadata {
 type LoadModule = PluginContext["load"];
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
-const isWebContainer = !!process.versions?.webcontainer;
+const isWebContainer = !!process.versions["webcontainer"];
 
 const csslitErrorResolutionOptions = {
   normalizeStackLine(line: string) {
@@ -138,7 +138,7 @@ export default function csslit(): PluginOption {
       config(config) {
         config.builder ??= {};
         config.environments ??= {};
-        const comptime = (config.environments.comptime ??= {});
+        const comptime = (config.environments["comptime"] ??= {});
 
         comptime.consumer ??= "server";
         comptime.isBundled ??= false;
@@ -172,7 +172,7 @@ export default function csslit(): PluginOption {
 
       configureServer(viteServer: ViteDevServer) {
         devServer = viteServer;
-        comptimeEnvironment = viteServer.environments.comptime as RunnableDevEnvironment;
+        comptimeEnvironment = viteServer.environments["comptime"] as RunnableDevEnvironment;
       },
 
       buildStart() {
@@ -182,7 +182,7 @@ export default function csslit(): PluginOption {
       },
 
       async buildApp(builder) {
-        const environment = builder.environments.comptime;
+        const environment = builder.environments["comptime"];
         if (environment && isRunnableDevEnvironment(environment)) {
           comptimeEnvironment = environment;
         }
@@ -305,10 +305,10 @@ export default function csslit(): PluginOption {
               // https://github.com/vitejs/vite/issues/19674
               await devServer!.environments.client.transformRequest(evalSourceId);
               metadata = devServer!.environments.client.pluginContainer.getModuleInfo(evalSourceId)!
-                .meta.csslit as CsslitModuleMetadata;
+                .meta["csslit"] as CsslitModuleMetadata;
             } else {
               const moduleInfo = await loadClientModule!({ id: evalSourceId });
-              metadata = moduleInfo.meta.csslit as CsslitModuleMetadata;
+              metadata = moduleInfo.meta["csslit"] as CsslitModuleMetadata;
             }
 
             return {
@@ -324,10 +324,10 @@ export default function csslit(): PluginOption {
             if (devServer) {
               await devServer!.environments.client.transformRequest(sourceId);
               metadata = devServer!.environments.client.pluginContainer.getModuleInfo(sourceId)!
-                .meta.csslit as CsslitModuleMetadata;
+                .meta["csslit"] as CsslitModuleMetadata;
             } else {
               const moduleInfo = await loadClientModule!({ id: sourceId });
-              metadata = moduleInfo.meta.csslit as CsslitModuleMetadata;
+              metadata = moduleInfo.meta["csslit"] as CsslitModuleMetadata;
             }
 
             const exports = Object.fromEntries(
@@ -354,7 +354,7 @@ export default function csslit(): PluginOption {
             let result: EvalResult;
 
             this.addWatchFile(sourceId);
-            metadata = this.getModuleInfo(sourceId)!.meta.csslit as CsslitModuleMetadata;
+            metadata = this.getModuleInfo(sourceId)!.meta["csslit"] as CsslitModuleMetadata;
 
             const runnerEnvironment = comptimeEnvironment!;
 
@@ -389,7 +389,7 @@ export default function csslit(): PluginOption {
               );
             }
 
-            result = mod.__csslit_eval_result as EvalResult;
+            result = mod["__csslit_eval_result"] as EvalResult;
 
             if (result.errors.length > 0) {
               const error = buildCsslitError(result.errors, {

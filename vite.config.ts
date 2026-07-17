@@ -52,6 +52,7 @@ export default defineConfig({
     },
     rules: {
       "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+      "import/extensions": ["error", "ignorePackages", { checkTypeImports: true }],
       "eslint/no-unused-expressions": "off",
       "typescript/consistent-type-imports": "error",
     },

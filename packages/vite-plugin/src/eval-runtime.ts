@@ -4,7 +4,7 @@ import type {
   RawExpressionIssue,
   EvalDiagnostic,
   Span,
-} from "./eval-error";
+} from "./eval-error.ts";
 
 interface StepDiagnosticInfo {
   kind: "dependency";
@@ -55,7 +55,12 @@ class EvaluationError extends Error {
 }
 
 function decodeLocationToken(token: string): Span {
-  const [line, column, endLine, endColumn] = token.split(":", 4);
+  const [line, column, endLine, endColumn] = token.split(":", 4) as [
+    string,
+    string,
+    string,
+    string,
+  ];
   return {
     start: {
       row: parseInt(line, 10),
@@ -374,7 +379,7 @@ export function init() {
 
     for (let i = 0; i < strings.length; i += 1) {
       const cooked = strings[i]!;
-      const raw = strings.raw[i];
+      const raw = strings.raw[i]!;
       if (cooked === undefined) {
         throw new Error("Invalid template escape sequence");
       }
@@ -383,8 +388,8 @@ export function init() {
       let interpolationRow = 0;
       let interpolationCol = 0;
       if (mappingRuns !== undefined) {
-        let row = quasiLocations![i * 2];
-        let col = quasiLocations![i * 2 + 1];
+        let row = quasiLocations![i * 2]!;
+        let col = quasiLocations![i * 2 + 1]!;
 
         if (raw === cooked && !requiresSlowMapping.test(raw)) {
           if (cooked.length > 0) {

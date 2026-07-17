@@ -39,12 +39,13 @@
     "es-module-lexer": "^2.3.1"
   },
   "devDependencies": {
-    "@typescript/native-preview": "^7.0.0-dev.20260707.2",
-    "vite": "^8.1.4",
-    "vite-plus": "^0.2.4"
+    "@types/node": "^26.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "vite-plus": "^0.2.5"
   },
   "peerDependencies": {
-    "vite": "^8.1.4"
+    "vite": "^8.1.5"
   },
   "engines": {
     "node": ">=24.11.0"

@@ -6,12 +6,14 @@ const clean = (pattern: string) =>
 export default defineConfig({
   pack: {
     entry: {
-      "eval-runtime": "src/eval-runtime.ts",
-      index: "src/index.ts",
+      extension: "src/extension.ts",
     },
-    dts: true,
-    format: "esm",
+    deps: {
+      neverBundle: ["vscode"],
+    },
     fixedExtension: false,
+    format: "cjs",
+    platform: "node",
     sourcemap: true,
     exports: false,
   },
@@ -19,20 +21,27 @@ export default defineConfig({
     tasks: {
       build: {
         command: "vp pack -l silent",
-        dependsOn: ["@csslit/transform#build"],
         output: ["dist/**"],
       },
       dev: {
         command: "vp pack --watch",
-        dependsOn: ["@csslit/transform#dev"],
       },
       clean: {
-        command: clean("dist"),
+        command: [clean("dist"), clean("*.vsix")],
+        cache: false,
+      },
+      package: {
+        command: "vp pack -l silent --minify",
         cache: false,
       },
       release: {
-        command: "vp pack -l silent",
-        dependsOn: ["clean", "@csslit/transform#release"],
+        command: "vsce package --no-dependencies --out dist/csslit-vscode.vsix",
+        dependsOn: ["clean"],
+        cache: false,
+      },
+      install: {
+        command: "code --install-extension dist/csslit-vscode.vsix --force",
+        dependsOn: ["release"],
         cache: false,
       },
     },

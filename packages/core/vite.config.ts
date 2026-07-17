@@ -5,9 +5,7 @@ const clean = (pattern: string) =>
 
 export default defineConfig({
   pack: {
-    dts: {
-      tsgo: true,
-    },
+    dts: true,
     format: "esm",
     fixedExtension: false,
     sourcemap: true,
