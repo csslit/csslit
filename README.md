@@ -17,8 +17,9 @@ npm install @csslit/core @csslit/vite-plugin
 
 ## VS Code
 
-The [csslit VS Code extension](./vscode) provides CSS syntax highlighting, completions,
-and hovers in `css` and `css.global` templates.
+The [csslit VS Code extension](https://marketplace.visualstudio.com/items?itemName=csslit.csslit-vscode)
+provides CSS syntax highlighting, completions, and hovers in `css` and `css.global`
+templates.
 
 Syntax highlighting works independently. Completions and hovers require the
 [TypeScript 7 extension](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview)
