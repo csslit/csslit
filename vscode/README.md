@@ -1,15 +1,28 @@
 # csslit for VS Code
 
-A minimal VS Code extension that contributes the `csslit: Hello World` command.
+CSS syntax highlighting, completions, and hovers inside csslit tagged template literals.
 
-## Development
+```tsx
+import { css } from "csslit";
 
-1. Open the monorepo root in VS Code.
-2. Select `Run Extension` and press `F5` to build the extension and open an Extension Development Host.
-3. Run `csslit: Hello World` from the Command Palette.
+const button = css`
+  color: white;
+  background: rebeccapurple;
 
-Run `vp run build` for a development build, `vp run dev` to watch for changes, or `vp run package` for a minified production build.
+  &:hover {
+    background: indigo;
+  }
+`;
 
-## Release
+css.global`
+  body {
+    margin: 0;
+  }
+`;
+```
 
-After installing the workspace dependencies, run `vp run release` from this directory. It removes previous build and VSIX artifacts, bundles the extension, then creates `dist/csslit-vscode.vsix` ready to publish to the VS Code Marketplace.
+Highlighting works in JavaScript, JSX, TypeScript, and TSX. Completions and hovers require
+the [TypeScript 7 extension](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview)
+with TypeScript 7 enabled through **TypeScript: Enable TypeScript 7**.
+
+Source and issues: [github.com/csslit/csslit](https://github.com/csslit/csslit)

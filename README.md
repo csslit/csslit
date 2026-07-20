@@ -15,6 +15,15 @@ Compile-time CSS template literals for Vite. csslit evaluates interpolations dur
 npm install @csslit/core @csslit/vite-plugin
 ```
 
+## VS Code
+
+The [csslit VS Code extension](./vscode) provides CSS syntax highlighting, completions,
+and hovers in `css` and `css.global` templates.
+
+Syntax highlighting works independently. Completions and hovers require the
+[TypeScript 7 extension](https://marketplace.visualstudio.com/items?itemName=TypeScriptTeam.native-preview)
+with TypeScript 7 enabled through **TypeScript: Enable TypeScript 7**.
+
 ## Configure Vite
 
 ```ts

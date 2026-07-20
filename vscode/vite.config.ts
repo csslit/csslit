@@ -4,10 +4,16 @@ const clean = (pattern: string) =>
   `node -e 'for (const f of fs.globSync("./" + ${JSON.stringify(pattern)})) fs.rmSync(f, { recursive: true, force: true })'`;
 
 export default defineConfig({
+  test: {
+    experimental: {
+      viteModuleRunner: false,
+    },
+  },
   pack: {
     entry: {
       extension: "src/extension.ts",
     },
+    copy: "generated/syntaxes",
     deps: {
       neverBundle: ["vscode"],
     },
@@ -19,19 +25,37 @@ export default defineConfig({
   },
   run: {
     tasks: {
+      grammars: {
+        command: "node grammar/build-grammars.mts",
+        input: ["grammar/**", "../node_modules/tm-grammars/package.json"],
+        output: ["generated/syntaxes/**"],
+      },
       build: {
         command: "vp pack -l silent",
+        dependsOn: ["grammars"],
         output: ["dist/**"],
+      },
+      test: {
+        command: "vp test --reporter agent",
+        dependsOn: ["grammars"],
+        input: [{ auto: true }, "!node_modules/.vite/**"],
+      },
+      check: {
+        command: "vp test --reporter agent",
+        dependsOn: ["grammars"],
+        input: [{ auto: true }, "!node_modules/.vite/**"],
       },
       dev: {
         command: "vp pack --watch",
+        dependsOn: ["grammars"],
       },
       clean: {
-        command: [clean("dist"), clean("*.vsix")],
+        command: [clean("dist"), clean("generated"), clean("*.vsix")],
         cache: false,
       },
       package: {
         command: "vp pack -l silent --minify",
+        dependsOn: ["grammars"],
         cache: false,
       },
       release: {

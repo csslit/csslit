@@ -1,7 +1,10 @@
 .vscode/**
+.gitignore
 *.vsix
 node_modules/**
 src/**
+grammar/**
+generated/**
 tsconfig.json
 vite.config.ts
 dist/**/*.map

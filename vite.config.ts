@@ -20,7 +20,13 @@ export default defineConfig({
       },
       check: {
         command: "echo check complete",
-        dependsOn: ["_check_vp_lint", "_check_cargo_check", "_check_cargo_test", "tests#check"],
+        dependsOn: [
+          "_check_vp_lint",
+          "_check_cargo_check",
+          "_check_cargo_test",
+          "tests#check",
+          "csslit-vscode#check",
+        ],
       },
       clean: {
         command: "echo clean complete",

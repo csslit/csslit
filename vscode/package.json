@@ -1,7 +1,7 @@
 {
   "name": "csslit-vscode",
   "displayName": "csslit",
-  "version": "0.0.1",
+  "version": "0.0.4",
   "private": true,
   "description": "VS Code support for csslit.",
   "categories": [
@@ -10,7 +10,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/GabbeV/csslit.git",
+    "url": "https://github.com/csslit/csslit.git",
     "directory": "vscode"
   },
   "publisher": "csslit",
@@ -22,17 +22,111 @@
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.125.0",
     "@vscode/vsce": "^3.9.2",
-    "vite-plus": "^0.2.5"
+    "oniguruma-parser": "^0.12.2",
+    "tm-grammars": "^1.31.15",
+    "typescript": "^7.0.2",
+    "vite-plus": "^0.2.5",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   },
   "contributes": {
-    "commands": [
+    "grammars": [
       {
-        "command": "csslit.helloWorld",
-        "title": "Hello World",
-        "category": "csslit"
+        "scopeName": "source.csslit.css",
+        "path": "./dist/syntaxes/csslit-css.tmLanguage.json"
+      },
+      {
+        "scopeName": "source.csslit.scss",
+        "path": "./dist/syntaxes/csslit-scss.tmLanguage.json"
+      },
+      {
+        "scopeName": "csslit.javascript.injection",
+        "path": "./dist/syntaxes/csslit-javascript.tmLanguage.json",
+        "injectTo": [
+          "source.js"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.javascript.holes.injection",
+        "path": "./dist/syntaxes/csslit-javascript-holes.tmLanguage.json",
+        "injectTo": [
+          "source.js"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.js": "javascript"
+        }
+      },
+      {
+        "scopeName": "csslit.javascriptreact.injection",
+        "path": "./dist/syntaxes/csslit-javascriptreact.tmLanguage.json",
+        "injectTo": [
+          "source.js.jsx"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.javascriptreact.holes.injection",
+        "path": "./dist/syntaxes/csslit-javascriptreact-holes.tmLanguage.json",
+        "injectTo": [
+          "source.js.jsx"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.js.jsx": "javascriptreact"
+        }
+      },
+      {
+        "scopeName": "csslit.typescript.injection",
+        "path": "./dist/syntaxes/csslit-typescript.tmLanguage.json",
+        "injectTo": [
+          "source.ts"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.typescript.holes.injection",
+        "path": "./dist/syntaxes/csslit-typescript-holes.tmLanguage.json",
+        "injectTo": [
+          "source.ts"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.ts": "typescript"
+        }
+      },
+      {
+        "scopeName": "csslit.typescriptreact.injection",
+        "path": "./dist/syntaxes/csslit-typescriptreact.tmLanguage.json",
+        "injectTo": [
+          "source.tsx"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.typescriptreact.holes.injection",
+        "path": "./dist/syntaxes/csslit-typescriptreact-holes.tmLanguage.json",
+        "injectTo": [
+          "source.tsx"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.tsx": "typescriptreact"
+        }
       }
     ]
   },
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
   "engines": {
     "vscode": "^1.125.0"
   }
