@@ -11,33 +11,113 @@ const vsctm = require("vscode-textmate") as typeof import("vscode-textmate");
 
 const syntaxesDir = join(import.meta.dirname, "..", "generated", "syntaxes");
 const grammarFiles: Record<string, string> = {
+  "text.html.basic": require.resolve("tm-grammars/grammars/html.json"),
+  "source.js": require.resolve("tm-grammars/grammars/javascript.json"),
+  "source.js.jsx": require.resolve("tm-grammars/grammars/jsx.json"),
   "source.ts": require.resolve("tm-grammars/grammars/typescript.json"),
+  "source.tsx": require.resolve("tm-grammars/grammars/tsx.json"),
+  "source.ts.ng": require.resolve("tm-grammars/grammars/angular-ts.json"),
+  "source.astro": require.resolve("tm-grammars/grammars/astro.json"),
+  "source.mdx": require.resolve("tm-grammars/grammars/mdx.json"),
+  "source.svelte": require.resolve("tm-grammars/grammars/svelte.json"),
+  "text.marko": require.resolve("tm-grammars/grammars/marko.json"),
+  "text.html.derivative.ng": require.resolve("tm-grammars/grammars/angular-html.json"),
+  "text.html.vue": require.resolve("tm-grammars/grammars/vue.json"),
+  "expression.ng": require.resolve("tm-grammars/grammars/angular-expression.json"),
+  "template.ng": require.resolve("tm-grammars/grammars/angular-template.json"),
+  "vue.directives": require.resolve("tm-grammars/grammars/vue-directives.json"),
+  "vue.interpolations": require.resolve("tm-grammars/grammars/vue-interpolations.json"),
   "source.csslit.css": join(syntaxesDir, "csslit-css.tmLanguage.json"),
+  "csslit.javascript.injection": join(syntaxesDir, "csslit-javascript.tmLanguage.json"),
+  "csslit.javascript.holes.injection": join(syntaxesDir, "csslit-javascript-holes.tmLanguage.json"),
   "csslit.typescript.injection": join(syntaxesDir, "csslit-typescript.tmLanguage.json"),
   "csslit.typescript.holes.injection": join(syntaxesDir, "csslit-typescript-holes.tmLanguage.json"),
+  "csslit.typescriptreact.injection": join(syntaxesDir, "csslit-typescriptreact.tmLanguage.json"),
+  "csslit.typescriptreact.holes.injection": join(
+    syntaxesDir,
+    "csslit-typescriptreact-holes.tmLanguage.json",
+  ),
+  "csslit.tsrx.injection": join(syntaxesDir, "csslit-tsrx.tmLanguage.json"),
+  "csslit.tsrx.holes.injection": join(syntaxesDir, "csslit-tsrx-holes.tmLanguage.json"),
+  "csslit.mdx.injection": join(syntaxesDir, "csslit-mdx.tmLanguage.json"),
+  "csslit.mdx.holes.injection": join(syntaxesDir, "csslit-mdx-holes.tmLanguage.json"),
+  "csslit.angular.injection": join(syntaxesDir, "csslit-angular.tmLanguage.json"),
+  "csslit.angular.holes.injection": join(syntaxesDir, "csslit-angular-holes.tmLanguage.json"),
 };
 
 let grammar: IGrammar;
+let registry: InstanceType<typeof vsctm.Registry>;
 
 beforeAll(async () => {
   const onigMain = createRequire(import.meta.url).resolve("vscode-oniguruma");
   const wasm = readFileSync(join(dirname(onigMain), "onig.wasm")).buffer;
   await oniguruma.loadWASM(wasm);
-  const registry = new vsctm.Registry({
+  registry = new vsctm.Registry({
     onigLib: Promise.resolve({
       createOnigScanner: (sources) => new oniguruma.OnigScanner(sources),
       createOnigString: (source) => new oniguruma.OnigString(source),
     }),
     loadGrammar: (scopeName) => {
+      if (scopeName === "source.tsrx") {
+        const source = JSON.parse(readFileSync(grammarFiles["source.ts"]!, "utf8")) as {
+          scopeName: string;
+        };
+        source.scopeName = scopeName;
+        return Promise.resolve(vsctm.parseRawGrammar(JSON.stringify(source), "tsrx.json"));
+      }
       const file = grammarFiles[scopeName];
       if (!file) return Promise.resolve(null);
       const raw = readFileSync(file, "utf8");
       return Promise.resolve(vsctm.parseRawGrammar(raw, file));
     },
-    getInjections: (scopeName) =>
-      scopeName === "source.ts"
-        ? ["csslit.typescript.injection", "csslit.typescript.holes.injection"]
-        : [],
+    getInjections: (scopeName) => {
+      if (scopeName === "source.astro")
+        return [
+          "csslit.javascript.injection",
+          "csslit.javascript.holes.injection",
+          "csslit.typescript.injection",
+          "csslit.typescript.holes.injection",
+          "csslit.typescriptreact.injection",
+          "csslit.typescriptreact.holes.injection",
+        ];
+      if (scopeName === "source.ts.ng")
+        return [
+          "csslit.typescript.injection",
+          "csslit.typescript.holes.injection",
+          "csslit.angular.injection",
+          "csslit.angular.holes.injection",
+        ];
+      if (scopeName === "source.svelte")
+        return [
+          "csslit.javascript.injection",
+          "csslit.javascript.holes.injection",
+          "csslit.typescript.injection",
+          "csslit.typescript.holes.injection",
+        ];
+      if (scopeName === "source.mdx") return ["csslit.mdx.injection", "csslit.mdx.holes.injection"];
+      if (scopeName === "text.html.derivative.ng")
+        return ["template.ng", "csslit.angular.injection", "csslit.angular.holes.injection"];
+      if (scopeName === "text.html.basic")
+        return ["csslit.javascript.injection", "csslit.javascript.holes.injection"];
+      if (scopeName === "text.html.vue")
+        return [
+          "vue.directives",
+          "vue.interpolations",
+          "csslit.javascript.injection",
+          "csslit.javascript.holes.injection",
+          "csslit.typescript.injection",
+          "csslit.typescript.holes.injection",
+        ];
+      if (scopeName === "text.marko")
+        return ["csslit.typescript.injection", "csslit.typescript.holes.injection"];
+      if (scopeName === "source.js")
+        return ["csslit.javascript.injection", "csslit.javascript.holes.injection"];
+      if (scopeName === "source.ts")
+        return ["csslit.typescript.injection", "csslit.typescript.holes.injection"];
+      if (scopeName === "source.tsrx")
+        return ["csslit.tsrx.injection", "csslit.tsrx.holes.injection"];
+      return [];
+    },
   });
   const loaded = await registry.loadGrammar("source.ts");
   if (!loaded) throw new Error("failed to load source.ts");
@@ -46,10 +126,10 @@ beforeAll(async () => {
 
 type Token = { text: string; scopes: string[] };
 
-function tokenize(lines: string[]): Token[][] {
+function tokenize(lines: string[], host = grammar): Token[][] {
   let stack = vsctm.INITIAL;
   return lines.map((line) => {
-    const result = grammar.tokenizeLine(line, stack);
+    const result = host.tokenizeLine(line, stack);
     stack = result.ruleStack;
     return result.tokens.map((token) => ({
       text: line.slice(token.startIndex, token.endIndex),
@@ -122,6 +202,63 @@ test("well-formed css gets full css scoping", () => {
   expect(color?.scopes.join(" ")).toContain("support.type.property-name");
   const red = line!.find((token) => token.text === "red");
   expect(red?.scopes.join(" ")).toContain("support.constant.color");
+});
+
+test.each([
+  [
+    "HTML script",
+    "text.html.basic",
+    ["<script>", "const a = css`.x { color: ${themeValue}; }`;", "</script>"],
+  ],
+  [
+    "Svelte script",
+    "source.svelte",
+    ["<script>", "const a = css`.x { color: ${themeValue}; }`;", "</script>"],
+  ],
+  [
+    "Svelte template expression",
+    "source.svelte",
+    ["<div class={css`.x { color: ${themeValue}; }`}></div>"],
+  ],
+  [
+    "Vue script",
+    "text.html.vue",
+    ['<script setup lang="ts">', "const a = css`.x { color: ${themeValue}; }`;", "</script>"],
+  ],
+  [
+    "Vue template expression",
+    "text.html.vue",
+    ['<div :class="css`.x { color: ${themeValue}; }`"></div>'],
+  ],
+  [
+    "Astro frontmatter",
+    "source.astro",
+    ["---", "const a = css`.x { color: ${themeValue}; }`;", "---"],
+  ],
+  [
+    "Astro template expression",
+    "source.astro",
+    ["<div class={css`.x { color: ${themeValue}; }`}></div>"],
+  ],
+  ["MDX expression", "source.mdx", ["<div className={css`.x { color: ${themeValue}; }`} />"]],
+  ["Marko expression", "text.marko", ["<div class=css`.x { color: ${themeValue}; }` />"]],
+  ["Angular TypeScript", "source.ts.ng", ["const a = css`.x { color: ${themeValue}; }`;"]],
+  [
+    "Angular template expression",
+    "text.html.derivative.ng",
+    ["<div>{{ css`.x { color: ${themeValue}; }` }}</div>"],
+  ],
+  ["TSRX", "source.tsrx", ["const a = css`.x { color: ${themeValue}; }`;"]],
+] as const)("highlights csslit in %s", async (_name, scope, lines) => {
+  const host = await registry.loadGrammar(scope);
+  if (!host) throw new Error(`failed to load ${scope}`);
+  const tokens = tokenize([...lines], host).flat();
+  const className = tokens.find((token) => token.text === "x");
+  expect(className?.scopes).toContain("entity.other.attribute-name.class.css");
+  const hole = tokens.find((token) => token.text === "themeValue");
+  expect(hole?.scopes.some((candidate) => candidate.startsWith("meta.template.expression"))).toBe(
+    true,
+  );
 });
 
 test("font is scoped as a property name", () => {

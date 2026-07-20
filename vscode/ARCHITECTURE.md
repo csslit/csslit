@@ -16,9 +16,10 @@ the template boundary guarantees. A final CSS/template-specific pass lets identi
 scopes resume across interpolations and derives unit suffix scopes from the transformed
 numeric rule.
 
-Separate injection grammars restore the host JavaScript or TypeScript grammar inside
-interpolations. They also consume JavaScript escape pairs so boundary detection follows
-template-literal backslash parity.
+Separate injection grammars restore the host JavaScript, TypeScript, TSRX, or Angular expression
+grammar inside interpolations. HTML, Astro, Marko, MDX, Svelte, and Vue reuse the JavaScript and TypeScript
+injections in their embedded script and template-expression scopes. The injections also consume
+JavaScript escape pairs so boundary detection follows template-literal backslash parity.
 
 ## Language features
 

@@ -38,7 +38,11 @@
         "scopeName": "csslit.javascript.injection",
         "path": "./dist/syntaxes/csslit-javascript.tmLanguage.json",
         "injectTo": [
-          "source.js"
+          "source.js",
+          "source.astro",
+          "source.svelte",
+          "text.html.basic",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.embedded.inline.csslit": "css"
@@ -48,7 +52,11 @@
         "scopeName": "csslit.javascript.holes.injection",
         "path": "./dist/syntaxes/csslit-javascript-holes.tmLanguage.json",
         "injectTo": [
-          "source.js"
+          "source.js",
+          "source.astro",
+          "source.svelte",
+          "text.html.basic",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.template.expression.js": "javascript"
@@ -58,7 +66,10 @@
         "scopeName": "csslit.javascriptreact.injection",
         "path": "./dist/syntaxes/csslit-javascriptreact.tmLanguage.json",
         "injectTo": [
-          "source.js.jsx"
+          "source.js.jsx",
+          "source.astro",
+          "source.svelte",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.embedded.inline.csslit": "css"
@@ -68,7 +79,10 @@
         "scopeName": "csslit.javascriptreact.holes.injection",
         "path": "./dist/syntaxes/csslit-javascriptreact-holes.tmLanguage.json",
         "injectTo": [
-          "source.js.jsx"
+          "source.js.jsx",
+          "source.astro",
+          "source.svelte",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.template.expression.js.jsx": "javascriptreact"
@@ -78,7 +92,12 @@
         "scopeName": "csslit.typescript.injection",
         "path": "./dist/syntaxes/csslit-typescript.tmLanguage.json",
         "injectTo": [
-          "source.ts"
+          "source.ts",
+          "source.astro",
+          "source.svelte",
+          "source.ts.ng",
+          "text.marko",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.embedded.inline.csslit": "css"
@@ -88,7 +107,12 @@
         "scopeName": "csslit.typescript.holes.injection",
         "path": "./dist/syntaxes/csslit-typescript-holes.tmLanguage.json",
         "injectTo": [
-          "source.ts"
+          "source.ts",
+          "source.astro",
+          "source.svelte",
+          "source.ts.ng",
+          "text.marko",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.template.expression.ts": "typescript"
@@ -98,7 +122,11 @@
         "scopeName": "csslit.typescriptreact.injection",
         "path": "./dist/syntaxes/csslit-typescriptreact.tmLanguage.json",
         "injectTo": [
-          "source.tsx"
+          "source.tsx",
+          "source.astro",
+          "source.svelte",
+          "source.ts.ng",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.embedded.inline.csslit": "css"
@@ -108,10 +136,76 @@
         "scopeName": "csslit.typescriptreact.holes.injection",
         "path": "./dist/syntaxes/csslit-typescriptreact-holes.tmLanguage.json",
         "injectTo": [
-          "source.tsx"
+          "source.tsx",
+          "source.astro",
+          "source.svelte",
+          "source.ts.ng",
+          "text.html.vue"
         ],
         "embeddedLanguages": {
           "meta.template.expression.tsx": "typescriptreact"
+        }
+      },
+      {
+        "scopeName": "csslit.mdx.injection",
+        "path": "./dist/syntaxes/csslit-mdx.tmLanguage.json",
+        "injectTo": [
+          "source.mdx"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.mdx.holes.injection",
+        "path": "./dist/syntaxes/csslit-mdx-holes.tmLanguage.json",
+        "injectTo": [
+          "source.mdx"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.tsx": "typescriptreact"
+        }
+      },
+      {
+        "scopeName": "csslit.tsrx.injection",
+        "path": "./dist/syntaxes/csslit-tsrx.tmLanguage.json",
+        "injectTo": [
+          "source.tsrx"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.tsrx.holes.injection",
+        "path": "./dist/syntaxes/csslit-tsrx-holes.tmLanguage.json",
+        "injectTo": [
+          "source.tsrx"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.js": "ripple"
+        }
+      },
+      {
+        "scopeName": "csslit.angular.injection",
+        "path": "./dist/syntaxes/csslit-angular.tmLanguage.json",
+        "injectTo": [
+          "source.ts.ng",
+          "text.html.derivative.ng"
+        ],
+        "embeddedLanguages": {
+          "meta.embedded.inline.csslit": "css"
+        }
+      },
+      {
+        "scopeName": "csslit.angular.holes.injection",
+        "path": "./dist/syntaxes/csslit-angular-holes.tmLanguage.json",
+        "injectTo": [
+          "source.ts.ng",
+          "text.html.derivative.ng"
+        ],
+        "embeddedLanguages": {
+          "meta.template.expression.ts": "typescript"
         }
       }
     ]

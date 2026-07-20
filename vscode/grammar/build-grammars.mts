@@ -430,12 +430,26 @@ function patchCssInterpolationFragments(grammar: TmRule): void {
   });
 }
 
-type Host = { language: string; scope: string; suffix: string };
+type Host = {
+  language: string;
+  scope: string;
+  suffix: string;
+  expressionScope?: string;
+  substitution?: string;
+};
 const hosts: Host[] = [
   { language: "javascript", scope: "source.js", suffix: "js" },
   { language: "javascriptreact", scope: "source.js.jsx", suffix: "js.jsx" },
   { language: "typescript", scope: "source.ts", suffix: "ts" },
   { language: "typescriptreact", scope: "source.tsx", suffix: "tsx" },
+  { language: "tsrx", scope: "source.tsrx", suffix: "js" },
+  { language: "mdx", scope: "source.mdx", suffix: "tsx", expressionScope: "source.tsx" },
+  {
+    language: "angular",
+    scope: "expression.ng",
+    suffix: "ts",
+    substitution: "templateLiteralSubstitutionElement",
+  },
 ];
 
 /** Wrapper phase: Recognize a css tag and enter the appropriate transformed CSS context. */
@@ -492,7 +506,11 @@ const holesGrammar = (host: Host) => ({
       end: "(?<=\\})",
       // The substitution must consume before the zero-width end, including for adjacent holes.
       applyEndPatternLast: true,
-      patterns: [{ include: `${host.scope}#template-substitution-element` }],
+      patterns: [
+        {
+          include: `${host.expressionScope ?? host.scope}#${host.substitution ?? "template-substitution-element"}`,
+        },
+      ],
     },
   ],
 });
