@@ -1,7 +1,7 @@
 {
   "name": "csslit-vscode",
   "displayName": "csslit",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "private": true,
   "description": "VS Code support for csslit.",
   "categories": [
@@ -15,17 +15,16 @@
   },
   "publisher": "csslit",
   "main": "./dist/extension.js",
-  "scripts": {
-    "vscode:prepublish": "vp run package"
-  },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.125.0",
     "@vscode/vsce": "^3.9.2",
+    "cson-parser": "^4.0.9",
     "oniguruma-parser": "^0.12.2",
     "tm-grammars": "^1.31.15",
     "typescript": "^7.0.2",
     "vite-plus": "^0.2.5",
+    "vscode-css": "git+https://github.com/torresgol10/vscode-css.git#e763075e78c4cfecc0bb5270e920c78776014f96",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
   },
@@ -34,10 +33,6 @@
       {
         "scopeName": "source.csslit.css",
         "path": "./dist/syntaxes/csslit-css.tmLanguage.json"
-      },
-      {
-        "scopeName": "source.csslit.scss",
-        "path": "./dist/syntaxes/csslit-scss.tmLanguage.json"
       },
       {
         "scopeName": "csslit.javascript.injection",
@@ -129,5 +124,8 @@
   ],
   "engines": {
     "vscode": "^1.125.0"
+  },
+  "vsce": {
+    "dependencies": false
   }
 }

@@ -27,7 +27,6 @@ export default defineConfig({
     tasks: {
       grammars: {
         command: "node grammar/build-grammars.mts",
-        input: ["grammar/**", "../node_modules/tm-grammars/package.json"],
         output: ["generated/syntaxes/**"],
       },
       build: {
@@ -53,14 +52,18 @@ export default defineConfig({
         command: [clean("dist"), clean("generated"), clean("*.vsix")],
         cache: false,
       },
-      package: {
-        command: "vp pack -l silent --minify",
-        dependsOn: ["grammars"],
+      release: {
+        command: [
+          "node grammar/build-grammars.mts",
+          "vp pack -l silent --minify",
+          "vsce package --out dist/csslit-vscode.vsix",
+        ],
+        dependsOn: ["clean"],
         cache: false,
       },
-      release: {
-        command: "vsce package --no-dependencies --out dist/csslit-vscode.vsix",
-        dependsOn: ["clean"],
+      publish: {
+        command:
+          "echo Upload dist/csslit-vscode.vsix at https://marketplace.visualstudio.com/manage/publishers/csslit",
         cache: false,
       },
       install: {

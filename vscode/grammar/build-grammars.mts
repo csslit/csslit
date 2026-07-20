@@ -1,11 +1,12 @@
-// Generates boundary-safe CSS/SCSS grammars. See ../ARCHITECTURE.md.
+// Generates a boundary-safe CSS grammar. See ../ARCHITECTURE.md.
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { toOnigurumaAst } from "oniguruma-parser";
 import { generate } from "oniguruma-parser/generator";
 
 const BOUNDARY_BAIL = "(?=`|\\$\\{)";
+const TEMPLATE_END = "(?=`)";
 const GUARD = "(?!`|\\$\\{|\\\\[`$\\\\])";
 const BOUNDARY_CHARS = [0x60, 0x24, 0x5c]; // ` $ \
 
@@ -54,7 +55,7 @@ const parseFragment = (source: string): AstNode => {
   return ((regex.body as AstNode[])[0]!.body as AstNode[])[0]!;
 };
 const guardNode = parseFragment(GUARD);
-const bailNode = parseFragment(BOUNDARY_BAIL);
+const templateEndNode = parseFragment(TEMPLATE_END);
 
 const characterSetMisses: Record<string, (cp: number) => boolean> = {
   digit: (cp) => cp >= 0x30 && cp <= 0x39,
@@ -111,7 +112,7 @@ function guardElement(element: AstNode, path: string): AstNode {
       return element;
     case "Assertion":
       if (element.kind === "line_end") {
-        return group([{ type: "Assertion", kind: "line_end" }], [structuredClone(bailNode)]);
+        return group([{ type: "Assertion", kind: "line_end" }], [structuredClone(templateEndNode)]);
       }
       return element;
     case "Character":
@@ -146,6 +147,7 @@ function patchRegex(source: string, kind: "match" | "begin" | "end", path: strin
 }
 
 type TmRule = {
+  name?: string;
   include?: string;
   match?: string;
   begin?: string;
@@ -159,11 +161,8 @@ type TmRule = {
   [key: string]: unknown;
 };
 
-function patchGrammar(
-  grammar: TmRule,
-  scopeRenames: Record<string, string>,
-  droppedIncludes: string[],
-): void {
+/** Generic pass: Make every rule safe at template boundaries after grammar-specific changes. */
+function patchGrammar(grammar: TmRule, scopeRenames: Record<string, string>): void {
   if (grammar["injections"])
     throw new Error("embedded grammar declares injections; transform does not model them");
 
@@ -187,7 +186,6 @@ function patchGrammar(
     if (rule.end !== undefined) rule.end = patchRegex(rule.end, "end", path);
     if (rule.include !== undefined) rule.include = rewriteInclude(rule.include, path);
     if (rule.patterns) {
-      rule.patterns = rule.patterns.filter((child) => !droppedIncludes.includes(child.include!));
       rule.patterns.forEach((child, index) => walk(child, `${path}.patterns[${index}]`));
     }
     for (const key of ["captures", "beginCaptures", "endCaptures"] as const) {
@@ -203,6 +201,235 @@ function patchGrammar(
   walk(grammar, String(grammar["scopeName"]));
 }
 
+/** CSS pass: Adapt and extend the pinned grammar using its known repository structure. */
+function patchCssGrammar(grammar: TmRule): void {
+  const repository = grammar.repository!;
+
+  const selector = repository["selector"]!;
+  const selectorBoundary =
+    "  | ;                             # Semicolon (condensed property list syntax)";
+  if (!selector.begin?.includes(selectorBoundary)) throw new Error("CSS selector boundary changed");
+  selector.begin = selector.begin.replace(
+    selectorBoundary,
+    "  | `                             # Tagged-template boundary\n" + selectorBoundary,
+  );
+
+  const pseudoName =
+    "(?:[-a-zA-Z_]|[^\\x00-\\x7F]|\\\\(?:[0-9a-fA-F]{1,6}|.))(?:[-\\w]|[^\\x00-\\x7F]|\\\\(?:[0-9a-fA-F]{1,6}|.))*";
+  const functionEnd = {
+    end: "\\)",
+    endCaptures: { "0": { name: "punctuation.section.function.end.bracket.round.css" } },
+  };
+  const pseudoClassFunction = (names: string, patterns: TmRule[]): TmRule => ({
+    begin: `(?i)((:)(?:${names}))(\\()`,
+    beginCaptures: {
+      "1": { name: "entity.other.attribute-name.pseudo-class.css" },
+      "2": { name: "punctuation.definition.entity.css" },
+      "3": { name: "punctuation.section.function.begin.bracket.round.css" },
+    },
+    ...functionEnd,
+    patterns,
+  });
+  const pseudoElementFunction = (names: string, patterns: TmRule[]): TmRule => ({
+    begin: `(?i)((::)(?:${names}))(\\()`,
+    beginCaptures: {
+      "1": { name: "entity.other.attribute-name.pseudo-element.css" },
+      "2": { name: "punctuation.definition.entity.css" },
+      "3": { name: "punctuation.section.function.begin.bracket.round.css" },
+    },
+    ...functionEnd,
+    patterns,
+  });
+  const viewTransitionName = "variable.parameter.view-transition-name.css";
+  const viewTransitionType = "variable.parameter.view-transition-type.css";
+  const viewTransitionClass = "variable.parameter.view-transition-class.css";
+  const viewTransitionNames: TmRule[] = [
+    {
+      match: `(\\.)(${pseudoName})`,
+      captures: {
+        "1": { name: `${viewTransitionClass} punctuation.definition.entity.css` },
+        "2": { name: viewTransitionClass },
+      },
+    },
+    { match: pseudoName, name: viewTransitionName },
+  ];
+  const viewTransitionTypes = pseudoClassFunction("active-view-transition-type", [
+    { match: pseudoName, name: viewTransitionType },
+    { include: "#property-values" },
+  ]);
+  viewTransitionTypes.name = "meta.function.pseudo-class.view-transition.css";
+  const viewTransitionElements = pseudoElementFunction(
+    "view-transition-(?:group(?:-children)?|image-pair|new|old)",
+    [
+      { match: "\\*", name: "entity.name.tag.wildcard.css" },
+      ...viewTransitionNames,
+      { include: "#property-values" },
+    ],
+  );
+  viewTransitionElements.name = "meta.function.pseudo-element.view-transition.css";
+
+  const selectorPatterns = repository["selector-innards"]!.patterns!;
+  const customElement = selectorPatterns.findIndex(
+    (rule) => rule.name === "entity.name.tag.custom.css",
+  );
+  if (customElement === -1) throw new Error("CSS custom-element rule changed");
+  selectorPatterns.splice(
+    customElement,
+    0,
+    pseudoClassFunction("host|host-context|global|local", [{ include: "#selector-innards" }]),
+    viewTransitionTypes,
+    pseudoClassFunction("state", [{ include: "#property-values" }]),
+    pseudoElementFunction("cue|cue-region|slotted", [{ include: "#selector-innards" }]),
+    viewTransitionElements,
+    pseudoElementFunction("highlight|part|picker|scroll-button", [{ include: "#property-values" }]),
+    {
+      match: "(?i)(:)(?:global|local)(?![-\\w]|\\s*[;(}])",
+      captures: { "1": { name: "punctuation.definition.entity.css" } },
+      name: "entity.other.attribute-name.pseudo-class.css",
+    },
+    {
+      match:
+        "(?i)(:)(?:active-view-transition|autofill|blank|buffering|current|defined|future|has-slotted|local-link|modal|muted|open|past|paused|picture-in-picture|placeholder-shown|playing|popover-open|seeking|stalled|target-current|target-within|user-invalid|user-valid|volume-locked|xr-overlay)(?![-\\w]|\\s*[;}])",
+      captures: { "1": { name: "punctuation.definition.entity.css" } },
+      name: "entity.other.attribute-name.pseudo-class.css",
+    },
+    {
+      match:
+        "(?i)(::)(?:checkmark|cue-region|details-content|file-selector-button|picker-icon|scroll-marker|scroll-marker-group|target-text|view-transition)(?![-\\w]|\\s*[;}])",
+      captures: { "1": { name: "punctuation.definition.entity.css" } },
+      name: "entity.other.attribute-name.pseudo-element.css",
+    },
+    pseudoElementFunction(pseudoName, [{ include: "#selector-innards" }]),
+    pseudoClassFunction(pseudoName, [{ include: "#selector-innards" }]),
+    {
+      match: `(::)${pseudoName}(?![-\\w]|\\s*\\()`,
+      captures: { "1": { name: "punctuation.definition.entity.css" } },
+      name: "entity.other.attribute-name.pseudo-element.css",
+    },
+    {
+      match: `(:)${pseudoName}(?![-\\w]|\\s*\\()`,
+      captures: { "1": { name: "punctuation.definition.entity.css" } },
+      name: "entity.other.attribute-name.pseudo-class.css",
+    },
+  );
+
+  const sharedNames = repository["shared-names"]!;
+  const sharedFunctions = "| (?: dir|lang";
+  if (!sharedNames.patterns?.[1]?.begin?.includes(sharedFunctions))
+    throw new Error("CSS shared-name pseudo functions changed");
+  sharedNames.patterns[1]!.begin = sharedNames.patterns[1]!.begin!.replace(
+    sharedFunctions,
+    "| (?: active-view-transition-type|dir|global|host|host-context|lang|local|state",
+  );
+}
+
+/** CSS interpolation pass: Resume identifier and numeric-suffix scopes around template holes. */
+function patchCssInterpolationFragments(grammar: TmRule): void {
+  const repository = grammar.repository!;
+  const identifierEscape = "\\\\(?:[0-9a-fA-F]{1,6}|(?![`$\\\\]).)";
+  const identifierStart = `(?:[a-zA-Z_]|[^\\x00-\\x7F]|${identifierEscape}|-(?:[a-zA-Z_]|[^\\x00-\\x7F]|${identifierEscape}|-))`;
+  const identifierContinue = `(?:[-a-zA-Z_0-9]|[^\\x00-\\x7F]|${identifierEscape})`;
+  const identifier = `${identifierStart}${identifierContinue}*`;
+
+  const identifierBridge = (
+    prefix: string,
+    scope: string,
+    punctuation = false,
+    allowEmptyIdentifier = false,
+  ): TmRule => ({
+    begin: punctuation
+      ? `(${prefix})(${allowEmptyIdentifier ? `(?:${identifier})?` : identifier})(?=\\$\\{)`
+      : `(${prefix}${allowEmptyIdentifier ? `(?:${identifier})?` : identifier})(?=\\$\\{)`,
+    beginCaptures: punctuation
+      ? {
+          "1": { name: `${scope} punctuation.definition.entity.css` },
+          "2": { name: scope, patterns: [{ include: "#escapes" }] },
+        }
+      : {
+          "1": { name: scope, patterns: [{ include: "#escapes" }] },
+        },
+    end: `${identifierContinue}*(?!${identifierContinue}|\\$\\{)`,
+    endCaptures: {
+      "0": { name: scope, patterns: [{ include: "#escapes" }] },
+    },
+    patterns: [
+      {
+        captures: {
+          "1": { name: scope, patterns: [{ include: "#escapes" }] },
+        },
+        match: `(${identifierContinue}+)(?=\\$\\{)`,
+      },
+    ],
+  });
+
+  const selector = repository["selector"]!;
+  const selectorHoleBoundary = "|(?:\\.|#)(?:";
+  if (!selector.begin?.includes(selectorHoleBoundary))
+    throw new Error("patched CSS selector identifier boundary changed");
+  selector.begin = selector.begin.replace(selectorHoleBoundary, "|[.#](?=\\$\\{)|(?:\\.|#)(?:");
+
+  const selectorPatterns = repository["selector-innards"]!.patterns!;
+  selectorPatterns.unshift(
+    identifierBridge("\\.", "entity.other.attribute-name.class.css", true, true),
+    identifierBridge("\\#", "entity.other.attribute-name.id.css", true, true),
+    identifierBridge("::", "entity.other.attribute-name.pseudo-element.css", true, true),
+    identifierBridge(":", "entity.other.attribute-name.pseudo-class.css", true, true),
+    identifierBridge("", "entity.name.tag.css"),
+  );
+
+  const viewTransitionElements = selectorPatterns.find(
+    (rule) => rule.name === "meta.function.pseudo-element.view-transition.css",
+  );
+  const viewTransitionTypes = selectorPatterns.find(
+    (rule) => rule.name === "meta.function.pseudo-class.view-transition.css",
+  );
+  if (!viewTransitionElements?.patterns || !viewTransitionTypes?.patterns)
+    throw new Error("CSS view-transition function rules changed");
+  viewTransitionElements.patterns.unshift(
+    identifierBridge("\\.", "variable.parameter.view-transition-class.css", true, true),
+    identifierBridge("", "variable.parameter.view-transition-name.css", false, true),
+  );
+  viewTransitionTypes.patterns.unshift(
+    identifierBridge("", "variable.parameter.view-transition-type.css", false, true),
+  );
+
+  const propertyPatterns = repository["rule-list-innards"]!.patterns!;
+  const customProperty = propertyPatterns.findIndex((rule) => rule.name === "variable.css");
+  if (customProperty === -1) throw new Error("CSS custom-property rule changed");
+  propertyPatterns.splice(
+    customProperty,
+    0,
+    identifierBridge("--", "variable.css", false, true),
+    identifierBridge("", "meta.property-name.css"),
+  );
+
+  const variableFunction = repository["functions"]!.patterns!.find(
+    (rule) => rule.name === "meta.function.variable.css",
+  );
+  const variableArgument = variableFunction?.patterns?.findIndex(
+    (rule) => rule.name === "variable.argument.css",
+  );
+  if (variableArgument === undefined || variableArgument === -1)
+    throw new Error("CSS variable-argument rule changed");
+  variableFunction!.patterns!.splice(
+    variableArgument,
+    0,
+    identifierBridge("--", "variable.argument.css", false, true),
+  );
+
+  const numericPatterns = repository["numeric-values"]!.patterns!;
+  const numeric = numericPatterns.find((rule) => rule.name === "constant.numeric.css");
+  const units = numeric?.match?.match(/\(%\)\|\(([-A-Za-z|]+)\)\\b/)?.[1];
+  if (!units) throw new Error("CSS numeric unit rule changed");
+  numericPatterns.unshift({
+    captures: {
+      "1": { name: "keyword.other.unit.percentage.css" },
+      "2": { name: "keyword.other.unit.${2:/downcase}.css" },
+    },
+    match: `(?i)(?<=\\})(?:(%)|(${units})\\b)`,
+  });
+}
+
 type Host = { language: string; scope: string; suffix: string };
 const hosts: Host[] = [
   { language: "javascript", scope: "source.js", suffix: "js" },
@@ -211,6 +438,7 @@ const hosts: Host[] = [
   { language: "typescriptreact", scope: "source.tsx", suffix: "tsx" },
 ];
 
+/** Wrapper phase: Recognize a css tag and enter the appropriate transformed CSS context. */
 function templateRule(host: Host, global: boolean): TmRule {
   const punctuation = (edge: string) =>
     `string.template.${host.suffix} punctuation.definition.string.template.${edge}.${host.suffix}`;
@@ -231,13 +459,12 @@ function templateRule(host: Host, global: boolean): TmRule {
     endCaptures: { "0": { name: punctuation("end") } },
     contentName: global
       ? "meta.embedded.inline.csslit"
-      : "meta.embedded.inline.csslit meta.property-list.scss",
+      : "meta.embedded.inline.csslit meta.property-list.css",
     patterns: global
-      ? [{ include: "source.csslit.scss" }]
+      ? [{ include: "source.csslit.css" }]
       : [
-          { include: "source.csslit.scss#rules" },
-          { include: "source.csslit.scss#properties" },
-          { include: "source.csslit.scss" },
+          { include: "source.csslit.css#at-rules" },
+          { include: "source.csslit.css#rule-list-innards" },
         ],
   };
 }
@@ -250,6 +477,7 @@ const wrapperGrammar = (host: Host) => ({
   patterns: [templateRule(host, true), templateRule(host, false)],
 });
 
+/** Hole phase: Suspend CSS and restore the host grammar for interpolated expressions. */
 const holesGrammar = (host: Host) => ({
   information_for_contributors: GENERATED_NOTE,
   scopeName: `csslit.${host.language}.holes.injection`,
@@ -271,29 +499,27 @@ const holesGrammar = (host: Host) => ({
 
 const syntaxesDir = join(import.meta.dirname, "..", "generated", "syntaxes");
 const require = createRequire(import.meta.url);
-const grammarPath = (name: string) => require.resolve(`tm-grammars/grammars/${name}.json`);
-const tmGrammars = JSON.parse(
-  readFileSync(join(dirname(grammarPath("css")), "..", "package.json"), "utf8"),
-);
-const GENERATED_NOTE = `Generated by grammar/build-grammars.mts from tm-grammars@${tmGrammars.version} — run \`vp run grammars\` after editing the generator; do not edit this file.`;
+const cson = require("cson-parser") as { parse(source: string): object };
+const CSS_GRAMMAR_COMMIT = "e763075e78c4cfecc0bb5270e920c78776014f96";
+const GENERATED_NOTE = `Generated by grammar/build-grammars.mts from microsoft/vscode-css#47@${CSS_GRAMMAR_COMMIT} — run \`vp run grammars\` after editing the generator; do not edit this file.`;
 
 const scopeRenames: Record<string, string> = {
   "source.css": "source.csslit.css",
-  "source.css.scss": "source.csslit.scss",
 };
 
 const outputs = new Map<string, object>();
 
-for (const name of ["css", "scss"]) {
-  const grammar = JSON.parse(readFileSync(grammarPath(name), "utf8")) as TmRule;
-  const scope = scopeRenames[String(grammar["scopeName"])]!;
-  patchGrammar(grammar, scopeRenames, ["source.sassdoc"]);
-  outputs.set(`csslit-${name}.tmLanguage.json`, {
-    information_for_contributors: GENERATED_NOTE,
-    ...grammar,
-    scopeName: scope,
-  });
-}
+const cssGrammar = cson.parse(
+  readFileSync(require.resolve("vscode-css/grammars/css.cson"), "utf8"),
+) as TmRule;
+patchCssGrammar(cssGrammar);
+patchGrammar(cssGrammar, scopeRenames);
+patchCssInterpolationFragments(cssGrammar);
+outputs.set("csslit-css.tmLanguage.json", {
+  information_for_contributors: GENERATED_NOTE,
+  ...cssGrammar,
+  scopeName: scopeRenames["source.css"],
+});
 
 for (const host of hosts) {
   outputs.set(`csslit-${host.language}.tmLanguage.json`, wrapperGrammar(host));

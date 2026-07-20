@@ -4,14 +4,17 @@
 
 The extension cannot embed VS Code's CSS grammar directly. An unterminated CSS token can
 otherwise consume the closing backtick and corrupt highlighting after the template.
-`grammar/build-grammars.mts` patches the upstream CSS and SCSS TextMate grammars so no rule
+`grammar/build-grammars.mts` patches the CSS TextMate grammar from microsoft/vscode-css#47 so no rule
 can consume an unescaped backtick or `${`, and every active rule can bail out at either
 boundary. Unsupported regex or grammar constructs fail the build rather than weakening
 that guarantee silently.
 
-The SCSS grammar is used for colorization because it handles CSS nesting better than VS
-Code's CSS TextMate grammar. Embedded language metadata still identifies the content as
-CSS, and language features use VS Code's CSS language service.
+The grammar is pinned to a commit until its native CSS nesting support reaches VS Code.
+A CSS-specific pass adds embedded selector boundaries, current and CSS Modules pseudos,
+and forward-compatible pseudo fallbacks. A separate grammar-agnostic pass then provides
+the template boundary guarantees. A final CSS/template-specific pass lets identifier
+scopes resume across interpolations and derives unit suffix scopes from the transformed
+numeric rule.
 
 Separate injection grammars restore the host JavaScript or TypeScript grammar inside
 interpolations. They also consume JavaScript escape pairs so boundary detection follows

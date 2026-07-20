@@ -13,7 +13,6 @@ const syntaxesDir = join(import.meta.dirname, "..", "generated", "syntaxes");
 const grammarFiles: Record<string, string> = {
   "source.ts": require.resolve("tm-grammars/grammars/typescript.json"),
   "source.csslit.css": join(syntaxesDir, "csslit-css.tmLanguage.json"),
-  "source.csslit.scss": join(syntaxesDir, "csslit-scss.tmLanguage.json"),
   "csslit.typescript.injection": join(syntaxesDir, "csslit-typescript.tmLanguage.json"),
   "csslit.typescript.holes.injection": join(syntaxesDir, "csslit-typescript-holes.tmLanguage.json"),
 };
@@ -59,7 +58,7 @@ function tokenize(lines: string[]): Token[][] {
   });
 }
 
-const isCsslitScope = (scope: string) => scope.includes("csslit") || /\.css\b|\.scss\b/.test(scope);
+const isCsslitScope = (scope: string) => scope.includes("csslit") || /\.css\b/.test(scope);
 
 function expectPlainTypeScript(tokens: Token[], context: string): void {
   for (const token of tokens) {
@@ -115,12 +114,85 @@ for (const [name, lines] of Object.entries(pathological)) {
   });
 }
 
-test("well-formed css gets full scss scoping", () => {
+test("well-formed css gets full css scoping", () => {
   const [line] = tokenize(["const a = css`.x { color: red; }`;"]);
+  const className = line!.find((token) => token.text === "x");
+  expect(className?.scopes.join(" ")).toContain("entity.other.attribute-name.class");
   const color = line!.find((token) => token.text === "color");
   expect(color?.scopes.join(" ")).toContain("support.type.property-name");
   const red = line!.find((token) => token.text === "red");
   expect(red?.scopes.join(" ")).toContain("support.constant.color");
+});
+
+test("font is scoped as a property name", () => {
+  const [line] = tokenize(["const a = css`font:menu;`;"]);
+  const font = line!.find((token) => token.text === "font");
+  expect(font?.scopes.join(" ")).toContain("support.type.property-name");
+});
+
+test.each(["css", "css.global"])("@media is scoped as an at-rule in %s", (tag) => {
+  const [line] = tokenize([`const a = ${tag}\`@media (width > 1px) { color: red; }\`;`]);
+  const media = line!.filter((token) => token.text === "@" || token.text === "media");
+  expect(media.flatMap((token) => token.scopes)).toContain("keyword.control.at-rule.media.css");
+});
+
+test("css modules global selector keeps selector scoping", () => {
+  const [line] = tokenize(["const a = css`:global(.external) & { color: red; }`;"]);
+  const global = line!.find((token) => token.text.includes("global"));
+  expect(global?.scopes.join(" ")).toContain("entity.other.attribute-name.pseudo-class");
+  const className = line!.find((token) => token.text === "external");
+  expect(className?.scopes.join(" ")).toContain("entity.other.attribute-name.class");
+});
+
+test("known and future pseudo functions keep their general scopes", () => {
+  const [line] = tokenize([
+    "const a = css`.x:state(foo) {} .x:future-pseudo(foo) {} .x::view-transition-group(foo) {}`;",
+  ]);
+  const state = line!.find((token) => token.text.includes("state"));
+  expect(state?.scopes.join(" ")).toContain("entity.other.attribute-name.pseudo-class");
+  const future = line!.find((token) => token.text.includes("future-pseudo"));
+  expect(future?.scopes.join(" ")).toContain("entity.other.attribute-name.pseudo-class");
+  const viewTransition = line!.find((token) => token.text.includes("view-transition-group"));
+  expect(viewTransition?.scopes.join(" ")).toContain("entity.other.attribute-name.pseudo-element");
+});
+
+test("view-transition pseudo arguments have selector-specific scopes", () => {
+  const [line] = tokenize([
+    "const a = css`::view-transition-group(card), ::view-transition-old(*.shared), ::view-transition-group-children(card), :active-view-transition-type(navigation) {}`;",
+  ]);
+  const card = line!.find((token) => token.text === "card");
+  expect(card?.scopes).toContain("variable.parameter.view-transition-name.css");
+  const wildcard = line!.find((token) => token.text === "*");
+  expect(wildcard?.scopes).toContain("entity.name.tag.wildcard.css");
+  const dot = line!.find((token) => token.text === ".");
+  expect(dot?.scopes).toContain("punctuation.definition.entity.css");
+  const shared = line!.find((token) => token.text === "shared");
+  expect(shared?.scopes).toContain("variable.parameter.view-transition-class.css");
+  const groupChildren = line!.find((token) => token.text.includes("group-children"));
+  expect(groupChildren?.scopes).toContain("entity.other.attribute-name.pseudo-element.css");
+  const navigation = line!.find((token) => token.text === "navigation");
+  expect(navigation?.scopes).toContain("variable.parameter.view-transition-type.css");
+});
+
+test("view-transition argument scopes continue across holes", () => {
+  const [line] = tokenize([
+    "const a = css`::view-transition-group(${name}-card), ::view-transition-old(.${kind}-shared), :active-view-transition-type(${type}-navigation) {}`;",
+  ]);
+  const card = line!.find((token) => token.text === "-card");
+  expect(card?.scopes).toContain("variable.parameter.view-transition-name.css");
+  const dot = line!.find((token) => token.text === ".");
+  expect(dot?.scopes).toContain("punctuation.definition.entity.css");
+  const shared = line!.find((token) => token.text === "-shared");
+  expect(shared?.scopes).toContain("variable.parameter.view-transition-class.css");
+  const navigation = line!.find((token) => token.text === "-navigation");
+  expect(navigation?.scopes).toContain("variable.parameter.view-transition-type.css");
+  for (const expression of ["name", "kind", "type"]) {
+    const token = line!.find((candidate) => candidate.text === expression);
+    expect(token?.scopes).toContain("meta.template.expression.ts");
+    expect(token?.scopes).not.toContain("variable.parameter.view-transition-name.css");
+    expect(token?.scopes).not.toContain("variable.parameter.view-transition-type.css");
+    expect(token?.scopes).not.toContain("variable.parameter.view-transition-class.css");
+  }
 });
 
 test("hole in a property value keeps css state across it", () => {
@@ -135,12 +207,69 @@ test("hole in a property value keeps css state across it", () => {
   expect(auto?.scopes.join(" ")).toContain("support.constant.property-value");
 });
 
+test("identifier scopes continue across holes", () => {
+  const [line] = tokenize([
+    "const a = css`.${className}-${state}-active, #${id}-part, widget-${kind}, html:${pseudo}-state { --theme-${variant}-tone: red; }`;",
+  ]);
+  const dot = line!.find((token) => token.text === ".");
+  expect(dot?.scopes.join(" ")).toContain("entity.other.attribute-name.class.css");
+  expect(dot?.scopes.join(" ")).toContain("punctuation.definition.entity.css");
+  const classSuffix = line!.find((token) => token.text === "-active");
+  expect(classSuffix?.scopes.join(" ")).toContain("entity.other.attribute-name.class.css");
+  const classHole = line!.find((token) => token.text === "className");
+  expect(classHole?.scopes.some((scope) => scope.includes("attribute-name.class"))).toBe(false);
+  const betweenClassHoles = line!.find((token) => token.text === "-");
+  expect(betweenClassHoles?.scopes.join(" ")).toContain("entity.other.attribute-name.class.css");
+  const hash = line!.find((token) => token.text === "#");
+  expect(hash?.scopes.join(" ")).toContain("entity.other.attribute-name.id.css");
+  expect(hash?.scopes.join(" ")).toContain("punctuation.definition.entity.css");
+  const idSuffix = line!.find((token) => token.text === "-part");
+  expect(idSuffix?.scopes.join(" ")).toContain("entity.other.attribute-name.id.css");
+  const tagPrefix = line!.find((token) => token.text === "widget-");
+  expect(tagPrefix?.scopes.join(" ")).toContain("entity.name.tag.css");
+  const pseudoPrefix = line!.find((token) => token.text === ":");
+  expect(pseudoPrefix?.scopes.join(" ")).toContain("entity.other.attribute-name.pseudo-class.css");
+  const propertyPrefix = line!.find((token) => token.text === "--theme-");
+  expect(propertyPrefix?.scopes.join(" ")).toContain("variable.css");
+  const propertySuffix = line!.find((token) => token.text === "-tone");
+  expect(propertySuffix?.scopes.join(" ")).toContain("variable.css");
+});
+
+test("custom property scopes continue from the bare prefix across holes", () => {
+  const [line] = tokenize(["const a = css`--${name}: red; color: var(--${name});`;"]);
+  const prefixes = line!.filter((token) => token.text === "--");
+  expect(prefixes).toHaveLength(2);
+  expect(prefixes[0]!.scopes).toContain("variable.css");
+  expect(prefixes[1]!.scopes).toContain("variable.argument.css");
+});
+
+test("units and percentages after holes keep numeric suffix scopes", () => {
+  const [line] = tokenize([
+    "const a = css`width: ${size}px; opacity: ${amount}%; rotate: ${angle}deg;`;",
+  ]);
+  const px = line!.find((token) => token.text === "px");
+  expect(px?.scopes.join(" ")).toContain("keyword.other.unit.px.css");
+  const sizeHole = line!.find((token) => token.text === "size");
+  expect(sizeHole?.scopes.some((scope) => scope.includes("constant.numeric"))).toBe(false);
+  const percentage = line!.find((token) => token.text === "%");
+  expect(percentage?.scopes.join(" ")).toContain("keyword.other.unit.percentage.css");
+  const deg = line!.find((token) => token.text === "deg");
+  expect(deg?.scopes.join(" ")).toContain("keyword.other.unit.deg.css");
+});
+
 test("hole works inside a css string", () => {
   const [line] = tokenize(['const a = css`.x { content: "a${hx}b"; }`;']);
   const hole = line!.find((token) => token.text === "hx");
   expect(hole?.scopes.join(" ")).toContain("meta.template.expression");
-  const after = line!.find((token) => token.text === "b");
+  const after = line!.find((token) => token.text.startsWith("b"));
   expect(after?.scopes.join(" ")).toContain("string.quoted.double");
+  expect(after?.scopes.join(" ")).not.toContain("invalid.illegal.unclosed.string");
+});
+
+test("an actually unclosed css string is invalid at the template end", () => {
+  const [line] = tokenize(['const a = css`.x { content: "broken`;']);
+  const broken = line!.find((token) => token.text === "broken");
+  expect(broken?.scopes.join(" ")).toContain("invalid.illegal.unclosed.string");
 });
 
 test("escaped backtick stays inside the template", () => {
@@ -194,7 +323,7 @@ test("limitation: a nested css template inside a hole is not highlighted as css"
 
 test("every patched regex compiles in oniguruma", () => {
   const sources: string[] = [];
-  for (const file of [grammarFiles["source.csslit.css"]!, grammarFiles["source.csslit.scss"]!]) {
+  for (const file of [grammarFiles["source.csslit.css"]!]) {
     const collect = (rule: unknown): void => {
       if (!rule || typeof rule !== "object") return;
       for (const [key, value] of Object.entries(rule)) {
@@ -205,7 +334,7 @@ test("every patched regex compiles in oniguruma", () => {
     };
     collect(JSON.parse(readFileSync(file, "utf8")));
   }
-  expect(sources.length).toBeGreaterThan(300);
+  expect(sources.length).toBeGreaterThan(200);
   for (const source of sources) {
     expect(() => new oniguruma.OnigScanner([source]), source).not.toThrow();
   }
