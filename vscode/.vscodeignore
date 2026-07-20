@@ -4,6 +4,7 @@
 node_modules/**
 src/**
 grammar/**
+scripts/**
 generated/**
 tsconfig.json
 vite.config.ts

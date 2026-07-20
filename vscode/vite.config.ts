@@ -30,7 +30,7 @@ export default defineConfig({
         output: ["generated/syntaxes/**"],
       },
       build: {
-        command: "vp pack -l silent",
+        command: ["vp pack -l silent", "node scripts/copy-licenses.mts"],
         dependsOn: ["grammars"],
         output: ["dist/**"],
       },
@@ -56,6 +56,7 @@ export default defineConfig({
         command: [
           "node grammar/build-grammars.mts",
           "vp pack -l silent --minify",
+          "node scripts/copy-licenses.mts",
           "vsce package --out dist/csslit-vscode.vsix",
         ],
         dependsOn: ["clean"],

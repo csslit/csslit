@@ -39,3 +39,17 @@ Permission to copy, use, modify, sell and distribute this
 software is granted. This software is provided "as is" without
 express or implied warranty, and with no claim as to its
 suitability for any purpose.
+
+-------------------------------------------------------------------------------
+
+The bundled TSRX parser is provided by @tsrx/core:
+https://github.com/Ripple-TS/ripple
+
+Its MIT license is included at dist/licenses/tsrx-core.txt.
+
+-------------------------------------------------------------------------------
+
+The bundled TypeScript 6 parser and TypeScript 7 API client are provided by TypeScript:
+https://github.com/microsoft/TypeScript
+
+Their Apache-2.0 licenses and the TypeScript 7 NOTICE are included under dist/licenses/.

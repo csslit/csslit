@@ -3,13 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, expect, test } from "vite-plus/test";
-import {
-  getVirtualCss,
-  loadTypeScript,
-  StaleSourceFileError,
-  toSourceRange,
-} from "./virtual-css.ts";
+import { buildVirtualCss, toSourceRange } from "./virtual-css.ts";
 import type { VirtualCss } from "./virtual-css.ts";
+import { loadTypeScript, parseModule, StaleSourceFileError } from "./parsers/typescript.ts";
 
 const ts = await loadTypeScript();
 const api = new ts.async.API({ cwd: process.cwd() });
@@ -30,7 +26,8 @@ async function virtual(
   const source = sourceWithCaret.slice(0, offset) + sourceWithCaret.slice(offset + 1);
   const file = join(caseRoot, `case${caseIndex++}${jsx ? ".tsx" : ".ts"}`);
   writeFileSync(file, source);
-  return getVirtualCss(ts, api, pathToFileURL(file).href, offset, expectedSource);
+  const module = await parseModule(ts, api, pathToFileURL(file).href, expectedSource ?? source);
+  return module && buildVirtualCss(module, offset);
 }
 
 async function virtualContent(sourceWithCaret: string, jsx = true): Promise<string | undefined> {
@@ -46,8 +43,8 @@ test("value hole becomes a placeholder identifier", async () => {
 test("empty template still has a css insertion point", async () => {
   const v = (await virtual("const a = css`|`;"))!;
   expect(v.content).toBe("*{\n}");
-  expect(v.offset).toBe(2);
-  expect(v.offsetExact).toBe(true);
+  expect(v.cursor.virtual).toBe(2);
+  expect(v.cursor.exact).toBe(true);
 });
 
 test("rejects an AST for different document contents", async () => {
@@ -67,10 +64,16 @@ test("void expression does not affect template positions", async () => {
 
 test("empty tail preserves a trailing hole and its insertion point", async () => {
   expect(await virtualContent("const a = css`col|or: ${c}`;")).toBe("*{color: xx\n}");
-  const v = (await virtual("const a = css`color: ${c}|`;"))!;
+  const withCaret = "const a = css`color: ${c}|`;";
+  const v = (await virtual(withCaret))!;
   expect(v.content).toBe("*{color: xx\n}");
-  expect(v.offset).toBe(v.content.indexOf("xx") + 2);
-  expect(v.offsetExact).toBe(true);
+  expect(v.cursor.virtual).toBe(v.content.indexOf("xx") + 2);
+  expect(v.cursor.exact).toBe(true);
+  expect(v.unitSuffix).toEqual({
+    virtualStart: v.content.indexOf("xx"),
+    virtualEnd: v.content.indexOf("xx") + 2,
+    sourceStart: withCaret.replace("|", "").lastIndexOf("`"),
+  });
 });
 
 test("hole glued to a unit contributes nothing, keeping the completion prefix", async () => {
@@ -85,10 +88,10 @@ test("attached unit completion records the hole and source suffix", async () => 
   const withCaret = "const a = css`width: ${n}p|x;`;";
   const source = withCaret.replace("|", "");
   const v = (await virtual(withCaret))!;
-  expect(v.attachedHole).toEqual({
+  expect(v.unitSuffix).toEqual({
     virtualStart: v.content.indexOf("px"),
     virtualEnd: v.content.indexOf("px"),
-    sourceEnd: source.indexOf("px"),
+    sourceStart: source.indexOf("px"),
   });
 });
 
@@ -167,7 +170,7 @@ test("cursor outside any template yields no css document", async () => {
 
 test("request offset lands on the same css in the virtual document", async () => {
   const v = (await virtual("const a = css`.btn { color: r|ed; }`;"))!;
-  expect(v.content.slice(0, v.offset)).toBe("*{.btn { color: r");
+  expect(v.content.slice(0, v.cursor.virtual)).toBe("*{.btn { color: r");
 });
 
 test("ranges in placeholders and ranges crossing holes are not editable", async () => {
@@ -249,14 +252,14 @@ test("entirely cooked text has no exact reverse range", async () => {
   const v = (await virtual("const a = css`\\u0063\\u006f\\u006c\\u006f\\u0072|`;"))!;
   expect(v.content).toBe("*{color\n}");
   expect(v.mappings).toEqual([]);
-  expect(v.offsetExact).toBe(true);
+  expect(v.cursor.exact).toBe(true);
   expect(toSourceRange(v.mappings, 2, 7)).toBeUndefined();
 });
 
 test("cursor inside an escape maps beside its cooked character", async () => {
   const v = (await virtual('const a = css`content: "\\u20|14";`;'))!;
   expect(v.content).toBe('*{content: "—";\n}');
-  expect(v.content.slice(0, v.offset)).toBe('*{content: "—');
+  expect(v.content.slice(0, v.cursor.virtual)).toBe('*{content: "—');
 });
 
 test("apostrophe in jsx text does not open a string", async () => {

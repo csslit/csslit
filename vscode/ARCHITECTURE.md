@@ -23,10 +23,11 @@ JavaScript escape pairs so boundary detection follows template-literal backslash
 
 ## Language features
 
-The extension connects to TypeScript 7 through its native API session using a bundled API
-client. It uses the parser's AST to locate `css` and `css.global` templates, including
-during error recovery, and the parser's cooked template text to build a compact virtual
-CSS document for the template under the cursor.
+Template discovery is selected by source language. JavaScript and TypeScript reuse the
+running TypeScript 7 API session when available and otherwise parse synchronously with bundled
+TypeScript 6. TSRX uses the framework-neutral parser from `@tsrx/core`. Each integration lives
+in its own module and produces templates whose quasis contain source spans plus cooked text.
+The shared virtual-CSS builder alone handles interpolation holes, escapes, and source mapping.
 
 `css` bodies are wrapped in a rule while `css.global` bodies remain stylesheets. Holes are
 replaced with small context-dependent placeholders. A sparse mapping records only text

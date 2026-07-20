@@ -1,7 +1,7 @@
 {
   "name": "csslit-vscode",
   "displayName": "csslit",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "private": true,
   "description": "VS Code support for csslit.",
   "categories": [
@@ -16,6 +16,7 @@
   "publisher": "csslit",
   "main": "./dist/extension.js",
   "devDependencies": {
+    "@tsrx/core": "^0.1.44",
     "@types/node": "^26.1.1",
     "@types/vscode": "^1.125.0",
     "@vscode/vsce": "^3.9.2",
@@ -23,6 +24,7 @@
     "oniguruma-parser": "^0.12.2",
     "tm-grammars": "^1.31.15",
     "typescript": "^7.0.2",
+    "typescript6": "npm:typescript@^6.0.3",
     "vite-plus": "^0.2.5",
     "vscode-css": "git+https://github.com/torresgol10/vscode-css.git#e763075e78c4cfecc0bb5270e920c78776014f96",
     "vscode-oniguruma": "^2.0.1",
@@ -213,6 +215,7 @@
   "activationEvents": [
     "onLanguage:javascript",
     "onLanguage:javascriptreact",
+    "onLanguage:ripple",
     "onLanguage:typescript",
     "onLanguage:typescriptreact"
   ],
