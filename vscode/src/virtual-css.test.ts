@@ -1,19 +1,27 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterAll, expect, test } from "vite-plus/test";
 import { buildVirtualCss, toSourceRange } from "./virtual-css.ts";
 import type { VirtualCss } from "./virtual-css.ts";
-import { loadTypeScript, parseModule, StaleSourceFileError } from "./parsers/typescript.ts";
+import { API } from "typescript/unstable/async";
+import { parseModule, StaleSourceFileError } from "./tsgo.ts";
 
-const ts = await loadTypeScript();
-const api = new ts.async.API({ cwd: process.cwd() });
-const caseRoot = join(tmpdir(), `csslit-virtual-test-${process.pid}`);
-mkdirSync(caseRoot, { recursive: true });
+// Overlay the test cases in memory so tsgo reads them through its virtual filesystem callbacks
+// instead of the disk; unknown paths return undefined to fall back to the real lib/node_modules.
+const caseRoot = join(process.cwd(), "__virtual__");
+const files = new Map<string, string>();
+// tsgo normalizes paths to forward slashes with a lowercase drive letter.
+const key = (name: string) =>
+  name.replace(/\\/g, "/").replace(/^[a-zA-Z]:/, (d) => d.toLowerCase());
+const api = new API({
+  cwd: process.cwd(),
+  fs: {
+    readFile: (name) => files.get(key(name)) ?? undefined,
+    fileExists: (name) => files.has(key(name)) || undefined,
+  },
+});
 afterAll(async () => {
   await api.close();
-  rmSync(caseRoot, { recursive: true, force: true });
 });
 let caseIndex = 0;
 
@@ -24,9 +32,10 @@ async function virtual(
 ): Promise<VirtualCss | undefined> {
   const offset = sourceWithCaret.indexOf("|");
   const source = sourceWithCaret.slice(0, offset) + sourceWithCaret.slice(offset + 1);
+  // A fresh path per case keeps tsgo's source-file cache from serving an earlier case's content.
   const file = join(caseRoot, `case${caseIndex++}${jsx ? ".tsx" : ".ts"}`);
-  writeFileSync(file, source);
-  const module = await parseModule(ts, api, pathToFileURL(file).href, expectedSource ?? source);
+  files.set(key(file), source);
+  const module = await parseModule(api, pathToFileURL(file).href, expectedSource ?? source);
   return module && buildVirtualCss(module, offset);
 }
 

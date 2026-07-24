@@ -19,12 +19,12 @@ test("production build emits csslit css", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-BhaSCCYR.js
-    ({ "css_3_26": "Myz4Qi_3_26" }).css_3_26;
-    //#endregion
+    # js
+    var className = { "css_3_26": "sWdGZm_3_26" }.css_3_26;
+    export { className };
 
-    # css assets/entry-QuEypHYX.css
-    .Myz4Qi_3_26 {
+    # css
+    .sWdGZm_3_26 {
       color: #ff69b4;
     }
     "
@@ -59,12 +59,12 @@ test("production build eval uses source transformed before csslit", async () => 
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-KzH5W5Gq.js
-    ({ "css_4_26": "nTevJI_4_26" }).css_4_26;
-    //#endregion
+    # js
+    var className = { "css_4_26": "Emgz6f_4_26" }.css_4_26;
+    export { className };
 
-    # css assets/entry-B2LtiVZK.css
-    .nTevJI_4_26 {
+    # css
+    .Emgz6f_4_26 {
       color: #ff69b4;
     }
     "
@@ -101,12 +101,12 @@ test("production build eval imports use comptime transforms", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-KzH5W5Gq.js
-    ({ "css_4_26": "nTevJI_4_26" }).css_4_26;
-    //#endregion
+    # js
+    var className = { "css_4_26": "Emgz6f_4_26" }.css_4_26;
+    export { className };
 
-    # css assets/entry-B2LtiVZK.css
-    .nTevJI_4_26 {
+    # css
+    .Emgz6f_4_26 {
       color: #ff69b4;
     }
     "
@@ -143,18 +143,17 @@ test("production build preserves global and scoped css source order", async () =
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-ooHe3jza.js
-    //#region ../../../../..<root>/src/entry.ts.csslit.module.js
+    # js
     var entry_ts_csslit_module_default = {
-    	"css_5_22": "RbVSf2_5_22",
-    	"css_13_23": "FQBCkZ_13_23"
+    	"css_5_22": "bfSIGN_5_22",
+    	"css_13_23": "CBIdfI_13_23"
     };
-    entry_ts_csslit_module_default.css_5_22;
-    entry_ts_csslit_module_default.css_13_23;
-    //#endregion
+    var first = entry_ts_csslit_module_default.css_5_22;
+    var second = entry_ts_csslit_module_default.css_13_23;
+    export { first, second };
 
-    # css assets/entry-By_gOgLe.css
-    .RbVSf2_5_22 {
+    # css
+    .bfSIGN_5_22 {
       color: #ff69b4;
     }
 
@@ -162,7 +161,7 @@ test("production build preserves global and scoped css source order", async () =
       background: #ff69b4;
     }
 
-    .FQBCkZ_13_23 {
+    .CBIdfI_13_23 {
       border-color: #ff69b4;
     }
 
@@ -194,16 +193,16 @@ test("production build hoists csslit keyframes", async () => {
 
   expect(result).toMatchInlineSnapshot(`
     "
-    # js assets/entry-xhBY8LoT.js
-    ({ "css_3_26": "Myz4Qi_3_26" }).css_3_26;
-    //#endregion
+    # js
+    var className = { "css_3_26": "sWdGZm_3_26" }.css_3_26;
+    export { className };
 
-    # css assets/entry-CNwFaZQO.css
-    .Myz4Qi_3_26 {
-      animation: 1s infinite Qt1gFG_pulse;
+    # css
+    .sWdGZm_3_26 {
+      animation: 1s infinite _PNaQW_pulse;
     }
 
-    @keyframes Qt1gFG_pulse {
+    @keyframes _PNaQW_pulse {
       from {
         opacity: 0;
       }

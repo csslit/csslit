@@ -44,7 +44,10 @@ test("interpolations split the template into ordered quasis", () => {
   const source = "const a = css`a: ${x}; b: ${y};`;";
   expect(decode(source, parse(source))).toEqual([
     { raw: "a: ", metadata: { template: 0, quasi: 0, quasis: 3, global: false, cooked: "a: " } },
-    { raw: "; b: ", metadata: { template: 0, quasi: 1, quasis: 3, global: false, cooked: "; b: " } },
+    {
+      raw: "; b: ",
+      metadata: { template: 0, quasi: 1, quasis: 3, global: false, cooked: "; b: " },
+    },
     { raw: ";", metadata: { template: 0, quasi: 2, quasis: 3, global: false, cooked: ";" } },
   ]);
 });

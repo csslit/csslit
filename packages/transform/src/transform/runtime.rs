@@ -5,7 +5,6 @@ use oxc_codegen::{Codegen, CodegenOptions};
 use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::SemanticBuilder;
-use oxc_span::SourceType;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 
 use super::shared::{CssImportSymbols, stable_name_hash};
@@ -18,7 +17,7 @@ struct RuntimeTransformer<'a> {
   css_import_symbols: CssImportSymbols<'a>,
   source_rope: Rope,
   source_text: &'a str,
-  filename: &'a str,
+  css_filename: &'a str,
 }
 
 impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
@@ -34,7 +33,7 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
         let local_name = format!("css_{local_line}_{local_column}");
         let scoped_name = format!(
           "{}_{}_{}",
-          stable_name_hash(self.filename, line, column),
+          stable_name_hash(self.css_filename, line, column),
           local_line,
           local_column
         );
@@ -62,16 +61,12 @@ pub(crate) fn transform_runtime(
 ) -> OxcTransformResult {
   let allocator = &Allocator::default();
 
-  let ret = Parser::new(
-    allocator,
-    &source_text,
-    SourceType::from_path(&options.filename).unwrap(),
-  )
-  .with_options(ParseOptions {
-    preserve_parens: false,
-    ..ParseOptions::default()
-  })
-  .parse();
+  let ret = Parser::new(allocator, &source_text, options.source_type)
+    .with_options(ParseOptions {
+      preserve_parens: false,
+      ..ParseOptions::default()
+    })
+    .parse();
 
   let mut program = ret.program;
 
@@ -83,7 +78,7 @@ pub(crate) fn transform_runtime(
     has_global_css: false,
     exports: Vec::new(),
     css_import_symbols,
-    filename: &options.filename,
+    css_filename: &options.css_filename,
     source_rope: Rope::from_str(&source_text),
     source_text: &source_text,
   };

@@ -1,4 +1,4 @@
-import type { CssQuasi, ParsedModule } from "./parsers/types.ts";
+import type { CssQuasi, ParsedModule } from "./types.ts";
 
 export type VirtualCss = {
   content: string;

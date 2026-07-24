@@ -9,13 +9,19 @@
   },
   "devDependencies": {
     "@csslit/vite-plugin": "^0.0.7",
+    "@ripple-ts/vite-plugin": "^0.3.107",
+    "@tsrx/vite-plugin-preact": "^0.0.69",
+    "@tsrx/vite-plugin-react": "^0.0.76",
+    "@tsrx/vite-plugin-solid": "^0.0.75",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
     "playwright": "^1.61.1",
+    "ripple": "^0.3.107",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
+    "vite-plugin-solid": "^2.11.13",
     "vite-plus": "^0.2.5"
   }
 }

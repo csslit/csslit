@@ -1,7 +1,8 @@
 import { compileCsslit, transformClient } from "@csslit/transform";
 import { readFileSync } from "node:fs";
-import remapping from "@jridgewell/remapping";
-import type { SourceMapInput as RemappingSourceMapInput } from "@jridgewell/remapping";
+import path from "node:path";
+import type { SourceMapInput as CssSourceMapInput } from "@jridgewell/trace-mapping";
+import { composeCssSourcemap } from "./compose-sourcemap.ts";
 import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath } from "vite";
 import type { BuildEnvironment, PluginOption, RunnableDevEnvironment, ViteDevServer } from "vite";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite/module-runner";
@@ -36,7 +37,7 @@ interface CsslitModuleMetadata {
     localName: string;
     scopedName: string;
   }>;
-  sourceMap: RemappingSourceMapInput | null;
+  sourceMap: CssSourceMapInput | null;
 }
 
 type LoadModule = PluginContext["load"];
@@ -123,7 +124,43 @@ function watchCssEvalDependencies(
   visit(start);
 }
 
-export default function csslit(): PluginOption {
+// Clone of Vite's internal fileToDevUrl (vite:asset), which is not exported. Intended to exactly
+// reproduce its result for source files so csslit map sources resolve to the same dev-server URL
+// as the file's own module. The asset-only branches (public files, inlining, server.origin) are
+// omitted because they cannot apply to csslit source modules.
+function fileToDevUrl(file: string, config: { base: string; root: string }): string {
+  const url = file.startsWith(`${config.root}/`)
+    ? `/${path.posix.relative(config.root, file)}`
+    : path.posix.join("/@fs/", file);
+  return config.base.endsWith("/") ? config.base.slice(0, -1) + url : config.base + url;
+}
+
+// Seed for every name csslit generates (class and keyframes hashes). Must never contain an
+// absolute path so builds reproduce across machines; files outside the Vite root keep their
+// ../ segments instead of falling back to the filesystem path.
+function hashFilename(file: string, root: string): string {
+  return path.posix.relative(root, file);
+}
+
+export type CsslitModuleType = "js" | "jsx" | "ts" | "tsx";
+
+export interface CsslitOptions {
+  /** Parser source type for extensions lowered by another plugin. */
+  moduleType?: Record<string, CsslitModuleType>;
+}
+
+const defaultModuleTypes: Record<string, CsslitModuleType> = {
+  ".jsx": "jsx",
+  ".tsx": "tsx",
+  ".js": "js",
+  ".ts": "ts",
+};
+
+export default function csslit(options: CsslitOptions = {}): PluginOption {
+  const moduleTypes = { ...defaultModuleTypes, ...options.moduleType };
+
+  const filterExtensions = Object.keys(moduleTypes).map(RegExp.escape).join("|");
+
   let comptimeEnvironment: RunnableDevEnvironment | null = null;
   let devServer: ViteDevServer | null = null;
   let loadClientModule: LoadModule | null = null;
@@ -202,9 +239,9 @@ export default function csslit(): PluginOption {
 
       transform: {
         filter: {
-          id: /\.(?:js|ts|jsx|tsx)$/,
+          id: new RegExp(`(?:${filterExtensions})$`),
         },
-        async handler(code: string, id: string) {
+        async handler(code, id) {
           const config = this.environment.config;
           const jsSourcemap =
             config.command === "build"
@@ -213,25 +250,37 @@ export default function csslit(): PluginOption {
                 ? config.dev.sourcemap
                 : (config.dev.sourcemap?.js ?? true);
 
-          const cssSourcemap =
-            config.command === "build" ? !!config.build.sourcemap : config.css.devSourcemap;
+          // Vite does not emit CSS source maps in production builds (vitejs/vite#2830), so skip
+          // the CSS mapping work there entirely.
+          const cssSourcemap = config.command === "build" ? false : config.css.devSourcemap;
 
-          const filename = id.startsWith(`${config.root}/`) ? id.slice(config.root.length) : id;
-
+          const ext = id.slice(id.lastIndexOf("."));
+          const moduleType = moduleTypes[ext]!;
           const result = transformClient(code, {
-            cssFilename: filename,
+            cssFilename: hashFilename(id, config.root),
             moduleImport: `${normalizePath(id)}.csslit.module.js`,
             cssSourcemap,
             filename: id,
+            moduleType,
             sourcemap: jsSourcemap,
           });
-          const sourceMap = cssSourcemap
-            ? (this.getCombinedSourcemap() as unknown as RemappingSourceMapInput)
-            : null;
+          let sourceMap: CssSourceMapInput | null = null;
+          if (cssSourcemap) {
+            // Name the sources by their dev-server URL up front: the CSS map derived from this
+            // one is resolved both against the served module URL and, once Vite inlines it into
+            // the injected style tag, against the document URL, and the URL form resolves to the
+            // same location from either base.
+            const combined = this.getCombinedSourcemap();
+            sourceMap = {
+              ...combined,
+              sources: combined.sources.map((source) => source && fileToDevUrl(source, config)),
+            } as unknown as CssSourceMapInput;
+          }
 
           return {
             code: result.runtime.code,
             map: result.runtime.map ?? null,
+            moduleType,
             meta: {
               csslit: {
                 eval: {
@@ -248,7 +297,7 @@ export default function csslit(): PluginOption {
 
       resolveId: {
         filter: {
-          id: [/^virtual:csslit-eval-runtime$/, /\.csslit\.(?:module\.js|css)$/],
+          id: [/^virtual:csslit-eval-runtime$/, /\.(?:csslit\.module\.js|csslit\.css)$/],
         },
         async handler(source, importer) {
           if (source === "virtual:csslit-eval-runtime") {
@@ -282,7 +331,7 @@ export default function csslit(): PluginOption {
             /^\0virtual:csslit-eval-runtime$/,
             /\.csslit\.css$/,
             /\.csslit\.module\.js$/,
-            /\.(?:js|ts|jsx|tsx)\.csslit$/,
+            new RegExp(`(?:${filterExtensions})\\.csslit$`),
           ],
         },
         async handler(id) {
@@ -380,6 +429,7 @@ export default function csslit(): PluginOption {
                 message: error.message,
                 stack: error.stack,
               });
+              return; // this.error returning never is not enough for TS to understand mod is assigned below for some reason.
             } finally {
               watchCssEvalDependencies(
                 (file) => this.addWatchFile(file),
@@ -407,9 +457,13 @@ export default function csslit(): PluginOption {
               });
             }
 
+            // The filename seeds the keyframes hashes, so it takes the stable name rather than
+            // the dev URL. The composed map never surfaces it as a source: composeCssSourcemap
+            // replaces every source with the ones traced through the source module's own map,
+            // leaving only the file field.
             const compiled = compileCsslit({
               blocks: result.blocks,
-              filename: sourceId,
+              filename: hashFilename(sourceId, this.environment.config.root),
               sourcemap: metadata.sourceMap !== null,
             });
 
@@ -417,10 +471,10 @@ export default function csslit(): PluginOption {
               code: compiled.code,
               map:
                 compiled.map && metadata.sourceMap
-                  ? (remapping(
-                      [compiled.map as unknown as RemappingSourceMapInput, metadata.sourceMap],
-                      () => null,
-                    ) as SourceMapInput)
+                  ? (composeCssSourcemap(
+                      compiled.map as unknown as CssSourceMapInput,
+                      metadata.sourceMap,
+                    ) as unknown as SourceMapInput)
                   : (compiled.map ?? null),
               moduleType: "css",
             };

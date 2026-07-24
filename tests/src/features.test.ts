@@ -34,16 +34,17 @@ test("comptime supports destructuring with computed keys and defaults", async ()
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
-    import { theme } from "/@id/<root>/src/theme.ts";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
+    import { theme } from "/src/theme.ts";
     const key = "tone";
     const fallback = "hotpink";
     const { [key]: tone = fallback, nested: { border }, ...rest } = theme;
     export const className = __css_module_import.css_8_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_8_26": "lX2Aol_8_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_8_26": "duOygv_8_26" };
 
     # js /src/theme.ts
     export const theme = {
@@ -53,7 +54,7 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     };
 
     # css /src/entry.ts.csslit.css
-    .lX2Aol_8_26 {
+    .duOygv_8_26 {
       color: #ff69b4;
       border-width: 2px;
       opacity: .5;
@@ -88,8 +89,8 @@ test("destructuring closures observe incrementally initialized bindings", async 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
-    import { comptime } from "/@fs/<root>/packages/core/dist/index.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     const { a, b, c } = comptime({
     	a: 1,
     	b: () => a,
@@ -100,11 +101,11 @@ test("destructuring closures observe incrementally initialized bindings", async 
     export const className = __css_module_import.css_11_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_11_26": "NJuKTo_11_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_11_26": "fa9j5o_11_26" };
 
     # css /src/entry.ts.csslit.css
-    .NJuKTo_11_26 {
+    .fa9j5o_11_26 {
       width: 1px;
       height: 1px;
     }
@@ -132,7 +133,8 @@ test("css literal reads from enclosing function scope", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const makeStyles = () => {
     	const base = "hotpink";
     	return __css_module_import.css_5_10;
@@ -140,11 +142,11 @@ test("css literal reads from enclosing function scope", async () => {
     export const className = makeStyles();
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_5_10": "qkiPAk_5_10" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_5_10": "KQe9MU_5_10" };
 
     # css /src/entry.ts.csslit.css
-    .qkiPAk_5_10 {
+    .KQe9MU_5_10 {
       color: #ff69b4;
     }
     "
@@ -172,12 +174,14 @@ test("imported function can be called directly in interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
+    import { pickColor } from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_4_26": "nTevJI_4_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_4_26": "Emgz6f_4_26" };
 
     # js /src/theme.ts
     export function pickColor() {
@@ -185,7 +189,7 @@ test("imported function can be called directly in interpolation", async () => {
     }
 
     # css /src/entry.ts.csslit.css
-    .nTevJI_4_26 {
+    .Emgz6f_4_26 {
       color: #ff69b4;
     }
     "
@@ -215,15 +219,15 @@ test("comptime allows function call in binding position", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
-    import { comptime } from "/@fs/<root>/packages/core/dist/index.js";
-    import { pickColor } from "/@id/<root>/src/theme.ts";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
+    import { pickColor } from "/src/theme.ts";
     const tone = comptime(pickColor());
     export const className = __css_module_import.css_6_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_6_26": "YONEpD_6_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_6_26": "jEYTtU_6_26" };
 
     # js /src/theme.ts
     export function pickColor() {
@@ -231,7 +235,7 @@ test("comptime allows function call in binding position", async () => {
     }
 
     # css /src/entry.ts.csslit.css
-    .YONEpD_6_26 {
+    .jEYTtU_6_26 {
       color: #ff69b4;
     }
     "
@@ -253,15 +257,16 @@ test("array literal can be used in direct interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
+    .sWdGZm_3_26 {
       transition: opacity .2s, transform .2s;
     }
     "
@@ -283,15 +288,16 @@ test("object literal can be used in direct interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
+    .sWdGZm_3_26 {
       color: #ff69b4;
     }
     "
@@ -315,15 +321,16 @@ test("css literal compiles to static css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
+    .sWdGZm_3_26 {
       background: #ff69b4;
     }
     "
@@ -355,18 +362,20 @@ test("css literal resolves inline module dependencies", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
+    import theme from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_4_26": "nTevJI_4_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_4_26": "Emgz6f_4_26" };
 
     # js /src/theme.ts
     export default { colors: { primary: "hotpink" } };
 
     # css /src/entry.ts.csslit.css
-    .nTevJI_4_26 {
+    .Emgz6f_4_26 {
       background: #ff69b4;
     }
     "
@@ -396,24 +405,25 @@ test("css class binding can be interpolated into another selector", async () => 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const h1Style = __css_module_import.css_7_24;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
+    import "/src/entry.ts.csslit.css";
     export default {
-    	"css_3_18": "vtZXOf_3_18",
-    	"css_7_24": "AqYT1Z_7_24"
+    	"css_3_18": "K98gqQ_3_18",
+    	"css_7_24": "DRMsbv_7_24"
     };
 
     # css /src/entry.ts.csslit.css
-    .vtZXOf_3_18 {
+    .K98gqQ_3_18 {
       display: block;
     }
 
-    .AqYT1Z_7_24 {
-      .vtZXOf_3_18 & {
+    .DRMsbv_7_24 {
+      .K98gqQ_3_18 & {
         color: #ff69b4;
       }
     }
@@ -448,24 +458,25 @@ test("css class binding is rewritten inside selector functions", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const child = __css_module_import.css_7_22;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
+    import "/src/entry.ts.csslit.css";
     export default {
-    	"css_3_18": "vtZXOf_3_18",
-    	"css_7_22": "BDdUFU_7_22"
+    	"css_3_18": "K98gqQ_3_18",
+    	"css_7_22": "IZXOSV_7_22"
     };
 
     # css /src/entry.ts.csslit.css
-    .vtZXOf_3_18 {
+    .K98gqQ_3_18 {
       display: block;
     }
 
-    .BDdUFU_7_22 {
-      :is(.vtZXOf_3_18, :where(.vtZXOf_3_18)) &, :not(.vtZXOf_3_18) &, :has(.vtZXOf_3_18) &, .vtZXOf_3_18 &, :nth-child(2 of .vtZXOf_3_18) & {
+    .IZXOSV_7_22 {
+      :is(.K98gqQ_3_18, :where(.K98gqQ_3_18)) &, :not(.K98gqQ_3_18) &, :has(.K98gqQ_3_18) &, .K98gqQ_3_18 &, :nth-child(2 of .K98gqQ_3_18) & {
         color: #ff69b4;
       }
     }
@@ -496,29 +507,32 @@ test("imported css class binding can be interpolated into another selector", asy
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/base.ts
-    import __css_module_import from "/@id/<root>/src/base.ts.csslit.module.js";
+    import __css_module_import from "/src/base.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const base = __css_module_import.css_3_21;
 
     # js /src/base.ts.csslit.module.js
-    import "/@id/<root>/src/base.ts.csslit.css";
-    export default { "css_3_21": "PLFTZk_3_21" };
+    import "/src/base.ts.csslit.css";
+    export default { "css_3_21": "Gv5Jmv_3_21" };
 
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
+    import { base } from "/src/base.ts";
     export const child = __css_module_import.css_4_22;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_4_22": "l5mYrv_4_22" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_4_22": "ndlkXZ_4_22" };
 
     # css /src/base.ts.csslit.css
-    .PLFTZk_3_21 {
+    .Gv5Jmv_3_21 {
       display: block;
     }
 
     # css /src/entry.ts.csslit.css
-    .l5mYrv_4_22 {
-      .PLFTZk_3_21 & {
+    .ndlkXZ_4_22 {
+      .Gv5Jmv_3_21 & {
         color: #ff69b4;
       }
     }
@@ -546,23 +560,24 @@ test("css expressions in conditional bindings emit matching css module keys", as
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const enabled = true;
     export const style = enabled ? __css_module_import.css_4_32 : __css_module_import.css_6_5;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
+    import "/src/entry.ts.csslit.css";
     export default {
-    	"css_4_32": "MpXhWZ_4_32",
-    	"css_6_5": "AFhLf9_6_5"
+    	"css_4_32": "Y0vTVn_4_32",
+    	"css_6_5": "aCPqv4_6_5"
     };
 
     # css /src/entry.ts.csslit.css
-    .MpXhWZ_4_32 {
+    .Y0vTVn_4_32 {
       color: red;
     }
 
-    .AFhLf9_6_5 {
+    .aCPqv4_6_5 {
       color: #00f;
     }
     "
@@ -598,16 +613,17 @@ test("css eval uses source transformed before csslit", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const tone = "hotpink";
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_4_26": "nTevJI_4_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_4_26": "Emgz6f_4_26" };
 
     # css /src/entry.ts.csslit.css
-    .nTevJI_4_26 {
+    .Emgz6f_4_26 {
       color: #ff69b4;
     }
     "
@@ -635,20 +651,21 @@ test("css and global css preserve source order in one stylesheet", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     undefined;
     export const second = __css_module_import.css_9_23;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
+    import "/src/entry.ts.csslit.css";
     export default {
-    	"css_3_22": "hsDpVD_3_22",
-    	"css_9_23": "npQTPc_9_23"
+    	"css_3_22": "CSuYma_3_22",
+    	"css_9_23": "QwLZRx_9_23"
     };
 
     # css /src/entry.ts.csslit.css
-    .hsDpVD_3_22 {
+    .CSuYma_3_22 {
       color: red;
     }
 
@@ -656,7 +673,7 @@ test("css and global css preserve source order in one stylesheet", async () => {
       color: #00f;
     }
 
-    .npQTPc_9_23 {
+    .QwLZRx_9_23 {
       color: green;
     }
     "
@@ -685,13 +702,14 @@ test("global keyframes remain global and ordered with scoped css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     undefined;
     export const className = __css_module_import.css_7_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_7_26": "fledcS_7_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_7_26": "KjbIcR_7_26" };
 
     # css /src/entry.ts.csslit.css
     @keyframes pulse {
@@ -700,11 +718,11 @@ test("global keyframes remain global and ordered with scoped css", async () => {
       }
     }
 
-    .fledcS_7_26 {
-      animation: 1s CU6lSG_pulse;
+    .KjbIcR_7_26 {
+      animation: 1s ZSGyZG_pulse;
     }
 
-    @keyframes CU6lSG_pulse {
+    @keyframes ZSGyZG_pulse {
       to {
         opacity: 0;
       }
@@ -731,19 +749,20 @@ test("css literal hoists and scopes keyframes", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
-      animation: 1s Qt1gFG_pulse;
+    .sWdGZm_3_26 {
+      animation: 1s _PNaQW_pulse;
     }
 
-    @keyframes Qt1gFG_pulse {
+    @keyframes _PNaQW_pulse {
       to {
         opacity: 1;
       }
@@ -772,20 +791,21 @@ test("conditional keyframes preserve their media condition", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
     @media print {
-      .Myz4Qi_3_26 {
-        animation: 1s Qt1gFG_pulse;
+      .sWdGZm_3_26 {
+        animation: 1s _PNaQW_pulse;
       }
 
-      @keyframes Qt1gFG_pulse {
+      @keyframes _PNaQW_pulse {
         to {
           opacity: 1;
         }
@@ -818,33 +838,34 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     export const second = __css_module_import.css_8_23;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
+    import "/src/entry.ts.csslit.css";
     export default {
-    	"css_3_22": "hsDpVD_3_22",
-    	"css_8_23": "wNC5gC_8_23"
+    	"css_3_22": "CSuYma_3_22",
+    	"css_8_23": "nOVgim_8_23"
     };
 
     # css /src/entry.ts.csslit.css
-    .hsDpVD_3_22 {
-      animation: 1s Qt1gFG_pulse;
+    .CSuYma_3_22 {
+      animation: 1s _PNaQW_pulse;
     }
 
-    @keyframes Qt1gFG_pulse {
+    @keyframes _PNaQW_pulse {
       to {
         opacity: 0;
       }
     }
 
-    .wNC5gC_8_23 {
-      animation: 2s CU6lSG_pulse;
+    .nOVgim_8_23 {
+      animation: 2s ZSGyZG_pulse;
     }
 
-    @keyframes CU6lSG_pulse {
+    @keyframes ZSGyZG_pulse {
       to {
         opacity: 1;
       }
@@ -871,15 +892,16 @@ test("css literals preserve custom property references", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
+    .sWdGZm_3_26 {
       --text-color: hotpink;
       color: var(--text-color);
     }
@@ -906,15 +928,16 @@ test("new, tagged template, and sequence expressions evaluate in interpolations"
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
+    .sWdGZm_3_26 {
       color: #ff69b4;
       --tag: raw-2;
       --seq: seq;
@@ -938,20 +961,21 @@ test("css template nested directly in an interpolation becomes its class name", 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .wGi7XQ_3_33 {
+    .iXPpyu_3_33 {
       color: red;
     }
 
-    .Myz4Qi_3_26 {
-      .wGi7XQ_3_33 & {
+    .sWdGZm_3_26 {
+      .iXPpyu_3_33 & {
         color: #00f;
       }
     }
@@ -977,21 +1001,22 @@ test("css nested in a closure is evaluated independently", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_3_26": "Myz4Qi_3_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_3_26": "sWdGZm_3_26" };
 
     # css /src/entry.ts.csslit.css
-    .Myz4Qi_3_26 {
-      .qkiPAk_5_10 & {
+    .sWdGZm_3_26 {
+      .KQe9MU_5_10 & {
         color: #00f;
       }
     }
 
-    .qkiPAk_5_10 {
+    .KQe9MU_5_10 {
       color: red;
     }
     "
@@ -1015,15 +1040,16 @@ test("ambient functions are treated as globals", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_5_26;
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_5_26": "XN9bNe_5_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_5_26": "SefWTx_5_26" };
 
     # css /src/entry.ts.csslit.css
-    .XN9bNe_5_26 {
+    .SefWTx_5_26 {
       z-index: 1;
     }
     "
@@ -1069,7 +1095,9 @@ test("closures in interpolations evaluate with outer constants and local state",
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/@id/<root>/src/entry.ts.csslit.module.js";
+    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import { css } from "/@fs/<root>/packages/core/dist/index.js";
+    import { sizes } from "/src/theme.ts";
     const scale = (value) => value * 4;
     export const className = __css_module_import.css_6_26;
     function offset(value) {
@@ -1077,8 +1105,8 @@ test("closures in interpolations evaluate with outer constants and local state",
     }
 
     # js /src/entry.ts.csslit.module.js
-    import "/@id/<root>/src/entry.ts.csslit.css";
-    export default { "css_6_26": "YONEpD_6_26" };
+    import "/src/entry.ts.csslit.css";
+    export default { "css_6_26": "jEYTtU_6_26" };
 
     # js /src/theme.ts
     export const sizes = [
@@ -1088,7 +1116,7 @@ test("closures in interpolations evaluate with outer constants and local state",
     ];
 
     # css /src/entry.ts.csslit.css
-    .YONEpD_6_26 {
+    .jEYTtU_6_26 {
       padding: 4px 8px 12px;
       width: 6px;
       gap: 4px 8px;
@@ -1097,7 +1125,7 @@ test("closures in interpolations evaluate with outer constants and local state",
       display: block;
     }
 
-    .Asnmh9_19_29 {
+    .q6qV85_19_29 {
       color: red;
     }
     "

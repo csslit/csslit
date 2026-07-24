@@ -22,7 +22,7 @@ use oxc_data_structures::rope::{Rope, get_line_column};
 use oxc_index::{IndexBox, IndexSlice, IndexVec};
 use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::{AstNodes, Scoping, SemanticBuilder};
-use oxc_span::{GetSpan, SourceType, Span};
+use oxc_span::{GetSpan, Span};
 use oxc_str::Ident;
 use oxc_syntax::{
   node::NodeId,
@@ -1273,7 +1273,7 @@ struct CompileTimeEmitter<'ast, 'alloc> {
   ast: AstBuilder<'alloc>,
   css_sourcemap: bool,
   css_import_symbols: &'ast CssImportSymbols<'alloc>,
-  filename: &'ast str,
+  css_filename: &'ast str,
   frames: Vec<'ast, EmitFrame<'ast>>,
   location_context: &'ast SourceLocationContext<'ast>,
   // Nodes in the current subtree must remain in the generated evaluation program.
@@ -1844,7 +1844,7 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     let column = template_location.column;
     let local_line = line + 1;
     let local_column = column + 1;
-    let hash = stable_name_hash(self.filename, line, column);
+    let hash = stable_name_hash(self.css_filename, line, column);
     let mut template = tagged.quasi.take_in(self);
     for expression in &mut template.expressions {
       let span = expression.span();
@@ -2097,11 +2097,11 @@ pub(crate) fn transform_compile_time(
 ) -> OxcTransformResult {
   let CompileTimeTransformOptions {
     filename,
+    css_filename,
+    source_type,
     css_sourcemap,
     sourcemap,
   } = options;
-
-  let source_type = SourceType::from_path(&filename).unwrap();
 
   let allocator = &Allocator::default();
   let ast = AstBuilder::new(allocator);
@@ -2146,7 +2146,7 @@ pub(crate) fn transform_compile_time(
     ast: AstBuilder::new(allocator),
     css_sourcemap,
     css_import_symbols: &css_import_symbols,
-    filename: &filename,
+    css_filename: &css_filename,
     frames: Vec::new_in(&ast),
     location_context: &diagnostic_location_context,
     preserve_source_ast: false,
@@ -2654,6 +2654,7 @@ impl<'ctx, 'alloc> VisitMut<'alloc> for ReferenceRewriter<'ctx, 'alloc> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use oxc_span::SourceType;
 
   fn compile(source: &str) -> String {
     compile_with_css_sourcemap(source, false)
@@ -2664,6 +2665,8 @@ mod tests {
       source.to_string(),
       CompileTimeTransformOptions {
         filename: "/src/example.tsx".to_string(),
+        css_filename: "/src/example.tsx".to_string(),
+        source_type: SourceType::tsx(),
         css_sourcemap,
         sourcemap: false,
       },

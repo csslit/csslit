@@ -25,12 +25,18 @@ export default defineConfig({
           "_check_cargo_check",
           "_check_cargo_test",
           "tests#check",
+          "@csslit/typescript-plugin#check",
           "csslit-vscode#check",
         ],
       },
       clean: {
         command: "echo clean complete",
-        dependsOn: ["@csslit/core#clean", "@csslit/vite-plugin#clean", "@csslit/transform#clean"],
+        dependsOn: [
+          "@csslit/core#clean",
+          "@csslit/vite-plugin#clean",
+          "@csslit/transform#clean",
+          "@csslit/typescript-plugin#clean",
+        ],
         cache: false,
       },
       release: {
@@ -40,6 +46,7 @@ export default defineConfig({
           "@csslit/core#release",
           "@csslit/vite-plugin#release",
           "@csslit/transform#release",
+          "@csslit/typescript-plugin#release",
         ],
         cache: false,
       },
@@ -47,7 +54,7 @@ export default defineConfig({
   },
   test: {
     include: [],
-    projects: ["./tests"],
+    projects: ["./tests", "./packages/typescript-plugin"],
   },
   lint: {
     plugins: ["import"],

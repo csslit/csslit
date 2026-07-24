@@ -4,6 +4,9 @@ node_modules/
 # Build Assets
 dist/
 
+# Test Fixtures
+tests/fixtures/
+
 # Rust and NAPI Native Compilation
 target/
 

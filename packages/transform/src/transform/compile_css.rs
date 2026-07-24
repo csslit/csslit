@@ -20,6 +20,10 @@ use std::{
 
 const CSSLIT_CLASS_PREFIX: &str = "__csslit_class_";
 
+// The emitted map's single source never reaches a served map: the plugin merges the map with the
+// source module's own map, which replaces the source by position regardless of its name.
+const PLACEHOLDER_SOURCE: &str = "csslit:placeholder";
+
 struct CompiledBlock<'a> {
   code: String,
   map: Option<SourceMap<'a>>,
@@ -41,7 +45,7 @@ pub(crate) fn compile_csslit(
   let mut code = String::new();
   let mut map = options.sourcemap.then(|| {
     let mut builder = SourceMapBuilder::default();
-    builder.set_source_and_content(&options.filename, "");
+    builder.set_source_and_content(PLACEHOLDER_SOURCE, "");
     builder
   });
   let mut line_offset = 0;
@@ -146,7 +150,7 @@ fn compile_scoped_block<'a>(
 
   let map = sparse_map
     .as_ref()
-    .map(|sparse_map| compose_sparse_map(filename, code, &result.code, mapping_runs, sparse_map));
+    .map(|sparse_map| compose_sparse_map(code, &result.code, mapping_runs, sparse_map));
 
   Ok(CompiledBlock {
     code: result.code,
@@ -187,7 +191,7 @@ fn compile_global_block<'a>(
 
   let map = sparse_map
     .as_ref()
-    .map(|sparse_map| compose_sparse_map(filename, code, &result.code, mapping_runs, sparse_map));
+    .map(|sparse_map| compose_sparse_map(code, &result.code, mapping_runs, sparse_map));
   Ok(CompiledBlock {
     code: result.code,
     map,
@@ -344,7 +348,6 @@ impl<'i> Visitor<'i> for ClassReferenceRewriter {
 }
 
 fn compose_sparse_map<'a>(
-  filename: &'a str,
   code: &str,
   output: &str,
   encoded_runs: Option<&[u32]>,
@@ -360,7 +363,7 @@ fn compose_sparse_map<'a>(
   }
 
   let mut builder = SourceMapBuilder::default();
-  let source_id = builder.set_source_and_content(filename, "");
+  let source_id = builder.set_source_and_content(PLACEHOLDER_SOURCE, "");
 
   for mapping in sparse_map.get_mappings() {
     if let Some(original) = mapping.original {

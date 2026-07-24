@@ -23,11 +23,22 @@ JavaScript escape pairs so boundary detection follows template-literal backslash
 
 ## Language features
 
-Template discovery is selected by source language. JavaScript and TypeScript reuse the
-running TypeScript 7 API session when available and otherwise parse synchronously with bundled
-TypeScript 6. TSRX uses the framework-neutral parser from `@tsrx/core`. Each integration lives
-in its own module and produces templates whose quasis contain source spans plus cooked text.
-The shared virtual-CSS builder alone handles interpolation holes, escapes, and source mapping.
+Template discovery is selected by TypeScript implementation. When TypeScript Native Preview is
+enabled, JavaScript and TypeScript reuse its running TypeScript 7 API session. Otherwise, the
+`@csslit/typescript-plugin` server plugin is used. Each integration produces templates whose quasis
+contain source spans plus cooked text. The shared virtual-CSS builder alone handles interpolation
+holes, escapes, and source mapping.
+
+The server plugin walks the language service's `SourceFile` and returns quasi spans as edits from a
+private refactor; the extension decodes those edits into the template contract without parsing the
+source. The extension contributes the plugin globally for plain JavaScript and TypeScript. For
+framework files, the framework's own TypeScript plugin (such as TSRX) wraps the language service in
+a proxy that lowers the source and maps positions, so `@csslit/typescript-plugin` must run _inside_
+that proxy: the user installs it as a project plugin in `tsconfig.json`, listed before the framework
+plugin so it loads closest to the language service and the framework proxy maps its returned edits
+back to the source document. There is deliberately no parsing fallback: without the plugin there is
+no template result. Framework files therefore require the classic TypeScript server; TypeScript
+Native Preview does not load tsserver plugins.
 
 `css` bodies are wrapped in a rule while `css.global` bodies remain stylesheets. Holes are
 replaced with small context-dependent placeholders. A sparse mapping records only text

@@ -14,11 +14,8 @@ maps its results back to accurate locations in your file:
 ```jsonc
 {
   "compilerOptions": {
-    "plugins": [
-      { "name": "@csslit/typescript-plugin" },
-      { "name": "@tsrx/typescript-plugin" }
-    ]
-  }
+    "plugins": [{ "name": "@csslit/typescript-plugin" }, { "name": "@tsrx/typescript-plugin" }],
+  },
 }
 ```
 

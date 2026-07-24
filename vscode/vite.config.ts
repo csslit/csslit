@@ -18,7 +18,7 @@ export default defineConfig({
       neverBundle: ["vscode"],
     },
     fixedExtension: false,
-    format: "cjs",
+    format: "esm",
     platform: "node",
     sourcemap: true,
     exports: false,
@@ -30,8 +30,8 @@ export default defineConfig({
         output: ["generated/syntaxes/**"],
       },
       build: {
-        command: ["vp pack -l silent", "node scripts/copy-licenses.mts"],
-        dependsOn: ["grammars"],
+        command: "vp pack -l silent",
+        dependsOn: ["grammars", "@csslit/typescript-plugin#build"],
         output: ["dist/**"],
       },
       test: {
@@ -49,17 +49,16 @@ export default defineConfig({
         dependsOn: ["grammars"],
       },
       clean: {
-        command: [clean("dist"), clean("generated"), clean("*.vsix")],
+        command: [clean("dist"), clean("generated")],
         cache: false,
       },
       release: {
         command: [
           "node grammar/build-grammars.mts",
-          "vp pack -l silent --minify",
-          "node scripts/copy-licenses.mts",
-          "vsce package --out dist/csslit-vscode.vsix",
+          "vp pack -l silent --minify --no-sourcemap -d dist/dist",
+          "node scripts/package.ts",
         ],
-        dependsOn: ["clean"],
+        dependsOn: ["clean", "@csslit/typescript-plugin#release"],
         cache: false,
       },
       publish: {

@@ -3,6 +3,7 @@ use annotate_snippets::{AnnotationKind, Group, Level, Renderer, Snippet};
 use napi_derive::napi;
 use oxc_data_structures::rope::{Rope, get_offset_from_line_and_column};
 use oxc_sourcemap::napi::SourceMap;
+use oxc_span::SourceType;
 
 mod bit_set;
 mod quote;
@@ -95,12 +96,16 @@ pub fn format_diagnostic(request: FormatDiagnosticRequest) -> String {
 pub struct RuntimeTransformRequest {
   pub module_import: String,
   pub filename: String,
+  pub css_filename: String,
+  pub module_type: String,
   pub sourcemap: bool,
 }
 
 struct RuntimeTransformOptions {
   module_import: String,
   filename: String,
+  css_filename: String,
+  source_type: SourceType,
   sourcemap: bool,
 }
 
@@ -108,6 +113,7 @@ struct RuntimeTransformOptions {
 pub struct CompileTimeTransformRequest {
   pub filename: String,
   pub css_filename: String,
+  pub module_type: String,
   pub sourcemap: bool,
   pub css_sourcemap: Option<bool>,
 }
@@ -117,12 +123,15 @@ pub struct ClientTransformRequest {
   pub module_import: String,
   pub filename: String,
   pub css_filename: String,
+  pub module_type: String,
   pub sourcemap: bool,
   pub css_sourcemap: Option<bool>,
 }
 
 struct CompileTimeTransformOptions {
   filename: String,
+  css_filename: String,
+  source_type: SourceType,
   sourcemap: bool,
   css_sourcemap: bool,
 }
@@ -184,11 +193,14 @@ pub fn transform_runtime(
   source_text: String,
   options: RuntimeTransformRequest,
 ) -> napi::Result<TransformResult> {
+  let source_type = SourceType::from_extension(&options.module_type).unwrap();
   let result = transform::transform_runtime(
     source_text,
     RuntimeTransformOptions {
       module_import: options.module_import,
       filename: options.filename,
+      css_filename: options.css_filename,
+      source_type,
       sourcemap: options.sourcemap,
     },
   );
@@ -206,10 +218,13 @@ pub fn transform_compile_time(
   options: CompileTimeTransformRequest,
 ) -> napi::Result<TransformResult> {
   let css_sourcemap = options.css_sourcemap.unwrap_or(options.sourcemap);
+  let source_type = SourceType::from_extension(&options.module_type).unwrap();
   let result = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
       filename: options.filename,
+      css_filename: options.css_filename,
+      source_type,
       sourcemap: options.sourcemap,
       css_sourcemap,
     },
@@ -228,11 +243,14 @@ pub fn transform_client(
   options: ClientTransformRequest,
 ) -> napi::Result<ClientTransformResult> {
   let css_sourcemap = options.css_sourcemap.unwrap_or(options.sourcemap);
+  let source_type = SourceType::from_extension(&options.module_type).unwrap();
   let runtime = transform::transform_runtime(
     source_text.clone(),
     RuntimeTransformOptions {
       module_import: options.module_import,
       filename: options.filename.clone(),
+      css_filename: options.css_filename.clone(),
+      source_type,
       sourcemap: options.sourcemap,
     },
   );
@@ -240,6 +258,8 @@ pub fn transform_client(
     source_text,
     CompileTimeTransformOptions {
       filename: options.filename,
+      css_filename: options.css_filename,
+      source_type,
       sourcemap: options.sourcemap,
       css_sourcemap,
     },
