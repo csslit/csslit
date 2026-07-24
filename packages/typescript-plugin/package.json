@@ -1,0 +1,36 @@
+{
+  "name": "@csslit/typescript-plugin",
+  "version": "0.0.1",
+  "description": "Enables the csslit VS Code extension to support additional file formats.",
+  "keywords": [
+    "css",
+    "css-in-js",
+    "typescript",
+    "typescript-plugin"
+  ],
+  "homepage": "https://github.com/csslit/csslit#readme",
+  "bugs": "https://github.com/csslit/csslit/issues",
+  "license": "MIT",
+  "author": "Gabriel Valfridsson",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csslit/csslit.git",
+    "directory": "packages/typescript-plugin"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "devDependencies": {
+    "typescript6": "npm:typescript@^6.0.3",
+    "vite-plus": "^0.2.5"
+  },
+  "engines": {
+    "node": ">=24.11.0"
+  }
+}
