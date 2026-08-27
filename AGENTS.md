@@ -17,7 +17,13 @@ Run tasks have `dependsOn` specified to build dependencies first. For tests, use
 
 Run `vp run -w check` before manually running individual test commands. It covers linting, compilation, Rust tests, and integration tests, and is fast on repeat runs because the task graph caches clean work. If it reports a failure, use the relevant narrower command for detailed output; use `vp run tests#test` when you need full integration-test output or snapshot updates. Keep tool output limits small for successful checks and request full output only when a command fails.
 
-Formatting is intentionally excluded from `check` so routine verification does not move code during development. Do not run formatters before routine checks. Immediately before committing, run `vp run -w format` to format both TypeScript and Rust, inspect the resulting diff, then run `vp run -w check` once more before committing.
+Formatting is intentionally excluded from `check` so routine verification does not move code during development. Do not run formatters before routine checks. Immediately before committing, run `vp run -w format` to format both TypeScript and Rust, then run `vp run -w check` once more before committing.
+
+Commands may fail if there are active dev servers running due to file locks or port conflicts. The usual symptom is `Access is denied. (os error 5)` unpacking `packages/transform/dist/csslit-transformer.win32-x64-msvc.node`, a `vp run` task cache failing to restore, a new dev server starting on a port other than 5173.
+
+Kill the dev server and re-run — do not ask first, and do not work around it. Requested work outranks keeping the dev server up; it is trivial to restart afterwards.
+
+Kill only the dev server. Identify it by the vite dev port (5173 by default) or by a command line containing `vite-plus/dist/bin.js run <package>#dev`, together with its vite child process — never kill unrelated node processes.
 
 ## Build Artifacts
 
@@ -26,9 +32,6 @@ Formatting is intentionally excluded from `check` so routine verification does n
 - Use `.agents/` directory (at the workspace root or within any package) for all scratch files, logs, and temporary debugging scripts.
 - Never create scratch files (like `build-log.txt` or `debug-helper.js`) directly in the project folders unless they are prefixed with `.agents/`.
 - This directory is git-ignored and ensures the repository stays clean for commits.
-
-> [!IMPORTANT]
-> Build commands (`vp run build`, `napi build`) may fail if there are active dev servers running due to file locks or port conflicts. If a build fails unexpectedly or a new dev server starts with a port other than 5173, check for running dev servers and ask the user to stop them if necessary.
 
 ## Code Style
 

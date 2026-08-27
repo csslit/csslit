@@ -2,29 +2,12 @@ import type ts from "typescript6/lib/tsserverlibrary";
 
 type TypeScript = typeof ts;
 
-// Encoded into each edit's newText so the extension can reassemble the templates after the
-// framework proxy has remapped the edit ranges. Keep in sync with tsgo.ts, which builds the same
-// template shape directly from the TypeScript 7 AST.
 export interface TemplateQuasiMetadata {
   template: number;
   quasi: number;
   quasis: number;
   global: boolean;
   cooked: string;
-}
-
-export function hasCssTemplate(typescript: TypeScript, sourceFile: ts.SourceFile): boolean {
-  let found = false;
-  const visit = (node: ts.Node) => {
-    if (found) return;
-    if (typescript.isTaggedTemplateExpression(node) && cssTagKind(typescript, node) !== undefined) {
-      found = true;
-      return;
-    }
-    typescript.forEachChild(node, visit);
-  };
-  visit(sourceFile);
-  return found;
 }
 
 export function collectTemplateEdits(
@@ -35,7 +18,17 @@ export function collectTemplateEdits(
   let templateIndex = 0;
   const visit = (node: ts.Node) => {
     if (typescript.isTaggedTemplateExpression(node)) {
-      const global = cssTagKind(typescript, node);
+      let global: boolean | undefined;
+      if (typescript.isIdentifier(node.tag) && node.tag.text === "css") {
+        global = false;
+      } else if (
+        typescript.isPropertyAccessExpression(node.tag) &&
+        typescript.isIdentifier(node.tag.expression) &&
+        node.tag.expression.text === "css" &&
+        node.tag.name.text === "global"
+      ) {
+        global = true;
+      }
       if (global !== undefined) {
         const template = node.template;
         const quasiCount = typescript.isNoSubstitutionTemplateLiteral(template)
@@ -55,21 +48,11 @@ export function collectTemplateEdits(
           });
         };
         if (typescript.isNoSubstitutionTemplateLiteral(template)) {
-          push(
-            template.getStart(sourceFile) + 1,
-            templateContentEnd(sourceFile, template.end),
-            template.text,
-          );
+          push(...templateContentRange(sourceFile, template), template.text);
         } else {
-          push(template.head.getStart(sourceFile) + 1, template.head.end - 2, template.head.text);
+          push(...templateContentRange(sourceFile, template.head), template.head.text);
           for (const span of template.templateSpans) {
-            push(
-              span.literal.getStart(sourceFile) + 1,
-              typescript.isTemplateTail(span.literal)
-                ? templateContentEnd(sourceFile, span.literal.end)
-                : span.literal.end - 2,
-              span.literal.text,
-            );
+            push(...templateContentRange(sourceFile, span.literal), span.literal.text);
           }
         }
         templateIndex++;
@@ -81,25 +64,10 @@ export function collectTemplateEdits(
   return edits;
 }
 
-function cssTagKind(
-  typescript: TypeScript,
-  node: ts.TaggedTemplateExpression,
-): boolean | undefined {
-  if (typescript.isIdentifier(node.tag) && node.tag.text === "css") return false;
-  if (
-    typescript.isPropertyAccessExpression(node.tag) &&
-    typescript.isIdentifier(node.tag.expression) &&
-    node.tag.expression.text === "css" &&
-    node.tag.name.text === "global"
-  )
-    return true;
-  return undefined;
-}
-
-function templateContentEnd(sourceFile: ts.SourceFile, end: number): number {
-  const source = sourceFile.text;
-  if (source.charCodeAt(end - 1) !== 96) return end;
-  let backslashes = 0;
-  while (source.charCodeAt(end - 2 - backslashes) === 92) backslashes++;
-  return backslashes % 2 === 0 ? end - 1 : end;
+function templateContentRange(
+  sourceFile: ts.SourceFile,
+  node: ts.TemplateLiteralLikeNode,
+): [start: number, end: number] {
+  const start = Math.min(node.getStart(sourceFile) + 1, node.end);
+  return [start, start + node.rawText!.length];
 }

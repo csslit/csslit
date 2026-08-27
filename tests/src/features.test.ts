@@ -34,7 +34,8 @@ test("comptime supports destructuring with computed keys and defaults", async ()
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { theme } from "/src/theme.ts";
     const key = "tone";
@@ -42,9 +43,11 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     const { [key]: tone = fallback, nested: { border }, ...rest } = theme;
     export const className = __css_module_import.css_8_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_8_26": "duOygv_8_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_8_26 = "duOygv_8_26";
+    export default {
+      css_8_26
+    };
 
     # js /src/theme.ts
     export const theme = {
@@ -89,7 +92,8 @@ test("destructuring closures observe incrementally initialized bindings", async 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     const { a, b, c } = comptime({
     	a: 1,
@@ -100,9 +104,11 @@ test("destructuring closures observe incrementally initialized bindings", async 
     });
     export const className = __css_module_import.css_11_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_11_26": "fa9j5o_11_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_11_26 = "fa9j5o_11_26";
+    export default {
+      css_11_26
+    };
 
     # css /src/entry.ts.csslit.css
     .fa9j5o_11_26 {
@@ -133,7 +139,8 @@ test("css literal reads from enclosing function scope", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const makeStyles = () => {
     	const base = "hotpink";
@@ -141,9 +148,11 @@ test("css literal reads from enclosing function scope", async () => {
     };
     export const className = makeStyles();
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_5_10": "KQe9MU_5_10" };
+    # js /src/entry.ts.csslit.json
+    export const css_5_10 = "KQe9MU_5_10";
+    export default {
+      css_5_10
+    };
 
     # css /src/entry.ts.csslit.css
     .KQe9MU_5_10 {
@@ -174,14 +183,17 @@ test("imported function can be called directly in interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { pickColor } from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_4_26": "Emgz6f_4_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_4_26 = "Emgz6f_4_26";
+    export default {
+      css_4_26
+    };
 
     # js /src/theme.ts
     export function pickColor() {
@@ -219,15 +231,18 @@ test("comptime allows function call in binding position", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     import { pickColor } from "/src/theme.ts";
     const tone = comptime(pickColor());
     export const className = __css_module_import.css_6_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_6_26": "jEYTtU_6_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_6_26 = "jEYTtU_6_26";
+    export default {
+      css_6_26
+    };
 
     # js /src/theme.ts
     export function pickColor() {
@@ -257,13 +272,16 @@ test("array literal can be used in direct interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -288,13 +306,16 @@ test("object literal can be used in direct interpolation", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -321,13 +342,16 @@ test("css literal compiles to static css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -362,14 +386,17 @@ test("css literal resolves inline module dependencies", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import theme from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_4_26": "Emgz6f_4_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_4_26 = "Emgz6f_4_26";
+    export default {
+      css_4_26
+    };
 
     # js /src/theme.ts
     export default { colors: { primary: "hotpink" } };
@@ -405,16 +432,18 @@ test("css class binding can be interpolated into another selector", async () => 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const h1Style = __css_module_import.css_7_24;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
+    # js /src/entry.ts.csslit.json
+    export const css_3_18 = "K98gqQ_3_18";
+    export const css_7_24 = "DRMsbv_7_24";
     export default {
-    	"css_3_18": "K98gqQ_3_18",
-    	"css_7_24": "DRMsbv_7_24"
+      css_3_18,
+      css_7_24
     };
 
     # css /src/entry.ts.csslit.css
@@ -458,16 +487,18 @@ test("css class binding is rewritten inside selector functions", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const child = __css_module_import.css_7_22;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
+    # js /src/entry.ts.csslit.json
+    export const css_3_18 = "K98gqQ_3_18";
+    export const css_7_22 = "IZXOSV_7_22";
     export default {
-    	"css_3_18": "K98gqQ_3_18",
-    	"css_7_22": "IZXOSV_7_22"
+      css_3_18,
+      css_7_22
     };
 
     # css /src/entry.ts.csslit.css
@@ -507,23 +538,29 @@ test("imported css class binding can be interpolated into another selector", asy
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/base.ts
-    import __css_module_import from "/src/base.ts.csslit.module.js";
+    import "/src/base.ts.csslit.css";
+    import __css_module_import from "/src/base.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const base = __css_module_import.css_3_21;
 
-    # js /src/base.ts.csslit.module.js
-    import "/src/base.ts.csslit.css";
-    export default { "css_3_21": "Gv5Jmv_3_21" };
+    # js /src/base.ts.csslit.json
+    export const css_3_21 = "Gv5Jmv_3_21";
+    export default {
+      css_3_21
+    };
 
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { base } from "/src/base.ts";
     export const child = __css_module_import.css_4_22;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_4_22": "ndlkXZ_4_22" };
+    # js /src/entry.ts.csslit.json
+    export const css_4_22 = "ndlkXZ_4_22";
+    export default {
+      css_4_22
+    };
 
     # css /src/base.ts.csslit.css
     .Gv5Jmv_3_21 {
@@ -560,16 +597,18 @@ test("css expressions in conditional bindings emit matching css module keys", as
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const enabled = true;
     export const style = enabled ? __css_module_import.css_4_32 : __css_module_import.css_6_5;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
+    # js /src/entry.ts.csslit.json
+    export const css_4_32 = "Y0vTVn_4_32";
+    export const css_6_5 = "aCPqv4_6_5";
     export default {
-    	"css_4_32": "Y0vTVn_4_32",
-    	"css_6_5": "aCPqv4_6_5"
+      css_4_32,
+      css_6_5
     };
 
     # css /src/entry.ts.csslit.css
@@ -613,14 +652,17 @@ test("css eval uses source transformed before csslit", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const tone = "hotpink";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_4_26": "Emgz6f_4_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_4_26 = "Emgz6f_4_26";
+    export default {
+      css_4_26
+    };
 
     # css /src/entry.ts.csslit.css
     .Emgz6f_4_26 {
@@ -651,17 +693,19 @@ test("css and global css preserve source order in one stylesheet", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     undefined;
     export const second = __css_module_import.css_9_23;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
+    # js /src/entry.ts.csslit.json
+    export const css_3_22 = "CSuYma_3_22";
+    export const css_9_23 = "QwLZRx_9_23";
     export default {
-    	"css_3_22": "CSuYma_3_22",
-    	"css_9_23": "QwLZRx_9_23"
+      css_3_22,
+      css_9_23
     };
 
     # css /src/entry.ts.csslit.css
@@ -702,14 +746,17 @@ test("global keyframes remain global and ordered with scoped css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     undefined;
     export const className = __css_module_import.css_7_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_7_26": "KjbIcR_7_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_7_26 = "KjbIcR_7_26";
+    export default {
+      css_7_26
+    };
 
     # css /src/entry.ts.csslit.css
     @keyframes pulse {
@@ -749,13 +796,16 @@ test("css literal hoists and scopes keyframes", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -791,13 +841,16 @@ test("conditional keyframes preserve their media condition", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     @media print {
@@ -838,16 +891,18 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     export const second = __css_module_import.css_8_23;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
+    # js /src/entry.ts.csslit.json
+    export const css_3_22 = "CSuYma_3_22";
+    export const css_8_23 = "nOVgim_8_23";
     export default {
-    	"css_3_22": "CSuYma_3_22",
-    	"css_8_23": "nOVgim_8_23"
+      css_3_22,
+      css_8_23
     };
 
     # css /src/entry.ts.csslit.css
@@ -892,13 +947,16 @@ test("css literals preserve custom property references", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -928,13 +986,16 @@ test("new, tagged template, and sequence expressions evaluate in interpolations"
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -961,13 +1022,16 @@ test("css template nested directly in an interpolation becomes its class name", 
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .iXPpyu_3_33 {
@@ -1001,13 +1065,16 @@ test("css nested in a closure is evaluated independently", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_3_26": "sWdGZm_3_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_3_26 = "sWdGZm_3_26";
+    export default {
+      css_3_26
+    };
 
     # css /src/entry.ts.csslit.css
     .sWdGZm_3_26 {
@@ -1040,13 +1107,16 @@ test("ambient functions are treated as globals", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_5_26;
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_5_26": "SefWTx_5_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_5_26 = "SefWTx_5_26";
+    export default {
+      css_5_26
+    };
 
     # css /src/entry.ts.csslit.css
     .SefWTx_5_26 {
@@ -1095,7 +1165,8 @@ test("closures in interpolations evaluate with outer constants and local state",
   expect(result).toMatchInlineSnapshot(`
     "
     # js /src/entry.ts
-    import __css_module_import from "/src/entry.ts.csslit.module.js";
+    import "/src/entry.ts.csslit.css";
+    import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { sizes } from "/src/theme.ts";
     const scale = (value) => value * 4;
@@ -1104,9 +1175,11 @@ test("closures in interpolations evaluate with outer constants and local state",
     	return value + 1;
     }
 
-    # js /src/entry.ts.csslit.module.js
-    import "/src/entry.ts.csslit.css";
-    export default { "css_6_26": "jEYTtU_6_26" };
+    # js /src/entry.ts.csslit.json
+    export const css_6_26 = "jEYTtU_6_26";
+    export default {
+      css_6_26
+    };
 
     # js /src/theme.ts
     export const sizes = [

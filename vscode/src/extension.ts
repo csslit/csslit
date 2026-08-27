@@ -4,14 +4,12 @@ import {
   languages,
   extensions,
   CompletionItem,
-  SnippetString,
   CompletionItemKind,
   Range,
   Disposable,
   Position,
   Uri,
   CompletionList,
-  LogLevel,
   commands,
   CompletionTriggerKind,
   Hover,
@@ -27,37 +25,43 @@ import type {
   CancellationToken,
   CompletionContext,
 } from "vscode";
-import { TypescriptParser } from "./typescript-parser.ts";
-import { TypescriptLegacyParser } from "./typescript-legacy-parser.ts";
+import { createTypescriptParser } from "./typescript-parser.ts";
+import { createTypescriptLegacyParser } from "./typescript-legacy-parser.ts";
 import { buildVirtualCss, toSourceRange } from "./virtual-css.ts";
+import type { ParsedModule } from "./types.ts";
 import type { VirtualCss } from "./virtual-css.ts";
 
 const CSS_DOCUMENT_SCHEME = "csslit-css";
-const languageSelector: DocumentSelector = [
-  { language: "javascript" },
-  { language: "javascriptreact" },
-  { language: "typescript" },
-  { language: "typescriptreact" },
-  { language: "ripple" },
-  { language: "vue" },
-  { language: "svelte" },
-  { language: "astro" },
-  { language: "mdx" },
-];
 const typeScriptLanguages = new Set([
   "javascript",
   "javascriptreact",
   "typescript",
   "typescriptreact",
 ]);
+const languageSelector: DocumentSelector = [
+  { language: "javascript" },
+  { language: "javascriptreact" },
+  { language: "typescript" },
+  { language: "typescriptreact" },
+  // The generic TSRX extension retains `ripple` as its historical VS Code language ID.
+  { language: "ripple" },
+  { language: "vue" },
+  { language: "mdx" },
+];
+type Parser = {
+  parse(
+    document: TextDocument,
+    position: Position,
+    verifyFrameworkMapping?: boolean,
+  ): Promise<ParsedModule | undefined>;
+  dispose?(): void;
+};
 
 export function activate(context: ExtensionContext): void {
   const output = window.createOutputChannel("csslit", { log: true });
-  context.subscriptions.push(output);
-  output.info("Activated");
-
   const extension = new Extension(output);
   context.subscriptions.push(
+    output,
     extension,
     workspace.registerTextDocumentContentProvider(CSS_DOCUMENT_SCHEME, extension),
     languages.registerCompletionItemProvider(languageSelector, extension, ".", "/", ":", "-", "@"),
@@ -66,34 +70,32 @@ export function activate(context: ExtensionContext): void {
     workspace.onDidChangeConfiguration((event) => {
       if (
         event.affectsConfiguration("js/ts.experimental.useTsgo") ||
-        event.affectsConfiguration("typescript.experimental.useTsgo") ||
-        event.affectsConfiguration("svelte.enable-ts-plugin")
+        event.affectsConfiguration("typescript.experimental.useTsgo")
       ) {
         extension.resetParsers();
       }
     }),
   );
+  if (__CSSLIT_TESTING__) {
+    context.subscriptions.push(
+      commands.registerCommand("_csslit.getVirtualCss", async (uri: Uri, position: Position) => {
+        const document = await workspace.openTextDocument(uri);
+        const module = await extension.parseModule(document, position, true);
+        if (!module) return { parsed: false, virtualCss: null };
+
+        const virtualCss = buildVirtualCss(module, document.offsetAt(position));
+        if (!virtualCss) return { parsed: true, virtualCss: null };
+
+        const { content, templateStart, mappings, cursor, unitSuffix } = virtualCss;
+        return {
+          parsed: true,
+          virtualCss: { content, templateStart, mappings, cursor, unitSuffix },
+        };
+      }),
+    );
+  }
 }
 
-function sampleCompletionItems(items: readonly CompletionItem[]) {
-  return items.slice(0, 8).map((item) => ({
-    label: typeof item.label === "string" ? item.label : item.label.label,
-    kind: item.kind,
-    insertText:
-      typeof item.insertText === "string"
-        ? item.insertText
-        : item.insertText instanceof SnippetString
-          ? item.insertText.value
-          : undefined,
-    range: item.range,
-    textEdit: item.textEdit,
-  }));
-}
-
-/**
- * Rewrites a css service completion item in place so its edits target the source document.
- * Returns false when an edit cannot be mapped and the item must be dropped.
- */
 function mapCompletionItem(
   item: CompletionItem,
   virtualCss: VirtualCss,
@@ -227,34 +229,35 @@ function sourceRange(
 class Extension
   implements CompletionItemProvider, HoverProvider, TextDocumentContentProvider, Disposable
 {
-  // Ref-counted content for the csslit-css scheme. Concurrent requests against the same template
-  // share one virtual document, and the content is retained only while a request is using it.
   readonly #virtualDocuments = new Map<string, { content: string; references: number }>();
   readonly #sourceDocumentIds = new WeakMap<TextDocument, number>();
   #nextSourceDocumentId = 0;
-  #nextRequestId = 0;
   readonly #output: LogOutputChannel;
-  readonly #typeScriptParser: TypescriptParser;
-  readonly #typeScriptLegacyParser: TypescriptLegacyParser;
+  #parser: Promise<Parser | undefined> | undefined;
+  #nativePreview: boolean | undefined;
 
   constructor(output: LogOutputChannel) {
     this.#output = output;
-    this.#typeScriptParser = new TypescriptParser(output);
-    this.#typeScriptLegacyParser = new TypescriptLegacyParser(output);
   }
 
   resetParsers(): void {
-    this.#typeScriptParser.reset();
+    const parser = this.#parser;
+    this.#parser = undefined;
+    this.#nativePreview = undefined;
+    if (parser)
+      void parser.then(
+        (initialized) => initialized?.dispose?.(),
+        () => {},
+      );
   }
 
   dispose(): void {
-    this.#typeScriptParser.dispose();
+    this.resetParsers();
   }
 
   async #locateVirtualCss(
     document: TextDocument,
     position: Position,
-    token: CancellationToken,
   ): Promise<(VirtualCss & { uri: Uri }) | undefined> {
     let documentId = this.#sourceDocumentIds.get(document);
     if (documentId === undefined) {
@@ -263,15 +266,7 @@ class Extension
     }
     const documentVersion = document.version;
     const sourceOffset = document.offsetAt(position);
-    const configuration = workspace.getConfiguration();
-    const nativePreview =
-      configuration.get<boolean>("js/ts.experimental.useTsgo") ??
-      configuration.get<boolean>("typescript.experimental.useTsgo") ??
-      false;
-    if (nativePreview && !typeScriptLanguages.has(document.languageId)) return;
-    const module = nativePreview
-      ? await this.#typeScriptParser.parse(document, position, token)
-      : await this.#typeScriptLegacyParser.parse(document, position, token);
+    const module = await this.parseModule(document, position);
     const virtualCss = module && buildVirtualCss(module, sourceOffset);
     if (!virtualCss) return;
     return {
@@ -282,6 +277,46 @@ class Extension
         path: `/${documentId}/${documentVersion}/${virtualCss.templateStart}.css`,
       }),
     };
+  }
+
+  async parseModule(
+    document: TextDocument,
+    position: Position,
+    testing?: boolean,
+  ): Promise<ParsedModule | undefined> {
+    const version = document.version;
+    if (this.#nativePreview === undefined) {
+      const configuration = workspace.getConfiguration();
+      this.#nativePreview =
+        configuration.get<boolean>("js/ts.experimental.useTsgo") ??
+        configuration.get<boolean>("typescript.experimental.useTsgo") ??
+        false;
+    }
+    if (this.#nativePreview && !typeScriptLanguages.has(document.languageId)) return;
+
+    if (!this.#parser) {
+      if (testing === undefined) {
+        this.#output.trace(
+          this.#nativePreview
+            ? "Using TypeScript Native Preview"
+            : "Using the TypeScript server plugin",
+        );
+      }
+      this.#parser = this.#nativePreview
+        ? createTypescriptParser()
+        : Promise.resolve(createTypescriptLegacyParser());
+    }
+    const parser = await this.#parser;
+    const module = await parser?.parse(
+      document,
+      position,
+      __CSSLIT_TESTING__ && testing && !typeScriptLanguages.has(document.languageId),
+    );
+    if (document.version !== version) {
+      if (__CSSLIT_TESTING__ && testing) throw new Error("Document changed while parsing");
+      return;
+    }
+    return module;
   }
 
   provideTextDocumentContent(uri: Uri): string | undefined {
@@ -314,37 +349,22 @@ class Extension
     token: CancellationToken,
     completionContext: CompletionContext,
   ): Promise<CompletionList | undefined> {
-    const output = this.#output;
-    const requestId = ++this.#nextRequestId;
-    const started = performance.now();
-    output.trace(
-      `[completion ${requestId}] ${document.uri.toString()}:${position.line + 1}:${position.character + 1} version ${document.version}`,
-    );
-    const virtualCss = await this.#locateVirtualCss(document, position, token);
-    if (!virtualCss) {
-      output.trace(`[completion ${requestId}] no csslit template`);
-      return;
-    }
-    if (token.isCancellationRequested) {
-      output.trace(`[completion ${requestId}] cancelled after locating template`);
-      return;
-    }
-    const trace = output.logLevel === LogLevel.Trace;
-    if (trace) {
-      output.trace(
-        `[completion ${requestId}] ${virtualCss.uri.toString()} offset ${virtualCss.cursor.virtual}, exact ${virtualCss.cursor.exact}, unit suffix ${Boolean(virtualCss.unitSuffix)}\n${JSON.stringify(virtualCss.content)}`,
-      );
-    }
-
+    const location = `${document.uri.toString()}:${position.line + 1}:${position.character + 1}`;
     try {
+      const virtualCss = await this.#locateVirtualCss(document, position);
+      if (!virtualCss || token.isCancellationRequested) {
+        if (!token.isCancellationRequested) {
+          this.#output.trace(`No csslit template at ${location}`);
+        }
+        return;
+      }
+
       return await this.#withVirtualDocument(virtualCss, async (virtualDocument) => {
         if (token.isCancellationRequested) return;
         const list = await commands.executeCommand<CompletionList>(
           "vscode.executeCompletionItemProvider",
           virtualCss.uri,
           virtualDocument.positionAt(virtualCss.cursor.virtual),
-          // The css service only reacts to the trigger characters it knows; the rest of the
-          // characters the provider registers for start a fresh completion request instead.
           completionContext.triggerKind === CompletionTriggerKind.TriggerCharacter &&
             (completionContext.triggerCharacter === "/" ||
               completionContext.triggerCharacter === "-" ||
@@ -352,16 +372,7 @@ class Extension
             ? completionContext.triggerCharacter
             : undefined,
         );
-        if (token.isCancellationRequested) {
-          output.trace(`[completion ${requestId}] cancelled after css service request`);
-          return;
-        }
-        if (!list) {
-          output.warn(`[completion ${requestId}] css service returned no completion list`);
-          return;
-        }
-        const offered = list.items.length;
-        const sample = trace ? sampleCompletionItems(list.items) : undefined;
+        if (token.isCancellationRequested) return;
         let kept = 0;
         for (const item of list.items) {
           if (mapCompletionItem(item, virtualCss, virtualDocument, document)) {
@@ -369,14 +380,11 @@ class Extension
           }
         }
         list.items.length = kept;
-        output.debug(
-          `[completion ${requestId}] kept ${kept}/${offered} items in ${Math.round(performance.now() - started)} ms`,
-        );
-        if (sample) output.trace(`[completion ${requestId}] raw sample`, sample);
+        this.#output.trace(`Provided ${kept} CSS completions at ${location}`);
         return list;
       });
     } catch (error) {
-      output.error(`[completion ${requestId}] failed`, error);
+      this.#output.error("Providing CSS completions failed", error);
       return;
     }
   }
@@ -386,9 +394,15 @@ class Extension
     position: Position,
     token: CancellationToken,
   ): Promise<Hover | undefined> {
+    const location = `${document.uri.toString()}:${position.line + 1}:${position.character + 1}`;
     try {
-      const virtualCss = await this.#locateVirtualCss(document, position, token);
-      if (!virtualCss || token.isCancellationRequested) return;
+      const virtualCss = await this.#locateVirtualCss(document, position);
+      if (!virtualCss || token.isCancellationRequested) {
+        if (!token.isCancellationRequested) {
+          this.#output.trace(`No csslit template at ${location}`);
+        }
+        return;
+      }
 
       return await this.#withVirtualDocument(virtualCss, async (virtualDocument) => {
         if (token.isCancellationRequested) return;
@@ -398,7 +412,10 @@ class Extension
           virtualDocument.positionAt(virtualCss.cursor.virtual),
         );
         if (token.isCancellationRequested) return;
-        const hover = hovers?.[0];
+        const hover = hovers[0];
+        this.#output.trace(
+          hover ? `Provided CSS hover at ${location}` : `No CSS hover at ${location}`,
+        );
         if (!hover) return;
         return new Hover(
           hover.contents,
@@ -406,7 +423,7 @@ class Extension
         );
       });
     } catch (error) {
-      this.#output.error("Hover failed", error);
+      this.#output.error("Providing CSS hover failed", error);
       return;
     }
   }

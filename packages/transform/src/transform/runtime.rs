@@ -58,8 +58,9 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
 pub(crate) fn transform_runtime(
   source_text: String,
   options: RuntimeTransformOptions,
-) -> OxcTransformResult {
+) -> Option<OxcTransformResult> {
   let allocator = &Allocator::default();
+  let ast = AstBuilder::new(allocator);
 
   let ret = Parser::new(allocator, &source_text, options.source_type)
     .with_options(ParseOptions {
@@ -72,6 +73,10 @@ pub(crate) fn transform_runtime(
 
   let semantic = SemanticBuilder::new().build(&program).semantic;
   let css_import_symbols = CssImportSymbols::collect(allocator, &program);
+
+  if !css_import_symbols.any() {
+    return None;
+  }
 
   let mut transformer = RuntimeTransformer {
     has_css: false,
@@ -86,19 +91,26 @@ pub(crate) fn transform_runtime(
   let scoping = semantic.into_scoping();
   traverse_mut(&mut transformer, allocator, &mut program, scoping, ());
 
+  if !transformer.has_css && !transformer.has_global_css {
+    return None;
+  }
+
+  let import_path = &options.import_path;
+
   if transformer.has_css {
-    let ast = AstBuilder::new(allocator);
-    let module_import = options.module_import.clone();
     program.body.insert(
       0,
-      quote_stmt!(ast, import __css_module_import from @"{module_import}";),
+      quote_stmt!(
+        ast,
+        import __css_module_import from @"{import_path}.csslit.json";
+      ),
     );
-  } else if transformer.has_global_css {
-    let ast = AstBuilder::new(allocator);
-    let module_import = options.module_import.clone();
+  }
+
+  if transformer.has_css || transformer.has_global_css {
     program
       .body
-      .insert(0, quote_stmt!(ast, import @{module_import};));
+      .insert(0, quote_stmt!(ast, import @"{import_path}.csslit.css";));
   }
 
   let result = Codegen::new()
@@ -111,9 +123,9 @@ pub(crate) fn transform_runtime(
     .with_source_text(&source_text)
     .build(&program);
 
-  OxcTransformResult {
+  Some(OxcTransformResult {
     code: result.code,
     map: result.map.map(Into::into),
     exports: transformer.exports,
-  }
+  })
 }

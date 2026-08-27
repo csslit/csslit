@@ -8,8 +8,31 @@ export default defineConfig({
     experimental: {
       viteModuleRunner: false,
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "fast",
+          include: ["src/**/*.test.ts"],
+          provide: { backend: "harness" },
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "slow",
+          include: ["src/templates.test.ts"],
+          provide: { backend: "serve-web" },
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
+        },
+      },
+    ],
   },
   pack: {
+    define: {
+      __CSSLIT_TESTING__: "true",
+    },
     entry: {
       extension: "src/extension.ts",
     },
@@ -26,7 +49,7 @@ export default defineConfig({
   run: {
     tasks: {
       grammars: {
-        command: "node grammar/build-grammars.mts",
+        command: "node grammar/build-grammars.ts",
         output: ["generated/syntaxes/**"],
       },
       build: {
@@ -35,13 +58,31 @@ export default defineConfig({
         output: ["dist/**"],
       },
       test: {
-        command: "vp test --reporter agent",
-        dependsOn: ["grammars"],
+        command: "vp test --project fast --reporter agent",
+        dependsOn: ["grammars", "@csslit/typescript-plugin#build"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
+      "serve-web-fixture": {
+        command: "node scripts/serve-web-fixture.ts",
+        input: [
+          "src/testing/frameworks.ts",
+          "src/testing/vscode-harness.ts",
+          "scripts/serve-web-fixture.ts",
+        ],
+        output: [
+          "fixtures/serve-web/fixture.json",
+          "fixtures/serve-web/*/extensions/**",
+          "fixtures/serve-web/*/workspace/**",
+        ],
+      },
+      "test-slow": {
+        command: "vp test --project slow --reporter agent",
+        dependsOn: ["build", "@csslit/typescript-plugin#build", "serve-web-fixture"],
+        cache: false,
+      },
       check: {
-        command: "vp test --reporter agent",
-        dependsOn: ["grammars"],
+        command: "vp test --project fast --reporter agent",
+        dependsOn: ["grammars", "@csslit/typescript-plugin#build"],
         input: [{ auto: true }, "!node_modules/.vite/**"],
       },
       dev: {
@@ -54,8 +95,8 @@ export default defineConfig({
       },
       release: {
         command: [
-          "node grammar/build-grammars.mts",
-          "vp pack -l silent --minify --no-sourcemap -d dist/dist",
+          "node grammar/build-grammars.ts",
+          "vp pack -l silent --minify --no-sourcemap -d dist/dist --define.__CSSLIT_TESTING__=false",
           "node scripts/package.ts",
         ],
         dependsOn: ["clean", "@csslit/typescript-plugin#release"],

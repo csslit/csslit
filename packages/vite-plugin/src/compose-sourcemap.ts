@@ -4,9 +4,9 @@ import {
   setSourceContent,
   toEncodedMap,
 } from "@jridgewell/gen-mapping";
-import type { EncodedSourceMap } from "@jridgewell/gen-mapping";
 import { TraceMap, decodedMappings, eachMapping } from "@jridgewell/trace-mapping";
-import type { SourceMapInput } from "@jridgewell/trace-mapping";
+import type { SourceMapInput as CssSourceMapInput } from "@jridgewell/trace-mapping";
+import type { SourceMap, SourceMapInput } from "rolldown";
 
 /**
  * Composes the compiled CSS map onto the source module's own map.
@@ -17,12 +17,9 @@ import type { SourceMapInput } from "@jridgewell/trace-mapping";
  * copy the template contents verbatim, which makes the nearest earlier segment a sound anchor:
  * trace through it and reapply the traced position's distance from it.
  */
-export function composeCssSourcemap(
-  cssMap: SourceMapInput,
-  sourceMap: SourceMapInput,
-): EncodedSourceMap {
-  const css = new TraceMap(cssMap);
-  const source = new TraceMap(sourceMap);
+export function composeCssSourcemap(cssMap: SourceMapInput, sourceMap: SourceMapInput): SourceMap {
+  const css = new TraceMap(cssMap as CssSourceMapInput);
+  const source = new TraceMap(sourceMap as CssSourceMapInput);
   const sourceMappings = decodedMappings(source);
   const gen = new GenMapping({ file: css.file ?? undefined });
 
@@ -60,5 +57,5 @@ export function composeCssSourcemap(
     if (content != null) setSourceContent(gen, name, content);
   });
 
-  return toEncodedMap(gen);
+  return toEncodedMap(gen) as SourceMap;
 }

@@ -78,6 +78,10 @@ impl<'alloc> CssImportSymbols<'alloc> {
     }
   }
 
+  pub(super) fn any(&self) -> bool {
+    self.namespaces.len() != 0 || self.named.len() != 0 || self.comptime_named.len() != 0
+  }
+
   pub(super) fn is_css(&self, tag: &Expression, ctx: &TraverseCtx<()>) -> bool {
     self.is_css_with_scoping(tag, ctx.scoping())
   }

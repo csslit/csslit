@@ -21,22 +21,28 @@ css.global`
 `;
 ```
 
-Highlighting works in JavaScript, JSX, TypeScript, TSX, HTML scripts, Angular, Astro, Marko, MDX,
-Svelte, Vue, and TSRX.
+Highlighting works in `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.astro`, `.marko`, `.mdx`, `.svelte`,
+`.vue`, and `.tsrx` files.
 
-Completions and hovers work automatically in JavaScript and TypeScript. For **framework files**
-(Ripple, Vue, Svelte, Astro, MDX), install [`@csslit/typescript-plugin`](https://www.npmjs.com/package/@csslit/typescript-plugin)
-and add it to your `tsconfig.json` `plugins`, listed before the framework's own TypeScript plugin:
+Completions and hovers work automatically in `.js`, `.jsx`, `.ts`, and `.tsx` files. React, Solid,
+Vue JSX, Angular, and other frameworks work without additional csslit setup.
+
+For `.tsrx`, `.vue`, and `.mdx` files, install
+[`@csslit/typescript-plugin`](https://www.npmjs.com/package/@csslit/typescript-plugin) and add it to
+your `tsconfig.json` `plugins`:
 
 ```jsonc
 {
   "compilerOptions": {
-    "plugins": [{ "name": "@csslit/typescript-plugin" }, { "name": "@tsrx/typescript-plugin" }],
+    "plugins": [{ "name": "@csslit/typescript-plugin" }],
   },
 }
 ```
 
+If the language's own setup also lists a TypeScript plugin there, `@csslit/typescript-plugin` must
+come first.
+
 Use the workspace TypeScript version; while TypeScript Native Preview is enabled, completions and
-hovers are available only in JavaScript and TypeScript.
+hovers are available only in `.js`, `.jsx`, `.ts`, and `.tsx` files.
 
 Source and issues: [github.com/csslit/csslit](https://github.com/csslit/csslit)

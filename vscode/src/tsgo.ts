@@ -4,9 +4,8 @@ import {
   isPropertyAccessExpression,
   isNoSubstitutionTemplateLiteral,
   isTemplateExpression,
-  SyntaxKind,
 } from "typescript/unstable/ast";
-import type { Node, SourceFile, TaggedTemplateExpression } from "typescript/unstable/ast";
+import type { Node, SourceFile } from "typescript/unstable/ast";
 import type { API } from "typescript/unstable/async";
 import type { CssQuasi, CssTemplate, ParsedModule } from "./types.ts";
 
@@ -17,8 +16,6 @@ export async function parseModule(
   uri: string,
   expectedSource: string,
 ): Promise<ParsedModule | undefined> {
-  // updateSnapshot returns the server's change diff since the previous snapshot and evicts the
-  // changed files from the client cache, so this reflects the server's current content.
   const opened = await api.updateSnapshot({ openFiles: [{ uri }] });
   try {
     const project = await opened.getDefaultProjectForFile({ uri });
@@ -27,10 +24,45 @@ export async function parseModule(
     let sourceFile = await project.program.getSourceFile({ uri });
     if (!sourceFile) return;
 
-    if (sourceFile.text !== expectedSource)
-      throw new StaleSourceFileError("tsgo and VS Code have different document contents");
+    if (sourceFile.text !== expectedSource) throw new StaleSourceFileError();
 
-    return { source: sourceFile.text, templates: collectTemplates(sourceFile) };
+    const templates: CssTemplate[] = [];
+    const visit = (node: Node) => {
+      if (isTaggedTemplateExpression(node)) {
+        let global: boolean | undefined;
+        if (isIdentifier(node.tag) && node.tag.text === "css") {
+          global = false;
+        } else if (
+          isPropertyAccessExpression(node.tag) &&
+          isIdentifier(node.tag.expression) &&
+          node.tag.expression.text === "css" &&
+          node.tag.name.text === "global"
+        ) {
+          global = true;
+        }
+        if (global !== undefined) {
+          const template = node.template;
+          const quasis: CssQuasi[] = [];
+          if (isNoSubstitutionTemplateLiteral(template)) {
+            const [start, end] = templateContentRange(sourceFile, template);
+            quasis.push({ start, end, cooked: template.text });
+          } else if (isTemplateExpression(template)) {
+            const [start, end] = templateContentRange(sourceFile, template.head);
+            quasis.push({ start, end, cooked: template.head.text });
+            for (const span of template.templateSpans) {
+              const [start, end] = templateContentRange(sourceFile, span.literal);
+              quasis.push({ start, end, cooked: span.literal.text });
+            }
+          } else {
+            throw new Error("Unexpected template node");
+          }
+          templates.push({ global, quasis });
+        }
+      }
+      node.forEachChild(visit);
+    };
+    visit(sourceFile);
+    return { source: sourceFile.text, templates };
   } finally {
     const closed = await api.updateSnapshot({ closeFiles: [{ uri }] });
     await closed.dispose();
@@ -38,66 +70,33 @@ export async function parseModule(
   }
 }
 
-function collectTemplates(sourceFile: SourceFile): CssTemplate[] {
-  const templates: CssTemplate[] = [];
-  const visit = (node: Node) => {
-    if (isTaggedTemplateExpression(node)) {
-      const global = cssTagKind(node);
-      if (global !== undefined) templates.push(templateFromAst(sourceFile, node, global));
-    }
-    node.forEachChild(visit);
-  };
-  visit(sourceFile);
-  return templates;
-}
-
-function cssTagKind(node: TaggedTemplateExpression): boolean | undefined {
-  if (isIdentifier(node.tag) && node.tag.text === "css") return false;
-  if (
-    isPropertyAccessExpression(node.tag) &&
-    isIdentifier(node.tag.expression) &&
-    node.tag.expression.text === "css" &&
-    node.tag.name.text === "global"
-  )
-    return true;
-  return undefined;
-}
-
-function templateFromAst(
+function templateContentRange(
   sourceFile: SourceFile,
-  node: TaggedTemplateExpression,
-  global: boolean,
-): CssTemplate {
+  node: { getStart(sourceFile: SourceFile): number; end: number },
+): [start: number, end: number] {
   const source = sourceFile.text;
-  const template = node.template;
-  const quasis: CssQuasi[] = [];
-  const push = (start: number, end: number, cooked: string) => {
-    quasis.push({ start, end, cooked });
-  };
-  if (isNoSubstitutionTemplateLiteral(template)) {
-    const start = template.getStart(sourceFile) + 1;
-    push(start, templateContentEnd(source, template.end), template.text);
-  } else if (isTemplateExpression(template)) {
-    push(template.head.getStart(sourceFile) + 1, template.head.end - 2, template.head.text);
-    for (const span of template.templateSpans) {
-      const start = span.literal.getStart(sourceFile) + 1;
-      push(
-        start,
-        span.literal.kind === SyntaxKind.TemplateTail
-          ? templateContentEnd(source, span.literal.end)
-          : span.literal.end - 2,
-        span.literal.text,
-      );
-    }
-  } else {
-    throw new Error("Unexpected template node");
+  const start = Math.min(node.getStart(sourceFile) + 1, node.end);
+  if (
+    node.end - start >= 2 &&
+    source.slice(node.end - 2, node.end) === "${" &&
+    !isEscaped(source, node.end - 2, start)
+  ) {
+    return [start, node.end - 2];
   }
-  return { global, quasis };
+  if (
+    node.end > start &&
+    source.charCodeAt(node.end - 1) === 96 &&
+    !isEscaped(source, node.end - 1, start)
+  ) {
+    return [start, node.end - 1];
+  }
+  return [start, node.end];
 }
 
-function templateContentEnd(source: string, end: number): number {
-  if (source.charCodeAt(end - 1) !== 96) return end;
+function isEscaped(source: string, position: number, start: number): boolean {
   let backslashes = 0;
-  while (source.charCodeAt(end - 2 - backslashes) === 92) backslashes++;
-  return backslashes % 2 === 0 ? end - 1 : end;
+  while (position - backslashes > start && source.charCodeAt(position - backslashes - 1) === 92) {
+    backslashes++;
+  }
+  return backslashes % 2 === 1;
 }

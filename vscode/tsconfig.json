@@ -4,5 +4,5 @@
     "types": ["node", "vscode"]
   },
   "include": ["."],
-  "exclude": ["dist"]
+  "exclude": ["dist", "fixtures", ".vscode-test"]
 }

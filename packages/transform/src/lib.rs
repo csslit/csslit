@@ -94,7 +94,7 @@ pub fn format_diagnostic(request: FormatDiagnosticRequest) -> String {
 
 #[napi(object)]
 pub struct RuntimeTransformRequest {
-  pub module_import: String,
+  pub import_path: String,
   pub filename: String,
   pub css_filename: String,
   pub module_type: String,
@@ -102,7 +102,7 @@ pub struct RuntimeTransformRequest {
 }
 
 struct RuntimeTransformOptions {
-  module_import: String,
+  import_path: String,
   filename: String,
   css_filename: String,
   source_type: SourceType,
@@ -120,7 +120,7 @@ pub struct CompileTimeTransformRequest {
 
 #[napi(object)]
 pub struct ClientTransformRequest {
-  pub module_import: String,
+  pub import_path: String,
   pub filename: String,
   pub css_filename: String,
   pub module_type: String,
@@ -192,24 +192,26 @@ pub struct CompileCsslitResult {
 pub fn transform_runtime(
   source_text: String,
   options: RuntimeTransformRequest,
-) -> napi::Result<TransformResult> {
+) -> napi::Result<Option<TransformResult>> {
   let source_type = SourceType::from_extension(&options.module_type).unwrap();
-  let result = transform::transform_runtime(
+  let Some(result) = transform::transform_runtime(
     source_text,
     RuntimeTransformOptions {
-      module_import: options.module_import,
+      import_path: options.import_path,
       filename: options.filename,
       css_filename: options.css_filename,
       source_type,
       sourcemap: options.sourcemap,
     },
-  );
+  ) else {
+    return Ok(None);
+  };
 
-  Ok(TransformResult {
+  Ok(Some(TransformResult {
     code: result.code,
     map: result.map,
     exports: result.exports,
-  })
+  }))
 }
 
 #[napi]
@@ -241,19 +243,23 @@ pub fn transform_compile_time(
 pub fn transform_client(
   source_text: String,
   options: ClientTransformRequest,
-) -> napi::Result<ClientTransformResult> {
+) -> napi::Result<Option<ClientTransformResult>> {
   let css_sourcemap = options.css_sourcemap.unwrap_or(options.sourcemap);
   let source_type = SourceType::from_extension(&options.module_type).unwrap();
-  let runtime = transform::transform_runtime(
+
+  let Some(runtime) = transform::transform_runtime(
     source_text.clone(),
     RuntimeTransformOptions {
-      module_import: options.module_import,
+      import_path: options.import_path,
       filename: options.filename.clone(),
       css_filename: options.css_filename.clone(),
       source_type,
       sourcemap: options.sourcemap,
     },
-  );
+  ) else {
+    return Ok(None);
+  };
+
   let eval = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
@@ -265,7 +271,7 @@ pub fn transform_client(
     },
   );
 
-  Ok(ClientTransformResult {
+  Ok(Some(ClientTransformResult {
     runtime: TransformResult {
       code: runtime.code,
       map: runtime.map,
@@ -276,7 +282,7 @@ pub fn transform_client(
       map: eval.map,
       exports: eval.exports,
     },
-  })
+  }))
 }
 
 #[napi]

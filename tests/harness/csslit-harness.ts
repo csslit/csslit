@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, TestRunner } from "vite-plus/test";
 import { buildErrorMessage, createBuilder, createServer, normalizePath } from "vite";
-import type { PluginOption } from "vite";
+import type { PluginOption, ViteBuilder } from "vite";
 import type { RollupError, RolldownOutput } from "rolldown";
 import csslit from "@csslit/vite-plugin";
 import type { CsslitModuleType } from "@csslit/vite-plugin";
@@ -189,8 +189,8 @@ function extractVirtualCssIds(code: string) {
   );
 }
 
-function extractVirtualCssModuleJsIds(code: string) {
-  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.module\.js/g) ?? [])].map(
+function extractVirtualCssModuleJsonIds(code: string) {
+  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.json/g) ?? [])].map(
     normalizePath,
   );
 }
@@ -296,17 +296,17 @@ async function runCsslitCaseIsolated(
       }
       jsModules.push({ code: sourceResult.code, id: file });
 
-      for (const publicModuleId of extractVirtualCssModuleJsIds(sourceResult.code)) {
+      for (const publicModuleId of extractVirtualCssModuleJsonIds(sourceResult.code)) {
         const resolvedModuleId = unwrapPublicId(publicModuleId);
         const moduleResult = await server.transformRequest(resolvedModuleId);
         const code = moduleResult?.code ?? "";
-        jsModules.push({ code, id: `${file}.csslit.module.js` });
+        jsModules.push({ code, id: `${file}.csslit.json` });
+      }
 
-        for (const publicCssId of extractVirtualCssIds(code)) {
-          const resolvedCssId = unwrapPublicId(publicCssId);
-          const cssResult = await server.transformRequest(resolvedCssId);
-          cssModules.push(parseCssSnapshot(cssResult?.code ?? "", resolvedCssId));
-        }
+      for (const publicCssId of extractVirtualCssIds(sourceResult.code)) {
+        const resolvedCssId = unwrapPublicId(publicCssId);
+        const cssResult = await server.transformRequest(resolvedCssId);
+        cssModules.push(parseCssSnapshot(cssResult?.code ?? "", resolvedCssId));
       }
     }
 
@@ -332,6 +332,7 @@ async function runCsslitProductionBuildIsolated(
   const entryId = absolutizeFile(input.entry, fileRoot);
   const serverRoot = input.root ? absolutizeFile(input.root, fileRoot) : fileRoot;
   let hasWarned = false;
+  let result: Awaited<ReturnType<ViteBuilder["build"]>> | undefined;
   const builder = await createBuilder({
     appType: "custom",
     build: {
@@ -367,7 +368,16 @@ async function runCsslitProductionBuildIsolated(
       },
     },
     logLevel: "silent",
-    plugins: [input.plugins, csslit({ moduleType: input.moduleType })],
+    plugins: [
+      input.plugins,
+      csslit({ moduleType: input.moduleType }),
+      {
+        name: "csslit-test-build",
+        async buildApp(builder) {
+          result = await builder.build(builder.environments["client"]!);
+        },
+      },
+    ],
     root: serverRoot,
   });
 
@@ -376,14 +386,8 @@ async function runCsslitProductionBuildIsolated(
     lib.formats = ["es"];
   }
 
-  let result: Awaited<ReturnType<typeof builder.build>>;
-  try {
-    result = await builder.build(builder.environments["client"]!);
-  } finally {
-    await (
-      builder.environments["comptime"] as { close?: () => Promise<void> } | undefined
-    )?.close?.();
-  }
+  await builder.buildApp();
+  if (!result) throw new Error("Vite did not return a client build result");
 
   const js: SnapshotJsModule[] = [];
   const css: SnapshotCssModule[] = [];
@@ -413,12 +417,9 @@ async function runCsslitProductionBuildIsolated(
 
 function compactSnapshotPath(value: string) {
   return normalizeSnapshotText(value)
-    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.module\.js)/g, "$1")
-    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1")
-    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.global\.css)/g, "$1")
+    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.json)/g, "$1")
     .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1")
-    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.module\.css)/g, "$1")
-    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.global\.css)/g, "$1")
+    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.json)/g, "$1")
     .replace(/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1");
 }
 

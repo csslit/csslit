@@ -20,7 +20,7 @@ test("production build emits csslit css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { "css_3_26": "sWdGZm_3_26" }.css_3_26;
+    var className = { css_3_26: "sWdGZm_3_26" }.css_3_26;
     export { className };
 
     # css
@@ -60,7 +60,7 @@ test("production build eval uses source transformed before csslit", async () => 
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { "css_4_26": "Emgz6f_4_26" }.css_4_26;
+    var className = { css_4_26: "Emgz6f_4_26" }.css_4_26;
     export { className };
 
     # css
@@ -102,7 +102,7 @@ test("production build eval imports use comptime transforms", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { "css_4_26": "Emgz6f_4_26" }.css_4_26;
+    var className = { css_4_26: "Emgz6f_4_26" }.css_4_26;
     export { className };
 
     # css
@@ -144,12 +144,12 @@ test("production build preserves global and scoped css source order", async () =
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var entry_ts_csslit_module_default = {
-    	"css_5_22": "bfSIGN_5_22",
-    	"css_13_23": "CBIdfI_13_23"
+    var entry_ts_csslit_default = {
+    \tcss_5_22: "bfSIGN_5_22",
+    \tcss_13_23: "CBIdfI_13_23"
     };
-    var first = entry_ts_csslit_module_default.css_5_22;
-    var second = entry_ts_csslit_module_default.css_13_23;
+    var first = entry_ts_csslit_default.css_5_22;
+    var second = entry_ts_csslit_default.css_13_23;
     export { first, second };
 
     # css
@@ -194,7 +194,7 @@ test("production build hoists csslit keyframes", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { "css_3_26": "sWdGZm_3_26" }.css_3_26;
+    var className = { css_3_26: "sWdGZm_3_26" }.css_3_26;
     export { className };
 
     # css

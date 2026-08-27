@@ -1,43 +1,43 @@
 import { compileCsslit, transformClient } from "@csslit/transform";
+import type { ClientTransformResult, CsslitEvalBlock } from "@csslit/transform";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import type { SourceMapInput as CssSourceMapInput } from "@jridgewell/trace-mapping";
 import { composeCssSourcemap } from "./compose-sourcemap.ts";
-import { createRunnableDevEnvironment, isRunnableDevEnvironment, normalizePath } from "vite";
-import type { BuildEnvironment, PluginOption, RunnableDevEnvironment, ViteDevServer } from "vite";
+import { createRunnableDevEnvironment, normalizePath } from "vite";
+import type {
+  BuildEnvironment,
+  Environment,
+  PluginOption,
+  RunnableDevEnvironment,
+  ViteBuilder,
+  ViteDevServer,
+} from "vite";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite/module-runner";
-import type { PluginContext, SourceMapInput } from "rolldown";
+import type {
+  PluginContext,
+  SourceMap,
+  SourceMapInput,
+  TransformPluginContext,
+  TransformResult,
+} from "rolldown";
 import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error.ts";
 import type { EvalDiagnostic, Location } from "./eval-error.ts";
 import { csslitComptimeBuildImportNormalizer } from "./import-normalizer.ts";
 
 interface EvalResult {
-  blocks: Array<
-    | {
-        kind: "scoped";
-        scopedName: string;
-        code: string;
-        mappingRuns?: number[];
-      }
-    | {
-        kind: "global";
-        code: string;
-        mappingRuns?: number[];
-      }
-  >;
+  blocks: CsslitEvalBlock[];
   errors: EvalDiagnostic[];
 }
 
 interface CsslitModuleMetadata {
-  eval: {
-    code: string;
-    map: SourceMapInput | null;
-  };
-  exports: Array<{
-    localName: string;
-    scopedName: string;
-  }>;
-  sourceMap: CssSourceMapInput | null;
+  result: ClientTransformResult;
+  sourceMap: SourceMapInput | null;
+}
+
+declare module "rolldown" {
+  interface CustomPluginOptions {
+    csslit?: CsslitModuleMetadata;
+  }
 }
 
 type LoadModule = PluginContext["load"];
@@ -135,13 +135,6 @@ function fileToDevUrl(file: string, config: { base: string; root: string }): str
   return config.base.endsWith("/") ? config.base.slice(0, -1) + url : config.base + url;
 }
 
-// Seed for every name csslit generates (class and keyframes hashes). Must never contain an
-// absolute path so builds reproduce across machines; files outside the Vite root keep their
-// ../ segments instead of falling back to the filesystem path.
-function hashFilename(file: string, root: string): string {
-  return path.posix.relative(root, file);
-}
-
 export type CsslitModuleType = "js" | "jsx" | "ts" | "tsx";
 
 export interface CsslitOptions {
@@ -159,20 +152,87 @@ const defaultModuleTypes: Record<string, CsslitModuleType> = {
 export default function csslit(options: CsslitOptions = {}): PluginOption {
   const moduleTypes = { ...defaultModuleTypes, ...options.moduleType };
 
-  const filterExtensions = Object.keys(moduleTypes).map(RegExp.escape).join("|");
+  const pattern = (extensions: string[]) => extensions.map(RegExp.escape).join("|");
+  const filterExtensions = pattern(Object.keys(moduleTypes));
+  const preExtensions = pattern(Object.keys(defaultModuleTypes));
+  const normalExtensions = Object.keys(moduleTypes).filter(
+    (extension) => !(extension in defaultModuleTypes),
+  );
 
-  let comptimeEnvironment: RunnableDevEnvironment | null = null;
+  let projectConfiguredBuilder = false;
+  let projectHasBuildApp = false;
+  let buildBuilder: ViteBuilder | null = null;
   let devServer: ViteDevServer | null = null;
   let loadClientModule: LoadModule | null = null;
+
+  function getComptimeEnvironment() {
+    const environment =
+      devServer?.environments["comptime"] ?? buildBuilder?.environments["comptime"];
+    return environment as RunnableDevEnvironment;
+  }
+
+  async function transformModule(
+    this: TransformPluginContext,
+    code: string,
+    id: string,
+  ): Promise<TransformResult> {
+    const config = this.environment.config;
+
+    const jsSourcemap =
+      config.command === "build"
+        ? !!config.build.sourcemap
+        : typeof config.dev.sourcemap === "boolean"
+          ? config.dev.sourcemap
+          : (config.dev.sourcemap?.js ?? true);
+
+    const cssSourcemap = config.command === "build" ? false : config.css.devSourcemap;
+
+    const ext = id.slice(id.lastIndexOf("."));
+    const moduleType = moduleTypes[ext]!;
+
+    const result = transformClient(code, {
+      cssFilename: path.posix.relative(config.root, id),
+      cssSourcemap,
+      filename: id,
+      importPath: normalizePath(id),
+      moduleType,
+      sourcemap: jsSourcemap,
+    });
+
+    if (!result) {
+      return null;
+    }
+
+    let sourceMap: SourceMap | null = null;
+    if (cssSourcemap) {
+      sourceMap = this.getCombinedSourcemap();
+      for (let i = 0; i < sourceMap.sources.length; i++) {
+        const source = sourceMap.sources[i];
+        if (source) sourceMap.sources[i] = fileToDevUrl(source, config);
+      }
+    }
+
+    return {
+      code: result.runtime.code,
+      map: result.runtime.map ?? null,
+      moduleType,
+      meta: {
+        csslit: {
+          result,
+          sourceMap,
+        },
+      },
+    };
+  }
 
   return [
     {
       name: "vite-plugin-csslit",
-      // Run before Vite's built-in source transforms so csslit receives the original source.
       enforce: "pre",
       sharedDuringBuild: true,
 
       config(config) {
+        projectConfiguredBuilder = Boolean(config.builder);
         config.builder ??= {};
         config.environments ??= {};
         const comptime = (config.environments["comptime"] ??= {});
@@ -192,24 +252,17 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           });
 
         comptime.build ??= {};
-        comptime.build.createEnvironment ??= (name, config) => {
-          const environment = createRunnableDevEnvironment(name, config, {
+        comptime.build.createEnvironment ??= (name, config) =>
+          createRunnableDevEnvironment(name, config, {
             runnerOptions: {
               hmr: false,
               sourcemapInterceptor: isWebContainer ? "prepareStackTrace" : undefined,
             },
-          });
-
-          (environment as unknown as BuildEnvironment).isBuilt = true;
-          comptimeEnvironment = environment;
-
-          return environment as unknown as BuildEnvironment;
-        };
+          }) as unknown as BuildEnvironment;
       },
 
       configureServer(viteServer: ViteDevServer) {
         devServer = viteServer;
-        comptimeEnvironment = viteServer.environments["comptime"] as RunnableDevEnvironment;
       },
 
       buildStart() {
@@ -218,101 +271,34 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
         }
       },
 
-      async buildApp(builder) {
-        const environment = builder.environments["comptime"];
-        if (environment && isRunnableDevEnvironment(environment)) {
-          comptimeEnvironment = environment;
-        }
-
-        try {
-          const builds = Object.entries(builder.environments)
-            .filter(([name, environment]) => name !== "comptime" && !environment.isBuilt)
-            .map(([, environment]) => builder.build(environment));
-
-          await Promise.all(builds);
-        } finally {
-          await comptimeEnvironment?.close();
-          comptimeEnvironment = null;
-          loadClientModule = null;
-        }
+      buildApp: {
+        order: "pre",
+        async handler(builder) {
+          buildBuilder = builder;
+        },
       },
 
       transform: {
         filter: {
-          id: new RegExp(`(?:${filterExtensions})$`),
+          id: new RegExp(`(?:${preExtensions})$`),
         },
-        async handler(code, id) {
-          const config = this.environment.config;
-          const jsSourcemap =
-            config.command === "build"
-              ? !!config.build.sourcemap
-              : typeof config.dev.sourcemap === "boolean"
-                ? config.dev.sourcemap
-                : (config.dev.sourcemap?.js ?? true);
-
-          // Vite does not emit CSS source maps in production builds (vitejs/vite#2830), so skip
-          // the CSS mapping work there entirely.
-          const cssSourcemap = config.command === "build" ? false : config.css.devSourcemap;
-
-          const ext = id.slice(id.lastIndexOf("."));
-          const moduleType = moduleTypes[ext]!;
-          const result = transformClient(code, {
-            cssFilename: hashFilename(id, config.root),
-            moduleImport: `${normalizePath(id)}.csslit.module.js`,
-            cssSourcemap,
-            filename: id,
-            moduleType,
-            sourcemap: jsSourcemap,
-          });
-          let sourceMap: CssSourceMapInput | null = null;
-          if (cssSourcemap) {
-            // Name the sources by their dev-server URL up front: the CSS map derived from this
-            // one is resolved both against the served module URL and, once Vite inlines it into
-            // the injected style tag, against the document URL, and the URL form resolves to the
-            // same location from either base.
-            const combined = this.getCombinedSourcemap();
-            sourceMap = {
-              ...combined,
-              sources: combined.sources.map((source) => source && fileToDevUrl(source, config)),
-            } as unknown as CssSourceMapInput;
-          }
-
-          return {
-            code: result.runtime.code,
-            map: result.runtime.map ?? null,
-            moduleType,
-            meta: {
-              csslit: {
-                eval: {
-                  code: result.eval.code,
-                  map: result.eval.map ?? null,
-                },
-                exports: result.runtime.exports,
-                sourceMap,
-              } satisfies CsslitModuleMetadata,
-            },
-          };
-        },
+        handler: transformModule,
       },
 
       resolveId: {
         filter: {
-          id: [/^virtual:csslit-eval-runtime$/, /\.(?:csslit\.module\.js|csslit\.css)$/],
+          id: [/^virtual:csslit-eval-runtime$/, /\.(?:csslit\.json|csslit\.css)$/],
         },
         async handler(source, importer) {
           if (source === "virtual:csslit-eval-runtime") {
             return "\0virtual:csslit-eval-runtime";
-          }
-
-          if (source.endsWith(".csslit.module.js")) {
-            const sourceId = source.slice(0, -".csslit.module.js".length);
+          } else if (source.endsWith(".csslit.json")) {
+            const sourceId = source.slice(0, -".csslit.json".length);
             const resolved = await this.resolve(sourceId, importer);
             return {
-              id: `${resolved!.id}.csslit.module.js`,
+              id: `${resolved!.id}.csslit.json`,
             };
-          }
-
-          if (source.endsWith(".csslit.css")) {
+          } else if (source.endsWith(".csslit.css")) {
             const sourceId = source.slice(0, -".csslit.css".length);
             const resolved = await this.resolve(sourceId, importer);
             return {
@@ -329,8 +315,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           id: [
             // oxlint-disable-next-line no-control-regex
             /^\0virtual:csslit-eval-runtime$/,
-            /\.csslit\.css$/,
-            /\.csslit\.module\.js$/,
+            /\.(?:csslit\.json|csslit\.css)$/,
             new RegExp(`(?:${filterExtensions})\\.csslit$`),
           ],
         },
@@ -341,7 +326,6 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             const evalSourceId = id.slice(0, -".csslit".length);
             let metadata: CsslitModuleMetadata;
 
-            // Link the virtual eval module to its source so Vite invalidates the runner cache.
             this.addWatchFile(evalSourceId);
 
             if (devServer) {
@@ -361,11 +345,11 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             }
 
             return {
-              code: metadata.eval.code,
-              map: metadata.eval.map,
+              code: metadata.result.eval.code,
+              map: metadata.result.eval.map,
             };
-          } else if (id.endsWith(".csslit.module.js")) {
-            const sourceId = id.slice(0, -".csslit.module.js".length);
+          } else if (id.endsWith(".csslit.json")) {
+            const sourceId = id.slice(0, -".csslit.json".length);
             let metadata: CsslitModuleMetadata;
 
             this.addWatchFile(sourceId);
@@ -380,7 +364,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             }
 
             const exports = Object.fromEntries(
-              metadata.exports.map((entry) => [
+              metadata.result.runtime.exports.map((entry) => [
                 entry.localName,
                 this.environment.name === "comptime"
                   ? `__csslit_class_${entry.scopedName}`
@@ -388,13 +372,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
               ]),
             );
 
-            return {
-              code:
-                this.environment.name === "comptime"
-                  ? `export default ${JSON.stringify(exports)};\n`
-                  : `import ${JSON.stringify(`${sourceId}.csslit.css`)};\nexport default ${JSON.stringify(exports)};\n`,
-              map: null,
-            };
+            return JSON.stringify(exports);
           } else if (id.endsWith(".csslit.css")) {
             const sourceId = id.slice(0, -".csslit.css".length);
             const sourceFile = sourceId;
@@ -405,7 +383,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             this.addWatchFile(sourceId);
             metadata = this.getModuleInfo(sourceId)!.meta["csslit"] as CsslitModuleMetadata;
 
-            const runnerEnvironment = comptimeEnvironment!;
+            const runnerEnvironment = getComptimeEnvironment();
 
             const runner = runnerEnvironment.runner;
 
@@ -457,13 +435,9 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
               });
             }
 
-            // The filename seeds the keyframes hashes, so it takes the stable name rather than
-            // the dev URL. The composed map never surfaces it as a source: composeCssSourcemap
-            // replaces every source with the ones traced through the source module's own map,
-            // leaving only the file field.
             const compiled = compileCsslit({
               blocks: result.blocks,
-              filename: hashFilename(sourceId, this.environment.config.root),
+              filename: path.posix.relative(this.environment.config.root, sourceId),
               sourcemap: metadata.sourceMap !== null,
             });
 
@@ -471,10 +445,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
               code: compiled.code,
               map:
                 compiled.map && metadata.sourceMap
-                  ? (composeCssSourcemap(
-                      compiled.map as unknown as CssSourceMapInput,
-                      metadata.sourceMap,
-                    ) as unknown as SourceMapInput)
+                  ? composeCssSourcemap(compiled.map, metadata.sourceMap)
                   : (compiled.map ?? null),
               moduleType: "css",
             };
@@ -484,6 +455,67 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
         },
       },
     },
+
+    normalExtensions.length > 0 && {
+      name: "vite-plugin-csslit-lowered",
+      sharedDuringBuild: true,
+      transform: {
+        filter: {
+          id: new RegExp(`(?:${pattern(normalExtensions)})$`),
+        },
+        handler: transformModule,
+      },
+    },
+
     csslitComptimeBuildImportNormalizer(),
+
+    {
+      name: "vite-plugin-csslit-build",
+      sharedDuringBuild: true,
+
+      config: {
+        order: "post",
+        handler(config) {
+          projectHasBuildApp = typeof config.builder?.buildApp === "function";
+        },
+      },
+
+      buildApp: {
+        order: "post",
+        async handler(builder) {
+          try {
+            if (!projectHasBuildApp) {
+              const legacyEnvironment = builder.config.build.ssr ? "ssr" : "client";
+              await Promise.all(
+                Object.entries(builder.environments)
+                  .filter(
+                    ([name, environment]) =>
+                      name !== "comptime" &&
+                      !environment.isBuilt &&
+                      (projectConfiguredBuilder || name === legacyEnvironment),
+                  )
+                  .map(([, environment]) => builder.build(environment)),
+              );
+            }
+
+            if (builder.environments["comptime"]?.isBuilt) {
+              throw new Error(
+                "csslit's `comptime` environment was built as an app output. It exists only to " +
+                  "evaluate css templates at compile time and has no entry. The project's " +
+                  "`builder.buildApp` builds every registered environment; build the ones it needs " +
+                  "by name instead.",
+              );
+            }
+          } finally {
+            const environment = builder.environments[
+              "comptime"
+            ] as Environment as RunnableDevEnvironment;
+            await environment.close();
+            buildBuilder = null;
+            loadClientModule = null;
+          }
+        },
+      },
+    },
   ];
 }

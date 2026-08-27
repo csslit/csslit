@@ -21,7 +21,7 @@ export default defineConfig({
       _napi_build_esm: {
         command: [
           "napi build --platform --esm --release --js index.js --dts index.d.ts -o dist -- -q",
-          "node scripts/patch-loader.mjs",
+          "node scripts/patch-loader.ts",
         ],
         dependsOn: ["clean"],
         cache: false,

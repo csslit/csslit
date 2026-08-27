@@ -25,7 +25,6 @@ export default defineConfig({
           "_check_cargo_check",
           "_check_cargo_test",
           "tests#check",
-          "@csslit/typescript-plugin#check",
           "csslit-vscode#check",
         ],
       },
@@ -54,7 +53,7 @@ export default defineConfig({
   },
   test: {
     include: [],
-    projects: ["./tests", "./packages/typescript-plugin"],
+    projects: ["./tests", "./vscode"],
   },
   lint: {
     plugins: ["import"],
@@ -67,6 +66,7 @@ export default defineConfig({
       "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
       "import/extensions": ["error", "ignorePackages", { checkTypeImports: true }],
       "eslint/no-unused-expressions": "off",
+      "eslint/no-empty-pattern": "off",
       "typescript/consistent-type-imports": "error",
     },
   },
