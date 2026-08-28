@@ -52,9 +52,10 @@ export default defineConfig({
       },
       release: {
         command: [
-          "napi create-npm-dirs",
-          "napi artifacts --output-dir artifacts --build-output-dir artifacts/wasm32-wasip1-threads --npm-dir npm",
-          "napi pre-publish --npm-dir npm --dry-run",
+          'node -e \'fs.copyFileSync("package.json", "artifacts/package.json")\'',
+          "napi create-npm-dirs --package-json-path artifacts/package.json --npm-dir artifacts/npm",
+          "napi artifacts --package-json-path artifacts/package.json --output-dir artifacts --build-output-dir artifacts/wasm32-wasip1-threads --npm-dir artifacts/npm",
+          "napi pre-publish --package-json-path artifacts/package.json --npm-dir artifacts/npm --dry-run",
         ],
         dependsOn: [
           "clean",
