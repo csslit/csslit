@@ -1,6 +1,7 @@
 import { execSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createVSIX } from "@vscode/vsce";
 
 // vsce follows the @csslit/typescript-plugin workspace symlink out into the whole monorepo, so
@@ -18,8 +19,9 @@ const pluginVersion = JSON.parse(
 ).version;
 
 mkdirSync("dist/dist/licenses", { recursive: true });
-copyFileSync("../node_modules/typescript/LICENSE", "dist/dist/licenses/typescript.txt");
-copyFileSync("../node_modules/typescript/NOTICE.txt", "dist/dist/licenses/typescript-notice.txt");
+const typescriptRoot = dirname(fileURLToPath(import.meta.resolve("typescript/package.json")));
+copyFileSync(resolve(typescriptRoot, "LICENSE"), "dist/dist/licenses/typescript.txt");
+copyFileSync(resolve(typescriptRoot, "NOTICE.txt"), "dist/dist/licenses/typescript-notice.txt");
 
 copyFileSync("ARCHITECTURE.md", "dist/ARCHITECTURE.md");
 copyFileSync("LICENSE", "dist/LICENSE");
