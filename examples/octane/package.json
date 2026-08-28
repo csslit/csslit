@@ -1,0 +1,23 @@
+{
+  "name": "example-octane",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp build",
+    "dev": "vp dev",
+    "typecheck": "tsrx-tsc --noEmit"
+  },
+  "dependencies": {
+    "@csslit/core": "^0.0.7",
+    "octane": "0.1.19"
+  },
+  "devDependencies": {
+    "@csslit/typescript-plugin": "^0.0.1",
+    "@csslit/vite-plugin": "^0.0.7",
+    "@octanejs/vite-plugin": "0.1.19",
+    "@tsrx/typescript-plugin": "^0.3.110",
+    "typescript": "^6.0.3",
+    "vite": "^8.2.2",
+    "vite-plus": "^0.3.0"
+  }
+}

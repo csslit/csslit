@@ -43,8 +43,9 @@ const languageSelector: DocumentSelector = [
   { language: "javascriptreact" },
   { language: "typescript" },
   { language: "typescriptreact" },
-  // The generic TSRX extension retains `ripple` as its historical VS Code language ID.
+  // TSRX used `ripple` before switching to `tsrx`; support both extension generations.
   { language: "ripple" },
+  { language: "tsrx" },
   { language: "vue" },
   { language: "mdx" },
 ];

@@ -4,24 +4,27 @@
   "type": "module",
   "dependencies": {
     "@csslit/core": "^0.0.7",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@csslit/vite-plugin": "^0.0.7",
     "@octanejs/vite-plugin": "^0.1.19",
-    "@tsrx/vite-plugin-preact": "^0.0.69",
-    "@tsrx/vite-plugin-react": "^0.0.76",
-    "@tsrx/vite-plugin-solid": "^0.0.75",
-    "@types/node": "^26.1.1",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
+    "@solidjs/vite-plugin": "^3.0.0-next.34",
+    "@solidjs/web": "^2.0.0-rc.3",
+    "@tsrx/vite-plugin-preact": "^0.0.88",
+    "@tsrx/vite-plugin-react": "^0.0.96",
+    "@tsrx/vite-plugin-solid": "^0.0.93",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.0.3",
     "octane": "^0.1.19",
-    "playwright": "^1.61.1",
+    "oxfmt": "^0.65.0",
+    "playwright": "^1.62.1",
+    "solid-js": "^2.0.0-rc.3",
     "typescript": "^7.0.2",
-    "vite": "^8.1.5",
-    "vite-plugin-solid": "^2.11.13",
-    "vite-plus": "^0.2.5"
+    "vite": "^8.2.2",
+    "vite-plus": "^0.3.0"
   }
 }

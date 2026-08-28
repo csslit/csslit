@@ -1,0 +1,19 @@
+{
+  "tsrx": {
+    "compiler": "octane/compiler/volar"
+  },
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "octane",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["vite/client"],
+    "plugins": [{ "name": "@csslit/typescript-plugin" }, { "name": "@tsrx/typescript-plugin" }]
+  },
+  "include": ["src"]
+}

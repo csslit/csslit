@@ -66,6 +66,12 @@ The Vite plugin replaces the template with a generated class name and emits the 
 
 The same class string can be used anywhere that accepts a class name; csslit is not tied to React.
 
+## Examples
+
+Minimal TypeScript examples for React, Preact, Solid, Vue, Octane, and React Router Framework Mode
+live in [`examples`](./examples). Each example has runnable development and production-build tasks,
+and every production build is included in the repository check.
+
 ### Interpolate build-time values
 
 Interpolations are real JavaScript expressions evaluated while Vite builds your application:

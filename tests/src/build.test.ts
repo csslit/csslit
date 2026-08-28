@@ -145,8 +145,8 @@ test("production build preserves global and scoped css source order", async () =
     "
     # js
     var entry_ts_csslit_default = {
-    \tcss_5_22: "bfSIGN_5_22",
-    \tcss_13_23: "CBIdfI_13_23"
+      css_5_22: "bfSIGN_5_22",
+      css_13_23: "CBIdfI_13_23",
     };
     var first = entry_ts_csslit_default.css_5_22;
     var second = entry_ts_csslit_default.css_13_23;

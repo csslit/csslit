@@ -40,20 +40,24 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     import { theme } from "/src/theme.ts";
     const key = "tone";
     const fallback = "hotpink";
-    const { [key]: tone = fallback, nested: { border }, ...rest } = theme;
+    const {
+      [key]: tone = fallback,
+      nested: { border },
+      ...rest
+    } = theme;
     export const className = __css_module_import.css_8_26;
 
     # js /src/entry.ts.csslit.json
     export const css_8_26 = "duOygv_8_26";
     export default {
-      css_8_26
+      css_8_26,
     };
 
     # js /src/theme.ts
     export const theme = {
-    	tone: undefined,
-    	nested: { border: "2px" },
-    	opacity: .5
+      tone: undefined,
+      nested: { border: "2px" },
+      opacity: 0.5,
     };
 
     # css /src/entry.ts.csslit.css
@@ -96,18 +100,18 @@ test("destructuring closures observe incrementally initialized bindings", async 
     import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     const { a, b, c } = comptime({
-    	a: 1,
-    	b: () => a,
-    	get c() {
-    		return a;
-    	}
+      a: 1,
+      b: () => a,
+      get c() {
+        return a;
+      },
     });
     export const className = __css_module_import.css_11_26;
 
     # js /src/entry.ts.csslit.json
     export const css_11_26 = "fa9j5o_11_26";
     export default {
-      css_11_26
+      css_11_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -143,15 +147,15 @@ test("css literal reads from enclosing function scope", async () => {
     import __css_module_import from "/src/entry.ts.csslit.json?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const makeStyles = () => {
-    	const base = "hotpink";
-    	return __css_module_import.css_5_10;
+      const base = "hotpink";
+      return __css_module_import.css_5_10;
     };
     export const className = makeStyles();
 
     # js /src/entry.ts.csslit.json
     export const css_5_10 = "KQe9MU_5_10";
     export default {
-      css_5_10
+      css_5_10,
     };
 
     # css /src/entry.ts.csslit.css
@@ -192,12 +196,12 @@ test("imported function can be called directly in interpolation", async () => {
     # js /src/entry.ts.csslit.json
     export const css_4_26 = "Emgz6f_4_26";
     export default {
-      css_4_26
+      css_4_26,
     };
 
     # js /src/theme.ts
     export function pickColor() {
-    	return "hotpink";
+      return "hotpink";
     }
 
     # css /src/entry.ts.csslit.css
@@ -241,12 +245,12 @@ test("comptime allows function call in binding position", async () => {
     # js /src/entry.ts.csslit.json
     export const css_6_26 = "jEYTtU_6_26";
     export default {
-      css_6_26
+      css_6_26,
     };
 
     # js /src/theme.ts
     export function pickColor() {
-    	return "hotpink";
+      return "hotpink";
     }
 
     # css /src/entry.ts.csslit.css
@@ -280,7 +284,7 @@ test("array literal can be used in direct interpolation", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -314,7 +318,7 @@ test("object literal can be used in direct interpolation", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -350,7 +354,7 @@ test("css literal compiles to static css", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -395,7 +399,7 @@ test("css literal resolves inline module dependencies", async () => {
     # js /src/entry.ts.csslit.json
     export const css_4_26 = "Emgz6f_4_26";
     export default {
-      css_4_26
+      css_4_26,
     };
 
     # js /src/theme.ts
@@ -443,7 +447,7 @@ test("css class binding can be interpolated into another selector", async () => 
     export const css_7_24 = "DRMsbv_7_24";
     export default {
       css_3_18,
-      css_7_24
+      css_7_24,
     };
 
     # css /src/entry.ts.csslit.css
@@ -498,7 +502,7 @@ test("css class binding is rewritten inside selector functions", async () => {
     export const css_7_22 = "IZXOSV_7_22";
     export default {
       css_3_18,
-      css_7_22
+      css_7_22,
     };
 
     # css /src/entry.ts.csslit.css
@@ -546,7 +550,7 @@ test("imported css class binding can be interpolated into another selector", asy
     # js /src/base.ts.csslit.json
     export const css_3_21 = "Gv5Jmv_3_21";
     export default {
-      css_3_21
+      css_3_21,
     };
 
     # js /src/entry.ts
@@ -559,7 +563,7 @@ test("imported css class binding can be interpolated into another selector", asy
     # js /src/entry.ts.csslit.json
     export const css_4_22 = "ndlkXZ_4_22";
     export default {
-      css_4_22
+      css_4_22,
     };
 
     # css /src/base.ts.csslit.css
@@ -608,7 +612,7 @@ test("css expressions in conditional bindings emit matching css module keys", as
     export const css_6_5 = "aCPqv4_6_5";
     export default {
       css_4_32,
-      css_6_5
+      css_6_5,
     };
 
     # css /src/entry.ts.csslit.css
@@ -661,7 +665,7 @@ test("css eval uses source transformed before csslit", async () => {
     # js /src/entry.ts.csslit.json
     export const css_4_26 = "Emgz6f_4_26";
     export default {
-      css_4_26
+      css_4_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -705,7 +709,7 @@ test("css and global css preserve source order in one stylesheet", async () => {
     export const css_9_23 = "QwLZRx_9_23";
     export default {
       css_3_22,
-      css_9_23
+      css_9_23,
     };
 
     # css /src/entry.ts.csslit.css
@@ -755,7 +759,7 @@ test("global keyframes remain global and ordered with scoped css", async () => {
     # js /src/entry.ts.csslit.json
     export const css_7_26 = "KjbIcR_7_26";
     export default {
-      css_7_26
+      css_7_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -804,7 +808,7 @@ test("css literal hoists and scopes keyframes", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -849,7 +853,7 @@ test("conditional keyframes preserve their media condition", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -902,7 +906,7 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
     export const css_8_23 = "nOVgim_8_23";
     export default {
       css_3_22,
-      css_8_23
+      css_8_23,
     };
 
     # css /src/entry.ts.csslit.css
@@ -955,7 +959,7 @@ test("css literals preserve custom property references", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -994,7 +998,7 @@ test("new, tagged template, and sequence expressions evaluate in interpolations"
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -1030,7 +1034,7 @@ test("css template nested directly in an interpolation becomes its class name", 
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -1073,7 +1077,7 @@ test("css nested in a closure is evaluated independently", async () => {
     # js /src/entry.ts.csslit.json
     export const css_3_26 = "sWdGZm_3_26";
     export default {
-      css_3_26
+      css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -1115,7 +1119,7 @@ test("ambient functions are treated as globals", async () => {
     # js /src/entry.ts.csslit.json
     export const css_5_26 = "SefWTx_5_26";
     export default {
-      css_5_26
+      css_5_26,
     };
 
     # css /src/entry.ts.csslit.css
@@ -1172,21 +1176,17 @@ test("closures in interpolations evaluate with outer constants and local state",
     const scale = (value) => value * 4;
     export const className = __css_module_import.css_6_26;
     function offset(value) {
-    	return value + 1;
+      return value + 1;
     }
 
     # js /src/entry.ts.csslit.json
     export const css_6_26 = "jEYTtU_6_26";
     export default {
-      css_6_26
+      css_6_26,
     };
 
     # js /src/theme.ts
-    export const sizes = [
-    	1,
-    	2,
-    	3
-    ];
+    export const sizes = [1, 2, 3];
 
     # css /src/entry.ts.csslit.css
     .jEYTtU_6_26 {

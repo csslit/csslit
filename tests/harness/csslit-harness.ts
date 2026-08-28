@@ -3,8 +3,8 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, TestRunner } from "vite-plus/test";
 import { buildErrorMessage, createBuilder, createServer, normalizePath } from "vite";
-import type { PluginOption, ViteBuilder } from "vite";
-import type { RollupError, RolldownOutput } from "rolldown";
+import type { PluginOption, Rolldown, ViteBuilder } from "vite";
+import { format } from "oxfmt";
 import csslit from "@csslit/vite-plugin";
 import type { CsslitModuleType } from "@csslit/vite-plugin";
 
@@ -239,7 +239,7 @@ function formatError(error: unknown) {
     return String(error);
   }
 
-  return buildErrorMessage(error as RollupError, [`error: ${error.message}`], false);
+  return buildErrorMessage(error as Rolldown.RollupError, [`error: ${error.message}`], false);
 }
 
 let runCsslitCaseQueue: Promise<unknown> = Promise.resolve();
@@ -392,7 +392,7 @@ async function runCsslitProductionBuildIsolated(
   const js: SnapshotJsModule[] = [];
   const css: SnapshotCssModule[] = [];
 
-  for (const entry of (Array.isArray(result) ? result : [result]) as RolldownOutput[]) {
+  for (const entry of (Array.isArray(result) ? result : [result]) as Rolldown.RolldownOutput[]) {
     for (const output of entry.output) {
       if (output.type === "chunk") {
         js.push({
@@ -448,7 +448,7 @@ export async function build(input: HarnessCase) {
 
 export async function buildSnapshot(input: HarnessCase) {
   const result = await build(input);
-  return new CsslitSnapshotReport(result);
+  return new CsslitSnapshotReport(await formatSnapshotJavaScript(result));
 }
 
 export async function buildErrorSnapshot(input: HarnessCase) {
@@ -470,5 +470,28 @@ export async function buildProduction(input: HarnessCase) {
 
 export async function buildProductionSnapshot(input: HarnessCase) {
   const result = await buildProduction(input);
-  return new CsslitSnapshotReport(result);
+  return new CsslitSnapshotReport(await formatSnapshotJavaScript(result));
+}
+
+async function formatSnapshotJavaScript(report: CsslitSnapshotReportData) {
+  const js = await Promise.all(
+    (report.js ?? []).map(async (module) => {
+      const result = await format("snapshot.js", stripSourceMapComment(module.code), {
+        tabWidth: 2,
+        useTabs: false,
+      });
+      if (result.errors.length > 0) {
+        throw new Error(
+          `Oxfmt failed for ${module.id ?? "snapshot.js"}:\n${result.errors.map((error) => error.message).join("\n")}`,
+        );
+      }
+
+      return { ...module, code: result.code };
+    }),
+  );
+
+  return {
+    ...report,
+    js: js.length > 0 ? js : undefined,
+  };
 }

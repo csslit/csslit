@@ -1,5 +1,7 @@
 {
   "oxc.typeAware": true,
   "oxc.configPath": "vite.config.ts",
-  "oxc.path.oxlint": ".vscode/vite-plus-oxlint.mjs"
+  "oxc.path.oxlint": ".vscode/vite-plus-oxlint.mjs",
+  "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
 }

@@ -54,8 +54,9 @@ extensions; duplicating those plugins in `tsconfig.json` would change the topolo
 The `languages` array on the extension's `typescriptServerPlugins` contribution is separate from
 loading the plugin: it is what makes VS Code's built-in TypeScript extension manage documents of
 those languages, and declare their extensions to tsserver. That list is a union across every
-installed extension's contribution, so a language already declared by its own extension needs
-nothing from csslit.
+installed extension's contribution. CSSlit declares both the historical `ripple` ID and the current
+`tsrx` ID because TSRX's own VS Code integration registers that language by patching the built-in
+TypeScript extension at runtime, which can fail when VS Code's bundled extension changes.
 
 `css` bodies are wrapped in a rule while `css.global` bodies remain stylesheets. Holes are
 replaced with small context-dependent placeholders. A sparse mapping records only text

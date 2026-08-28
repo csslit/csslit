@@ -6,7 +6,7 @@ import {
 } from "@jridgewell/gen-mapping";
 import { TraceMap, decodedMappings, eachMapping } from "@jridgewell/trace-mapping";
 import type { SourceMapInput as CssSourceMapInput } from "@jridgewell/trace-mapping";
-import type { SourceMap, SourceMapInput } from "rolldown";
+import type { Rolldown } from "vite";
 
 /**
  * Composes the compiled CSS map onto the source module's own map.
@@ -17,7 +17,10 @@ import type { SourceMap, SourceMapInput } from "rolldown";
  * copy the template contents verbatim, which makes the nearest earlier segment a sound anchor:
  * trace through it and reapply the traced position's distance from it.
  */
-export function composeCssSourcemap(cssMap: SourceMapInput, sourceMap: SourceMapInput): SourceMap {
+export function composeCssSourcemap(
+  cssMap: Rolldown.SourceMapInput,
+  sourceMap: Rolldown.SourceMapInput,
+): Rolldown.SourceMap {
   const css = new TraceMap(cssMap as CssSourceMapInput);
   const source = new TraceMap(sourceMap as CssSourceMapInput);
   const sourceMappings = decodedMappings(source);
@@ -57,5 +60,5 @@ export function composeCssSourcemap(cssMap: SourceMapInput, sourceMap: SourceMap
     if (content != null) setSourceContent(gen, name, content);
   });
 
-  return toEncodedMap(gen) as SourceMap;
+  return toEncodedMap(gen) as Rolldown.SourceMap;
 }

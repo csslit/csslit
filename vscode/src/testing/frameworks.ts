@@ -34,10 +34,10 @@ const tsrx: Framework = {
   fileExtension: ".tsrx",
   serveWebPortOffset: 1,
   integration: {
-    installExtension: "ripple-ts.ripple-ts-vscode-plugin@2.0.61",
+    installExtension: "tsrx.tsrx-vscode-plugin@2.0.78",
     tsserverPlugin: "@tsrx/typescript-plugin",
     harness: {
-      activateExtension: "ripple-ts.ripple-ts-vscode-plugin",
+      activateExtension: "tsrx.tsrx-vscode-plugin",
       expectedFrameworkPlugin: "@tsrx/typescript-plugin",
     },
     workspacePlugins: [{ name: "@csslit/typescript-plugin" }, { name: "@tsrx/typescript-plugin" }],

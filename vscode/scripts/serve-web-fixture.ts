@@ -90,9 +90,9 @@ if (import.meta.filename === process.argv[1]) {
 
   for (const { framework } of serveWebTargets) {
     const { extensionsDir, workspaceDir, file } = serveWebFixture(framework);
+    rmSync(extensionsDir, { recursive: true, force: true });
     mkdirSync(extensionsDir, { recursive: true });
     mkdirSync(workspaceDir, { recursive: true });
-    rmSync(join(extensionsDir, "extensions.json"), { force: true });
     writeFileSync(
       join(workspaceDir, "tsconfig.json"),
       `${JSON.stringify(

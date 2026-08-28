@@ -2,6 +2,7 @@
   "name": "csslit-monorepo",
   "private": true,
   "workspaces": [
+    "examples/*",
     "packages/*",
     "playground",
     "tests",
@@ -13,12 +14,36 @@
     "test": "vp run -r test"
   },
   "devDependencies": {
-    "@types/node": "^26.1.1",
-    "typescript": "^7.0.2",
-    "vite-plus": "^0.2.5"
+    "@tsrx/typescript-plugin": "^0.3.128",
+    "@types/node": "^26.4.0",
+    "typescript": "^6.0.3",
+    "vite-plus": "^0.3.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+    "vitest": "4.1.11"
   },
   "engines": {
-    "node": ">=24.11.0"
+    "node": "^26"
   },
-  "packageManager": "npm@12.0.1"
+  "packageManager": "npm@12.0.1",
+  "packageExtensions": {
+    "@tsrx/solid": {
+      "peerDependencies": {
+        "@solidjs/web": "^2.0.0-rc.3",
+        "solid-js": "^2.0.0-rc.3"
+      }
+    },
+    "@tsrx/solid-runtime": {
+      "peerDependencies": {
+        "@solidjs/web": "^2.0.0-rc.3",
+        "solid-js": "^2.0.0-rc.3"
+      }
+    },
+    "@tsrx/typescript-plugin": {
+      "peerDependencies": {
+        "typescript": "*"
+      }
+    }
+  }
 }

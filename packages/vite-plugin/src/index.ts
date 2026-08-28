@@ -3,23 +3,17 @@ import type { ClientTransformResult, CsslitEvalBlock } from "@csslit/transform";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { composeCssSourcemap } from "./compose-sourcemap.ts";
-import { createRunnableDevEnvironment, normalizePath } from "vite";
+import { BuildEnvironment, createRunnableDevEnvironment, normalizePath } from "vite";
 import type {
-  BuildEnvironment,
   Environment,
   PluginOption,
+  ResolvedConfig,
+  Rolldown,
   RunnableDevEnvironment,
   ViteBuilder,
   ViteDevServer,
 } from "vite";
 import type { EvaluatedModuleNode, EvaluatedModules } from "vite/module-runner";
-import type {
-  PluginContext,
-  SourceMap,
-  SourceMapInput,
-  TransformPluginContext,
-  TransformResult,
-} from "rolldown";
 import { buildCsslitError, buildCsslitEvaluationError } from "./eval-error.ts";
 import type { EvalDiagnostic, Location } from "./eval-error.ts";
 import { csslitComptimeBuildImportNormalizer } from "./import-normalizer.ts";
@@ -31,16 +25,10 @@ interface EvalResult {
 
 interface CsslitModuleMetadata {
   result: ClientTransformResult;
-  sourceMap: SourceMapInput | null;
+  sourceMap: Rolldown.SourceMapInput | null;
 }
 
-declare module "rolldown" {
-  interface CustomPluginOptions {
-    csslit?: CsslitModuleMetadata;
-  }
-}
-
-type LoadModule = PluginContext["load"];
+type LoadModule = Rolldown.PluginContext["load"];
 
 const csslitEvalRuntimeCode = readFileSync(new URL("./eval-runtime.js", import.meta.url), "utf8");
 const isWebContainer = !!process.versions["webcontainer"];
@@ -172,10 +160,10 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
   }
 
   async function transformModule(
-    this: TransformPluginContext,
+    this: Rolldown.TransformPluginContext,
     code: string,
     id: string,
-  ): Promise<TransformResult> {
+  ): Promise<Rolldown.TransformResult> {
     const config = this.environment.config;
 
     const jsSourcemap =
@@ -203,7 +191,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
       return null;
     }
 
-    let sourceMap: SourceMap | null = null;
+    let sourceMap: Rolldown.SourceMap | null = null;
     if (cssSourcemap) {
       sourceMap = this.getCombinedSourcemap();
       for (let i = 0; i < sourceMap.sources.length; i++) {
@@ -236,6 +224,13 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
         config.builder ??= {};
         config.environments ??= {};
         const comptime = (config.environments["comptime"] ??= {});
+        const createComptimeBuildEnvironment = (name: string, config: ResolvedConfig) =>
+          createRunnableDevEnvironment(name, config, {
+            runnerOptions: {
+              hmr: false,
+              sourcemapInterceptor: isWebContainer ? "prepareStackTrace" : undefined,
+            },
+          }) as unknown as BuildEnvironment;
 
         comptime.consumer ??= "server";
         comptime.isBundled ??= false;
@@ -252,13 +247,15 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           });
 
         comptime.build ??= {};
-        comptime.build.createEnvironment ??= (name, config) =>
-          createRunnableDevEnvironment(name, config, {
-            runnerOptions: {
-              hmr: false,
-              sourcemapInterceptor: isWebContainer ? "prepareStackTrace" : undefined,
-            },
-          }) as unknown as BuildEnvironment;
+        comptime.build.createEnvironment ??= createComptimeBuildEnvironment;
+
+        config.build ??= {};
+        const createBuildEnvironment = config.build.createEnvironment;
+        config.build.createEnvironment = (name, resolvedConfig) =>
+          name === "comptime"
+            ? createComptimeBuildEnvironment(name, resolvedConfig)
+            : (createBuildEnvironment?.(name, resolvedConfig) ??
+              new BuildEnvironment(name, resolvedConfig));
       },
 
       configureServer(viteServer: ViteDevServer) {

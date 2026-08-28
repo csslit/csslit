@@ -46,6 +46,11 @@ export async function activate(): Promise<void> {
       expectedFrameworkPlugin: init.expectedFrameworkPlugin,
     },
   });
+  await vscode.commands.executeCommand(
+    "_csslit.getVirtualCss",
+    document.uri,
+    document.positionAt(0),
+  );
 
   for await (const line of requests) {
     const request = JSON.parse(line) as HarnessRequest;
