@@ -2,11 +2,6 @@
   "name": "example-octane",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "vp build",
-    "dev": "vp dev",
-    "typecheck": "tsrx-tsc --noEmit"
-  },
   "dependencies": {
     "@csslit/core": "^0.0.8",
     "octane": "0.1.19"

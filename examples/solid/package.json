@@ -2,11 +2,6 @@
   "name": "example-solid",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "vp build",
-    "dev": "vp dev",
-    "typecheck": "tsc --noEmit"
-  },
   "dependencies": {
     "@csslit/core": "^0.0.8",
     "@solidjs/web": "^2.0.0-rc.3",

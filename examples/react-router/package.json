@@ -2,11 +2,6 @@
   "name": "example-react-router",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "react-router build",
-    "dev": "react-router dev",
-    "typecheck": "react-router typegen && tsc --noEmit"
-  },
   "dependencies": {
     "@csslit/core": "^0.0.8",
     "isbot": "^5.2.2",

@@ -1,9 +1,14 @@
+import mdx from "@mdx-js/rollup";
 import csslit from "@csslit/vite-plugin";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite-plus";
 
 export default defineConfig({
-  plugins: [csslit(), react()],
+  plugins: [
+    { enforce: "pre", ...mdx() },
+    csslit({ moduleType: { ".mdx": "js" } }),
+    react({ include: /\.(js|jsx|md|mdx|ts|tsx)$/ }),
+  ],
   run: {
     tasks: {
       build: {

@@ -18,25 +18,12 @@ export default defineConfig({
       _check_cargo_test: {
         command: "cargo test -q",
       },
-      _check_examples: {
-        command: [
-          "npm run build --workspace=example-octane --workspace=example-preact --workspace=example-react --workspace=example-react-router --workspace=example-solid --workspace=example-vue",
-          "npm run typecheck --if-present --workspace=example-octane --workspace=example-preact --workspace=example-react --workspace=example-react-router --workspace=example-solid --workspace=example-vue",
-        ],
-        dependsOn: ["@csslit/core#build", "@csslit/vite-plugin#build"],
-        output: [
-          "examples/*/dist/**",
-          "examples/react-router/.react-router/types/**",
-          "examples/react-router/build/**",
-        ],
-      },
       check: {
         command: "echo check complete",
         dependsOn: [
           "_check_vp_lint",
           "_check_cargo_check",
           "_check_cargo_test",
-          "_check_examples",
           "tests#check",
           "csslit-vscode#check",
         ],

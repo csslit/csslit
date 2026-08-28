@@ -1,5 +1,5 @@
 {
-  "name": "example-react",
+  "name": "example-mdx",
   "private": true,
   "type": "module",
   "dependencies": {
@@ -8,7 +8,11 @@
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@csslit/typescript-plugin": "^0.0.8",
     "@csslit/vite-plugin": "^0.0.8",
+    "@mdx-js/rollup": "^3.1.1",
+    "@mdx-js/typescript-plugin": "^0.1.3",
+    "@types/mdx": "^2.0.14",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.0.3",
