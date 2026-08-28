@@ -8,11 +8,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@csslit/core": "^0.0.7",
+    "@csslit/core": "^0.0.8",
     "preact": "^10.29.8"
   },
   "devDependencies": {
-    "@csslit/vite-plugin": "^0.0.7",
+    "@csslit/vite-plugin": "^0.0.8",
     "@preact/preset-vite": "^2.10.6",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",

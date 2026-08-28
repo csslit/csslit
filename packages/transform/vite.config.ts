@@ -46,7 +46,7 @@ export default defineConfig({
       },
       _napi_build_wasi: {
         command:
-          "napi build --target wasm32-wasip1-threads --platform --esm --release --js index.js --dts index.d.ts -o artifacts/wasm32-wasip1-threads -- -q",
+          "napi build --target wasm32-wasip1-threads --platform --esm --release --js index.js --dts index.d.cts -o artifacts/wasm32-wasip1-threads -- -q",
         dependsOn: ["clean"],
         cache: false,
       },

@@ -17,7 +17,7 @@
   "type": "module",
   "main": "./dist/extension.js",
   "dependencies": {
-    "@csslit/typescript-plugin": "^0.0.1"
+    "@csslit/typescript-plugin": "^0.0.8"
   },
   "devDependencies": {
     "@mdx-js/typescript-plugin": "^0.1.3",

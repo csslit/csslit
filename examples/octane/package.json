@@ -8,12 +8,12 @@
     "typecheck": "tsrx-tsc --noEmit"
   },
   "dependencies": {
-    "@csslit/core": "^0.0.7",
+    "@csslit/core": "^0.0.8",
     "octane": "0.1.19"
   },
   "devDependencies": {
-    "@csslit/typescript-plugin": "^0.0.1",
-    "@csslit/vite-plugin": "^0.0.7",
+    "@csslit/typescript-plugin": "^0.0.8",
+    "@csslit/vite-plugin": "^0.0.8",
     "@octanejs/vite-plugin": "0.1.19",
     "@tsrx/typescript-plugin": "^0.3.110",
     "typescript": "^6.0.3",
