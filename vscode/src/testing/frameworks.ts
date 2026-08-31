@@ -38,7 +38,7 @@ const tsrx: Framework = {
     tsserverPlugin: "@tsrx/typescript-plugin",
     harness: {
       activateExtension: "tsrx.tsrx-vscode-plugin",
-      expectedFrameworkPlugin: "@tsrx/typescript-plugin",
+      expectedFrameworkPlugin: { name: "@tsrx/typescript-plugin", position: "after" },
     },
     workspacePlugins: [{ name: "@csslit/typescript-plugin" }, { name: "@tsrx/typescript-plugin" }],
   },
@@ -55,7 +55,7 @@ const vue: Framework = {
     tsserverPlugin: "@vue/typescript-plugin",
     harness: {
       activateExtension: "Vue.volar",
-      expectedFrameworkPlugin: "vue-typescript-plugin-pack",
+      expectedFrameworkPlugin: { name: "vue-typescript-plugin-pack", position: "after" },
     },
   },
   wrap: (declaration) =>
@@ -71,11 +71,27 @@ const mdx: Framework = {
     tsserverPlugin: "@mdx-js/typescript-plugin",
     // MDX contributes its tsserver plugin statically. Activating it is unnecessary and slow.
     harness: {
-      expectedFrameworkPlugin: "@mdx-js/typescript-plugin",
+      expectedFrameworkPlugin: { name: "@mdx-js/typescript-plugin", position: "after" },
     },
   },
   wrap: (declaration) =>
     `${IMPORT}\n\n${declaration.replace(/^const /gm, "export const ")}\n\n# Heading\n`,
+};
+
+const astro: Framework = {
+  name: "astro",
+  fileExtension: ".astro",
+  serveWebPortOffset: 4,
+  integration: {
+    installExtension: "astro-build.astro-vscode@2.16.20",
+    tsserverPlugin: "@astrojs/ts-plugin",
+    harness: {
+      activateExtension: "astro-build.astro-vscode",
+      expectedFrameworkPlugin: { name: "astro-ts-plugin-bundle", position: "before" },
+    },
+  },
+  wrap: (declaration) =>
+    `---\n${IMPORT}\n\n${declaration}\n---\n\n<main class={a}>csslit + Astro</main>\n`,
 };
 
 export type Target = {
@@ -106,6 +122,11 @@ export const serveWebTargets: Target[] = [
     framework: mdx,
     createLocator: () => createServeWebLocator(mdx),
   },
+  {
+    name: "astro",
+    framework: astro,
+    createLocator: () => createServeWebLocator(astro),
+  },
 ];
 
 export const fastTargets: Target[] = [
@@ -134,5 +155,10 @@ export const fastTargets: Target[] = [
     name: "mdx",
     framework: mdx,
     createLocator: () => createTsServerLocator(mdx),
+  },
+  {
+    name: "astro",
+    framework: astro,
+    createLocator: () => createTsServerLocator(astro),
   },
 ];

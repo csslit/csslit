@@ -96,7 +96,6 @@ pub fn format_diagnostic(request: FormatDiagnosticRequest) -> String {
 pub struct RuntimeTransformRequest {
   pub import_path: String,
   pub filename: String,
-  pub css_filename: String,
   pub module_type: String,
   pub sourcemap: bool,
 }
@@ -104,7 +103,6 @@ pub struct RuntimeTransformRequest {
 struct RuntimeTransformOptions {
   import_path: String,
   filename: String,
-  css_filename: String,
   source_type: SourceType,
   sourcemap: bool,
 }
@@ -112,7 +110,6 @@ struct RuntimeTransformOptions {
 #[napi(object)]
 pub struct CompileTimeTransformRequest {
   pub filename: String,
-  pub css_filename: String,
   pub module_type: String,
   pub sourcemap: bool,
   pub css_sourcemap: Option<bool>,
@@ -122,15 +119,14 @@ pub struct CompileTimeTransformRequest {
 pub struct ClientTransformRequest {
   pub import_path: String,
   pub filename: String,
-  pub css_filename: String,
   pub module_type: String,
   pub sourcemap: bool,
   pub css_sourcemap: Option<bool>,
 }
 
 struct CompileTimeTransformOptions {
+  import_path: String,
   filename: String,
-  css_filename: String,
   source_type: SourceType,
   sourcemap: bool,
   css_sourcemap: bool,
@@ -156,10 +152,10 @@ pub struct ClientTransformResult {
 }
 
 #[napi(object)]
-#[derive(Clone)]
 pub struct CsslitClassExport {
   pub local_name: String,
-  pub scoped_name: String,
+  pub row: u32,
+  pub column: u32,
 }
 
 #[napi(object_from_js, discriminant = "kind", discriminant_case = "lowercase")]
@@ -199,7 +195,6 @@ pub fn transform_runtime(
     RuntimeTransformOptions {
       import_path: options.import_path,
       filename: options.filename,
-      css_filename: options.css_filename,
       source_type,
       sourcemap: options.sourcemap,
     },
@@ -224,8 +219,8 @@ pub fn transform_compile_time(
   let result = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
+      import_path: options.filename.clone(),
       filename: options.filename,
-      css_filename: options.css_filename,
       source_type,
       sourcemap: options.sourcemap,
       css_sourcemap,
@@ -250,9 +245,8 @@ pub fn transform_client(
   let Some(runtime) = transform::transform_runtime(
     source_text.clone(),
     RuntimeTransformOptions {
-      import_path: options.import_path,
+      import_path: options.import_path.clone(),
       filename: options.filename.clone(),
-      css_filename: options.css_filename.clone(),
       source_type,
       sourcemap: options.sourcemap,
     },
@@ -263,8 +257,8 @@ pub fn transform_client(
   let eval = transform::transform_compile_time(
     source_text,
     CompileTimeTransformOptions {
+      import_path: options.import_path,
       filename: options.filename,
-      css_filename: options.css_filename,
       source_type,
       sourcemap: options.sourcemap,
       css_sourcemap,

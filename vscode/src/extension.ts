@@ -48,6 +48,7 @@ const languageSelector: DocumentSelector = [
   { language: "tsrx" },
   { language: "vue" },
   { language: "mdx" },
+  { language: "astro" },
 ];
 type Parser = {
   parse(

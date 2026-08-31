@@ -20,11 +20,11 @@ test("production build emits csslit css", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { css_3_26: "sWdGZm_3_26" }.css_3_26;
+    var className = { css_3_26: "L8OLuN" }.css_3_26;
     export { className };
 
     # css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       color: #ff69b4;
     }
     "
@@ -48,7 +48,14 @@ test("production build eval uses source transformed before csslit", async () => 
         enforce: "pre",
         transform(code, id) {
           if (id.endsWith("/src/entry.ts")) {
-            return code.replaceAll("__TOKEN__", "hotpink");
+            return {
+              code: code.replaceAll("__TOKEN__", "hotpink"),
+              // This preserves the incoming map but does not account for the
+              // length-changing replacement. The CSS location is on the next line,
+              // so it remains correct for this test. Generate a real transform map
+              // if the test starts depending on locations on the rewritten line.
+              map: this.getCombinedSourcemap(),
+            };
           }
 
           return null;
@@ -60,11 +67,11 @@ test("production build eval uses source transformed before csslit", async () => 
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { css_4_26: "Emgz6f_4_26" }.css_4_26;
+    var className = { css_4_26: "ADzKXK" }.css_4_26;
     export { className };
 
     # css
-    .Emgz6f_4_26 {
+    .ADzKXK {
       color: #ff69b4;
     }
     "
@@ -102,11 +109,11 @@ test("production build eval imports use comptime transforms", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { css_4_26: "Emgz6f_4_26" }.css_4_26;
+    var className = { css_4_26: "ADzKXK" }.css_4_26;
     export { className };
 
     # css
-    .Emgz6f_4_26 {
+    .ADzKXK {
       color: #ff69b4;
     }
     "
@@ -145,15 +152,15 @@ test("production build preserves global and scoped css source order", async () =
     "
     # js
     var entry_ts_csslit_default = {
-      css_5_22: "bfSIGN_5_22",
-      css_13_23: "CBIdfI_13_23",
+      css_5_22: "BKLinR",
+      css_13_23: "mN52e1",
     };
     var first = entry_ts_csslit_default.css_5_22;
     var second = entry_ts_csslit_default.css_13_23;
     export { first, second };
 
     # css
-    .bfSIGN_5_22 {
+    .BKLinR {
       color: #ff69b4;
     }
 
@@ -161,7 +168,7 @@ test("production build preserves global and scoped css source order", async () =
       background: #ff69b4;
     }
 
-    .CBIdfI_13_23 {
+    .mN52e1 {
       border-color: #ff69b4;
     }
 
@@ -194,11 +201,11 @@ test("production build hoists csslit keyframes", async () => {
   expect(result).toMatchInlineSnapshot(`
     "
     # js
-    var className = { css_3_26: "sWdGZm_3_26" }.css_3_26;
+    var className = { css_3_26: "L8OLuN" }.css_3_26;
     export { className };
 
     # css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       animation: 1s infinite _PNaQW_pulse;
     }
 

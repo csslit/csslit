@@ -20,6 +20,7 @@
     "@csslit/typescript-plugin": "^0.0.8"
   },
   "devDependencies": {
+    "@astrojs/ts-plugin": "^1.10.11",
     "@mdx-js/typescript-plugin": "^0.1.3",
     "@tsrx/typescript-plugin": "^0.3.110",
     "@types/node": "^26.4.0",
@@ -106,7 +107,6 @@
           "source.astro",
           "source.svelte",
           "source.ts.ng",
-          "text.marko",
           "text.html.vue"
         ],
         "embeddedLanguages": {
@@ -121,7 +121,6 @@
           "source.astro",
           "source.svelte",
           "source.ts.ng",
-          "text.marko",
           "text.html.vue"
         ],
         "embeddedLanguages": {
@@ -229,12 +228,14 @@
           "typescript",
           "typescriptreact",
           "ripple",
-          "tsrx"
+          "tsrx",
+          "astro"
         ]
       }
     ]
   },
   "activationEvents": [
+    "onLanguage:astro",
     "onLanguage:javascript",
     "onLanguage:javascriptreact",
     "onLanguage:mdx",

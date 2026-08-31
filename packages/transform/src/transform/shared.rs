@@ -1,29 +1,8 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
 use oxc_allocator::{Allocator, Vec};
 use oxc_ast::ast::{Expression, ImportDeclarationSpecifier, Program, Statement};
 use oxc_semantic::Scoping;
 use oxc_syntax::symbol::SymbolId;
 use oxc_traverse::TraverseCtx;
-
-pub(super) fn stable_name_hash(input: &str, row: u32, column: u32) -> String {
-  const FIRST_ALPHABET: &[u8; 52] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  const ALPHABET: &[u8; 62] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-  let mut hasher = DefaultHasher::new();
-  (input, row, column).hash(&mut hasher);
-  let mut value = hasher.finish();
-  let mut chars = [b'a'; 6];
-  chars[0] = FIRST_ALPHABET[(value % 52) as usize];
-  value /= 52;
-  for slot in &mut chars[1..] {
-    *slot = ALPHABET[(value % 62) as usize];
-    value /= 62;
-  }
-
-  String::from_utf8_lossy(&chars).into_owned()
-}
 
 pub(super) struct CssImportSymbols<'alloc> {
   comptime_named: Vec<'alloc, SymbolId>,

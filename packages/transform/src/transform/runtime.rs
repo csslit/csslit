@@ -7,7 +7,7 @@ use oxc_parser::{ParseOptions, Parser};
 use oxc_semantic::SemanticBuilder;
 use oxc_traverse::{Traverse, TraverseCtx, traverse_mut};
 
-use super::shared::{CssImportSymbols, stable_name_hash};
+use super::shared::CssImportSymbols;
 use crate::OxcTransformResult;
 
 struct RuntimeTransformer<'a> {
@@ -17,7 +17,6 @@ struct RuntimeTransformer<'a> {
   css_import_symbols: CssImportSymbols<'a>,
   source_rope: Rope,
   source_text: &'a str,
-  css_filename: &'a str,
 }
 
 impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
@@ -31,16 +30,11 @@ impl<'a> Traverse<'a, ()> for RuntimeTransformer<'a> {
         let local_line = line + 1;
         let local_column = column + 1;
         let local_name = format!("css_{local_line}_{local_column}");
-        let scoped_name = format!(
-          "{}_{}_{}",
-          stable_name_hash(self.css_filename, line, column),
-          local_line,
-          local_column
-        );
         self.has_css = true;
         self.exports.push(CsslitClassExport {
           local_name,
-          scoped_name,
+          row: line,
+          column,
         });
         *expr = quote_expr!(ctx, __css_module_import.@"css_{local_line}_{local_column}");
       }
@@ -83,7 +77,6 @@ pub(crate) fn transform_runtime(
     has_global_css: false,
     exports: Vec::new(),
     css_import_symbols,
-    css_filename: &options.css_filename,
     source_rope: Rope::from_str(&source_text),
     source_text: &source_text,
   };

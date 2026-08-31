@@ -17,7 +17,7 @@ scopes resume across interpolations and derives unit suffix scopes from the tran
 numeric rule.
 
 Separate injection grammars restore the host JavaScript, TypeScript, TSRX, or Angular expression
-grammar inside interpolations. HTML, Astro, Marko, MDX, Svelte, and Vue reuse the JavaScript and
+grammar inside interpolations. HTML, Astro, MDX, Svelte, and Vue reuse the JavaScript and
 TypeScript injections in their embedded script and template-expression scopes. The injections also
 consume JavaScript escape pairs so boundary detection follows template-literal backslash parity.
 
@@ -39,17 +39,19 @@ plugin therefore require the classic TypeScript server; TypeScript Native Previe
 tsserver plugins. Files using `.js`, `.jsx`, `.ts`, and `.tsx` use the direct path, so frameworks
 including React, Solid, Vue JSX, and Angular need no framework-specific csslit integration.
 
-Other supported languages use `.tsrx`, `.vue`, and `.mdx` files. They need
-`@csslit/typescript-plugin` listed as a project plugin in `tsconfig.json`. That entry puts csslit
-inside the language's own language-service proxy, which lowers the source and maps positions, so it
-can map csslit's returned edits back to the source document. The extension's own
-`typescriptServerPlugins` contribution cannot take that position: its load order relative to a
-project plugin is not controllable.
+Other supported languages use `.tsrx`, `.vue`, `.mdx`, and `.astro` files. They need
+`@csslit/typescript-plugin` listed as a project plugin in `tsconfig.json`. That entry puts csslit in
+the same project language service as the framework mapping. The extension's own
+`typescriptServerPlugins` contribution cannot guarantee the required position relative to a
+project plugin.
 
 Where the language's documented setup also lists a project plugin, as `.tsrx` does, csslit must
 come **before** it. This makes csslit load closest to the language service so the mapping proxy wraps
-it. The `.vue` and `.mdx` integrations arrange their own tsserver integration through their
-extensions; duplicating those plugins in `tsconfig.json` would change the topology described here.
+it. The `.vue` and `.mdx` extension plugins also load after csslit. Astro's extension
+plugin loads before csslit and installs the Astro service script and mappings that csslit queries.
+The real-VS-Code fixtures verify these concrete orders instead of assuming one order works for every
+framework. Duplicating an extension's framework plugin in `tsconfig.json` would change that tested
+topology.
 
 The `languages` array on the extension's `typescriptServerPlugins` contribution is separate from
 loading the plugin: it is what makes VS Code's built-in TypeScript extension manage documents of

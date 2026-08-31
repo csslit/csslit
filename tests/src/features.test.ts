@@ -48,7 +48,7 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     export const className = __css_module_import.css_8_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_8_26 = "duOygv_8_26";
+    export const css_8_26 = "bFY7LX";
     export default {
       css_8_26,
     };
@@ -61,7 +61,7 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     };
 
     # css /src/entry.ts.csslit.css
-    .duOygv_8_26 {
+    .bFY7LX {
       color: #ff69b4;
       border-width: 2px;
       opacity: .5;
@@ -109,13 +109,13 @@ test("destructuring closures observe incrementally initialized bindings", async 
     export const className = __css_module_import.css_11_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_11_26 = "fa9j5o_11_26";
+    export const css_11_26 = "pj9Hxg";
     export default {
       css_11_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .fa9j5o_11_26 {
+    .pj9Hxg {
       width: 1px;
       height: 1px;
     }
@@ -153,13 +153,13 @@ test("css literal reads from enclosing function scope", async () => {
     export const className = makeStyles();
 
     # js /src/entry.ts.csslit.json
-    export const css_5_10 = "KQe9MU_5_10";
+    export const css_5_10 = "SFU29d";
     export default {
       css_5_10,
     };
 
     # css /src/entry.ts.csslit.css
-    .KQe9MU_5_10 {
+    .SFU29d {
       color: #ff69b4;
     }
     "
@@ -194,7 +194,7 @@ test("imported function can be called directly in interpolation", async () => {
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_4_26 = "Emgz6f_4_26";
+    export const css_4_26 = "ADzKXK";
     export default {
       css_4_26,
     };
@@ -205,7 +205,7 @@ test("imported function can be called directly in interpolation", async () => {
     }
 
     # css /src/entry.ts.csslit.css
-    .Emgz6f_4_26 {
+    .ADzKXK {
       color: #ff69b4;
     }
     "
@@ -243,7 +243,7 @@ test("comptime allows function call in binding position", async () => {
     export const className = __css_module_import.css_6_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_6_26 = "jEYTtU_6_26";
+    export const css_6_26 = "eYxGv5";
     export default {
       css_6_26,
     };
@@ -254,7 +254,7 @@ test("comptime allows function call in binding position", async () => {
     }
 
     # css /src/entry.ts.csslit.css
-    .jEYTtU_6_26 {
+    .eYxGv5 {
       color: #ff69b4;
     }
     "
@@ -282,13 +282,13 @@ test("array literal can be used in direct interpolation", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       transition: opacity .2s, transform .2s;
     }
     "
@@ -316,13 +316,13 @@ test("object literal can be used in direct interpolation", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       color: #ff69b4;
     }
     "
@@ -352,13 +352,13 @@ test("css literal compiles to static css", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       background: #ff69b4;
     }
     "
@@ -397,7 +397,7 @@ test("css literal resolves inline module dependencies", async () => {
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_4_26 = "Emgz6f_4_26";
+    export const css_4_26 = "ADzKXK";
     export default {
       css_4_26,
     };
@@ -406,7 +406,7 @@ test("css literal resolves inline module dependencies", async () => {
     export default { colors: { primary: "hotpink" } };
 
     # css /src/entry.ts.csslit.css
-    .Emgz6f_4_26 {
+    .ADzKXK {
       background: #ff69b4;
     }
     "
@@ -443,20 +443,20 @@ test("css class binding can be interpolated into another selector", async () => 
     export const h1Style = __css_module_import.css_7_24;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_18 = "K98gqQ_3_18";
-    export const css_7_24 = "DRMsbv_7_24";
+    export const css_3_18 = "DmQfhQ";
+    export const css_7_24 = "GVCOwS";
     export default {
       css_3_18,
       css_7_24,
     };
 
     # css /src/entry.ts.csslit.css
-    .K98gqQ_3_18 {
+    .DmQfhQ {
       display: block;
     }
 
-    .DRMsbv_7_24 {
-      .K98gqQ_3_18 & {
+    .GVCOwS {
+      .DmQfhQ & {
         color: #ff69b4;
       }
     }
@@ -498,20 +498,20 @@ test("css class binding is rewritten inside selector functions", async () => {
     export const child = __css_module_import.css_7_22;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_18 = "K98gqQ_3_18";
-    export const css_7_22 = "IZXOSV_7_22";
+    export const css_3_18 = "DmQfhQ";
+    export const css_7_22 = "dDSrni";
     export default {
       css_3_18,
       css_7_22,
     };
 
     # css /src/entry.ts.csslit.css
-    .K98gqQ_3_18 {
+    .DmQfhQ {
       display: block;
     }
 
-    .IZXOSV_7_22 {
-      :is(.K98gqQ_3_18, :where(.K98gqQ_3_18)) &, :not(.K98gqQ_3_18) &, :has(.K98gqQ_3_18) &, .K98gqQ_3_18 &, :nth-child(2 of .K98gqQ_3_18) & {
+    .dDSrni {
+      :is(.DmQfhQ, :where(.DmQfhQ)) &, :not(.DmQfhQ) &, :has(.DmQfhQ) &, .DmQfhQ &, :nth-child(2 of .DmQfhQ) & {
         color: #ff69b4;
       }
     }
@@ -548,7 +548,7 @@ test("imported css class binding can be interpolated into another selector", asy
     export const base = __css_module_import.css_3_21;
 
     # js /src/base.ts.csslit.json
-    export const css_3_21 = "Gv5Jmv_3_21";
+    export const css_3_21 = "eKmIvo";
     export default {
       css_3_21,
     };
@@ -561,19 +561,19 @@ test("imported css class binding can be interpolated into another selector", asy
     export const child = __css_module_import.css_4_22;
 
     # js /src/entry.ts.csslit.json
-    export const css_4_22 = "ndlkXZ_4_22";
+    export const css_4_22 = "lPhY7R";
     export default {
       css_4_22,
     };
 
     # css /src/base.ts.csslit.css
-    .Gv5Jmv_3_21 {
+    .eKmIvo {
       display: block;
     }
 
     # css /src/entry.ts.csslit.css
-    .ndlkXZ_4_22 {
-      .Gv5Jmv_3_21 & {
+    .lPhY7R {
+      .eKmIvo & {
         color: #ff69b4;
       }
     }
@@ -608,19 +608,19 @@ test("css expressions in conditional bindings emit matching css module keys", as
     export const style = enabled ? __css_module_import.css_4_32 : __css_module_import.css_6_5;
 
     # js /src/entry.ts.csslit.json
-    export const css_4_32 = "Y0vTVn_4_32";
-    export const css_6_5 = "aCPqv4_6_5";
+    export const css_4_32 = "G4gki8";
+    export const css_6_5 = "pA8vo2";
     export default {
       css_4_32,
       css_6_5,
     };
 
     # css /src/entry.ts.csslit.css
-    .Y0vTVn_4_32 {
+    .G4gki8 {
       color: red;
     }
 
-    .aCPqv4_6_5 {
+    .pA8vo2 {
       color: #00f;
     }
     "
@@ -663,13 +663,13 @@ test("css eval uses source transformed before csslit", async () => {
     export const className = __css_module_import.css_4_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_4_26 = "Emgz6f_4_26";
+    export const css_4_26 = "ADzKXK";
     export default {
       css_4_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .Emgz6f_4_26 {
+    .ADzKXK {
       color: #ff69b4;
     }
     "
@@ -705,15 +705,15 @@ test("css and global css preserve source order in one stylesheet", async () => {
     export const second = __css_module_import.css_9_23;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_22 = "CSuYma_3_22";
-    export const css_9_23 = "QwLZRx_9_23";
+    export const css_3_22 = "UGTb1u";
+    export const css_9_23 = "b47yAD";
     export default {
       css_3_22,
       css_9_23,
     };
 
     # css /src/entry.ts.csslit.css
-    .CSuYma_3_22 {
+    .UGTb1u {
       color: red;
     }
 
@@ -721,7 +721,7 @@ test("css and global css preserve source order in one stylesheet", async () => {
       color: #00f;
     }
 
-    .QwLZRx_9_23 {
+    .b47yAD {
       color: green;
     }
     "
@@ -757,7 +757,7 @@ test("global keyframes remain global and ordered with scoped css", async () => {
     export const className = __css_module_import.css_7_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_7_26 = "KjbIcR_7_26";
+    export const css_7_26 = "R4nq2r";
     export default {
       css_7_26,
     };
@@ -769,7 +769,7 @@ test("global keyframes remain global and ordered with scoped css", async () => {
       }
     }
 
-    .KjbIcR_7_26 {
+    .R4nq2r {
       animation: 1s ZSGyZG_pulse;
     }
 
@@ -806,13 +806,13 @@ test("css literal hoists and scopes keyframes", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       animation: 1s _PNaQW_pulse;
     }
 
@@ -851,14 +851,14 @@ test("conditional keyframes preserve their media condition", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
     @media print {
-      .sWdGZm_3_26 {
+      .L8OLuN {
         animation: 1s _PNaQW_pulse;
       }
 
@@ -902,15 +902,15 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
     export const second = __css_module_import.css_8_23;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_22 = "CSuYma_3_22";
-    export const css_8_23 = "nOVgim_8_23";
+    export const css_3_22 = "UGTb1u";
+    export const css_8_23 = "kCoxkq";
     export default {
       css_3_22,
       css_8_23,
     };
 
     # css /src/entry.ts.csslit.css
-    .CSuYma_3_22 {
+    .UGTb1u {
       animation: 1s _PNaQW_pulse;
     }
 
@@ -920,7 +920,7 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
       }
     }
 
-    .nOVgim_8_23 {
+    .kCoxkq {
       animation: 2s ZSGyZG_pulse;
     }
 
@@ -957,13 +957,13 @@ test("css literals preserve custom property references", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       --text-color: hotpink;
       color: var(--text-color);
     }
@@ -996,13 +996,13 @@ test("new, tagged template, and sequence expressions evaluate in interpolations"
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
+    .L8OLuN {
       color: #ff69b4;
       --tag: raw-2;
       --seq: seq;
@@ -1032,18 +1032,18 @@ test("css template nested directly in an interpolation becomes its class name", 
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .iXPpyu_3_33 {
+    .FNhxLX {
       color: red;
     }
 
-    .sWdGZm_3_26 {
-      .iXPpyu_3_33 & {
+    .L8OLuN {
+      .FNhxLX & {
         color: #00f;
       }
     }
@@ -1075,19 +1075,19 @@ test("css nested in a closure is evaluated independently", async () => {
     export const className = __css_module_import.css_3_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_3_26 = "sWdGZm_3_26";
+    export const css_3_26 = "L8OLuN";
     export default {
       css_3_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .sWdGZm_3_26 {
-      .KQe9MU_5_10 & {
+    .L8OLuN {
+      .SFU29d & {
         color: #00f;
       }
     }
 
-    .KQe9MU_5_10 {
+    .SFU29d {
       color: red;
     }
     "
@@ -1117,13 +1117,13 @@ test("ambient functions are treated as globals", async () => {
     export const className = __css_module_import.css_5_26;
 
     # js /src/entry.ts.csslit.json
-    export const css_5_26 = "SefWTx_5_26";
+    export const css_5_26 = "FdnjzE";
     export default {
       css_5_26,
     };
 
     # css /src/entry.ts.csslit.css
-    .SefWTx_5_26 {
+    .FdnjzE {
       z-index: 1;
     }
     "
@@ -1180,7 +1180,7 @@ test("closures in interpolations evaluate with outer constants and local state",
     }
 
     # js /src/entry.ts.csslit.json
-    export const css_6_26 = "jEYTtU_6_26";
+    export const css_6_26 = "eYxGv5";
     export default {
       css_6_26,
     };
@@ -1189,7 +1189,7 @@ test("closures in interpolations evaluate with outer constants and local state",
     export const sizes = [1, 2, 3];
 
     # css /src/entry.ts.csslit.css
-    .jEYTtU_6_26 {
+    .eYxGv5 {
       padding: 4px 8px 12px;
       width: 6px;
       gap: 4px 8px;
@@ -1198,7 +1198,7 @@ test("closures in interpolations evaluate with outer constants and local state",
       display: block;
     }
 
-    .q6qV85_19_29 {
+    .xaWsgk {
       color: red;
     }
     "

@@ -21,13 +21,13 @@ css.global`
 `;
 ```
 
-Highlighting works in `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.astro`, `.marko`, `.mdx`, `.svelte`,
+Highlighting works in `.js`, `.jsx`, `.ts`, `.tsx`, `.html`, `.astro`, `.mdx`, `.svelte`,
 `.vue`, and `.tsrx` files.
 
 Completions and hovers work automatically in `.js`, `.jsx`, `.ts`, and `.tsx` files. React, Solid,
 Vue JSX, Angular, and other frameworks work without additional csslit setup.
 
-For `.tsrx`, `.vue`, and `.mdx` files, install
+For `.tsrx`, `.vue`, `.mdx`, and `.astro` files, install
 [`@csslit/typescript-plugin`](https://www.npmjs.com/package/@csslit/typescript-plugin) and add it to
 your `tsconfig.json` `plugins`:
 

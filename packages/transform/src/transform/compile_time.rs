@@ -31,9 +31,10 @@ use oxc_syntax::{
   symbol::{SymbolFlags, SymbolId},
 };
 use oxc_transformer::{JsxOptions, TransformOptions, Transformer};
-use std::path::Path;
+use std::{mem::take, path::Path};
 
-use super::shared::{CssImportSymbols, stable_name_hash};
+use super::shared::CssImportSymbols;
+use crate::CsslitClassExport;
 
 const CSSLIT_EVAL_RESULT_NAME: &str = "__csslit_eval_result";
 const CSSLIT_RUNTIME_NAME: &str = "__csslit_eval_runtime";
@@ -1273,7 +1274,7 @@ struct CompileTimeEmitter<'ast, 'alloc> {
   ast: AstBuilder<'alloc>,
   css_sourcemap: bool,
   css_import_symbols: &'ast CssImportSymbols<'alloc>,
-  css_filename: &'ast str,
+  exports: std::vec::Vec<CsslitClassExport>,
   frames: Vec<'ast, EmitFrame<'ast>>,
   location_context: &'ast SourceLocationContext<'ast>,
   // Nodes in the current subtree must remain in the generated evaluation program.
@@ -1844,7 +1845,13 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     let column = template_location.column;
     let local_line = line + 1;
     let local_column = column + 1;
-    let hash = stable_name_hash(self.css_filename, line, column);
+    if is_css {
+      self.exports.push(CsslitClassExport {
+        local_name: format!("css_{local_line}_{local_column}"),
+        row: line,
+        column,
+      });
+    }
     let mut template = tagged.quasi.take_in(self);
     for expression in &mut template.expressions {
       let span = expression.span();
@@ -1928,13 +1935,17 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
         quote_expr!(
           self,
           span,
-          __csslit.css(@"{hash}_{local_line}_{local_column}", [@{..quasi_locations}])
+          __csslit.css(__css_module_import.@"css_{local_line}_{local_column}", [@{..quasi_locations}])
         )
       }
     } else if is_global_css {
       quote_expr!(self, span, __csslit.globalCss())
     } else {
-      quote_expr!(self, span, __csslit.css(@"{hash}_{local_line}_{local_column}"))
+      quote_expr!(
+        self,
+        span,
+        __csslit.css(__css_module_import.@"css_{local_line}_{local_column}")
+      )
     };
     let css_eval = Expression::new_tagged_template_expression(span, callee, NONE, template, self);
     let statement = quote_stmt!(self, (@{css_eval}););
@@ -1942,7 +1953,11 @@ impl<'ast, 'alloc> VisitMut<'ast> for CompileTimeEmitter<'ast, 'alloc> {
     *expr = if is_global_css {
       quote_expr!(self, span, undefined)
     } else {
-      quote_expr!(self, span, @"__csslit_class_{hash}_{local_line}_{local_column}")
+      quote_expr!(
+        self,
+        span,
+        __css_module_import.@"css_{local_line}_{local_column}"
+      )
     };
   }
 
@@ -2096,8 +2111,8 @@ pub(crate) fn transform_compile_time(
   options: CompileTimeTransformOptions,
 ) -> OxcTransformResult {
   let CompileTimeTransformOptions {
+    import_path,
     filename,
-    css_filename,
     source_type,
     css_sourcemap,
     sourcemap,
@@ -2146,7 +2161,7 @@ pub(crate) fn transform_compile_time(
     ast: AstBuilder::new(allocator),
     css_sourcemap,
     css_import_symbols: &css_import_symbols,
-    css_filename: &css_filename,
+    exports: std::vec::Vec::new(),
     frames: Vec::new_in(&ast),
     location_context: &diagnostic_location_context,
     preserve_source_ast: false,
@@ -2156,10 +2171,21 @@ pub(crate) fn transform_compile_time(
   };
   emitter.visit_program(&mut ret.program);
 
+  if !emitter.exports.is_empty() {
+    emitter.root_body.insert(
+      1,
+      quote_stmt!(
+        ast,
+        import __css_module_import from @"{import_path}.csslit.eval.json";
+      ),
+    );
+  }
+
   let finalize = quote_expr!(&ast, __csslit.finalize(null));
   emitter
     .root_body
     .push(quote_stmt!(&ast, export const @{CSSLIT_EVAL_RESULT_NAME} = @{finalize};));
+  let exports = take(&mut emitter.exports);
 
   let mut output_program = Program::new_with_scope_id(
     ret.program.span,
@@ -2199,7 +2225,7 @@ pub(crate) fn transform_compile_time(
   OxcTransformResult {
     code: result.code,
     map: result.map.map(Into::into),
-    exports: std::vec::Vec::new(),
+    exports,
   }
 }
 
@@ -2664,8 +2690,8 @@ mod tests {
     let mut output = transform_compile_time(
       source.to_string(),
       CompileTimeTransformOptions {
+        import_path: "/src/example.tsx".to_string(),
         filename: "/src/example.tsx".to_string(),
-        css_filename: "/src/example.tsx".to_string(),
         source_type: SourceType::tsx(),
         css_sourcemap,
         sourcemap: false,
@@ -2690,38 +2716,6 @@ mod tests {
 
     normalized.push('\n');
     normalized
-  }
-
-  fn dedent(raw: &str) -> String {
-    let lines = raw.lines().collect::<std::vec::Vec<_>>();
-    let start = lines
-      .iter()
-      .position(|line| !line.trim().is_empty())
-      .unwrap_or(lines.len());
-    let end = lines
-      .iter()
-      .rposition(|line| !line.trim().is_empty())
-      .map(|index| index + 1)
-      .unwrap_or(start);
-    let lines = &lines[start..end];
-    let indent = lines
-      .iter()
-      .filter(|line| !line.trim().is_empty())
-      .map(|line| line.chars().take_while(|char| char.is_whitespace()).count())
-      .min()
-      .unwrap_or(0);
-
-    let mut expected = lines
-      .iter()
-      .map(|line| line.chars().skip(indent).collect::<String>())
-      .collect::<std::vec::Vec<_>>()
-      .join("\n");
-    expected.push('\n');
-    expected
-  }
-
-  fn assert_snapshot(output: &str, expected: &str) {
-    assert_eq!(dedent(expected), output);
   }
 
   #[test]
@@ -2753,21 +2747,19 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { dedent } from "./tags";
         const scale = 4;
-        __csslit.css("aKU63j_6_9")`
+        __csslit.css(__css_module_import.css_6_9)`
                   width: ${__csslit.capture("6:19:6:60", () => new Intl.NumberFormat("en").format(scale))}px;
                   content: ${__csslit.capture("7:21:7:41", () => dedent`a ${scale} b`)};
                   height: ${0, scale}px;
                 `;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2782,17 +2774,15 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
-        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css(__css_module_import.css_6_9)`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2810,20 +2800,18 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         const outer = 1;
         __csslit.defer(() => {
           const param = __csslit.cellVarErr("param", "runtime-parameter", "5:22:5:35");
           const local = outer + 1;
-          __csslit.css("PJY18l_8_11")`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
+          __csslit.css(__css_module_import.css_8_11)`width: ${local}px; height: ${__csslit.capture("7:43:7:48", () => param("7:43:7:48"))}px;`;
         });
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2838,17 +2826,15 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
-        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
+        __csslit.css(__css_module_import.css_6_9)`color: ${__csslit.capture("5:21:5:25", () => tone("5:21:5:25"))}; border-color: ${__csslit.capture("5:44:5:63", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2866,19 +2852,17 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { theme } from "./theme";
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
         const border = __csslit.cell("border", "7:14:7:24");
         __csslit.destructure([border], "7:27:7:32", () => theme, (__csslit_destructure_value_158) => ({border: border.value} = __csslit_destructure_value_158));
-        __csslit.css("HAXkGd_9_9")`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
+        __csslit.css(__css_module_import.css_9_9)`color: ${__csslit.capture("8:21:8:25", () => tone("8:21:8:25"))}; border-width: ${__csslit.capture("8:44:8:50", () => border("8:44:8:50"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2898,10 +2882,9 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { fallback, key, theme, values } from "./theme";
         const tone = __csslit.cell("tone", "4:14:8:9");
@@ -2915,10 +2898,9 @@ mod tests {
         const first = __csslit.cell("first", "9:14:9:45");
         const second = __csslit.cell("second", "9:14:9:45");
         __csslit.destructure([first, second], "9:48:9:54", () => values, (__csslit_destructure_value_259) => [first.value = "red", second.value = first("9:39:9:44")] = __csslit_destructure_value_259);
-        __csslit.css("vGnKZk_11_9")`color: ${__csslit.capture("10:21:10:25", () => tone("10:21:10:25"))}; border-width: ${__csslit.capture("10:44:10:50", () => border("10:44:10:50"))}; opacity: ${__csslit.capture("10:64:10:76", () => rest("10:64:10:68").opacity)}; background: ${__csslit.capture("10:93:10:99", () => second("10:93:10:99"))};`;
+        __csslit.css(__css_module_import.css_11_9)`color: ${__csslit.capture("10:21:10:25", () => tone("10:21:10:25"))}; border-width: ${__csslit.capture("10:44:10:50", () => border("10:44:10:50"))}; opacity: ${__csslit.capture("10:64:10:76", () => rest("10:64:10:68").opacity)}; background: ${__csslit.capture("10:93:10:99", () => second("10:93:10:99"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2927,18 +2909,16 @@ mod tests {
       "import { comptime, css } from \"@csslit/core\";\n\nconst { first, unused = first, used } = comptime({ used: \"blue\" });\ncss`color: ${used};`;",
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         const used = __csslit.cell("used", "2:6:2:37");
         __csslit.destructure([used], "2:40:2:66", () => comptime({ used: "blue" }), (__csslit_destructure_value_53) => ({used: used.value} = __csslit_destructure_value_53));
-        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:17", () => used("3:13:3:17"))};`;
+        __csslit.css(__css_module_import.css_4_1)`color: ${__csslit.capture("3:13:3:17", () => used("3:13:3:17"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2947,10 +2927,9 @@ mod tests {
       "import { comptime, css } from \"@csslit/core\";\n\nconst { unused, ...rest } = comptime({ unused: \"red\", used: \"blue\" });\ncss`color: ${rest.used};`;",
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         const rest = __csslit.cell("rest", "2:6:2:25");
@@ -2958,10 +2937,9 @@ mod tests {
           unused: "red",
           used: "blue"
         }), (__csslit_destructure_value_53) => ({unused: __csslit.discard, ...rest.value} = __csslit_destructure_value_53));
-        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:22", () => rest("3:13:3:17").used)};`;
+        __csslit.css(__css_module_import.css_4_1)`color: ${__csslit.capture("3:13:3:22", () => rest("3:13:3:17").used)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -2977,17 +2955,15 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
-        __csslit.css("GEZhd6_7_9")`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
+        __csslit.css(__css_module_import.css_7_9)`color: ${__csslit.capture("6:21:6:27", () => __csslit.readCell("legacy", legacy, "6:21:6:27", "3:12:3:26"))}; border-width: ${stable};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3001,16 +2977,14 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
+        __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3025,18 +2999,16 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         var value = __csslit.cellVarErr("value", "reassigned", "4:14:4:19");
         var other = __csslit.cell("other", "4:12:4:28");
         __csslit.destructure([other], "4:31:4:36", () => __csslit.readCell("value", value, "4:31:4:36", "3:12:3:51"), (__csslit_destructure_value_111) => ({other: other.value} = __csslit_destructure_value_111));
-        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:51"))}; background: ${__csslit.capture("5:43:5:48", () => __csslit.readCell("other", other, "5:43:5:48", "4:12:4:36"))};`;
+        __csslit.css(__css_module_import.css_6_9)`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:51"))}; background: ${__csslit.capture("5:43:5:48", () => __csslit.readCell("other", other, "5:43:5:48", "4:12:4:36"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3045,16 +3017,14 @@ mod tests {
       "import { css } from \"@csslit/core\";\n\nvar { color, color } = { color: \"hotpink\" };\ncss`color: ${color};`;",
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         var color = __csslit.cellVarErr("color", "reassigned", "2:13:2:18");
-        __csslit.css("i6DBvI_4_1")`color: ${__csslit.capture("3:13:3:18", () => __csslit.readCell("color", color, "3:13:3:18", "2:4:2:43"))};`;
+        __csslit.css(__css_module_import.css_4_1)`color: ${__csslit.capture("3:13:3:18", () => __csslit.readCell("color", color, "3:13:3:18", "2:4:2:43"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3069,16 +3039,14 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         var value = __csslit.cellVarErr("value", "reassigned", "4:12:4:17");
-        __csslit.css("aKU63j_6_9")`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:25"))};`;
+        __csslit.css(__css_module_import.css_6_9)`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:25"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3092,16 +3060,14 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         const tone = "red";
-        __csslit.css("bmUxWS_5_9")`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
+        __csslit.css(__css_module_import.css_5_9)`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3116,15 +3082,14 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("CNgLnJ_5_11")`color: red;`;
+        __csslit.css(__css_module_import.css_5_11)`color: red;`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]]
+    .assert_eq(&output);
   }
 
   #[test]
@@ -3138,17 +3103,16 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("VebxKp_4_26")`color: red;`;
-        const appStyle = "__csslit_class_VebxKp_4_26";
-        __csslit.css("bmUxWS_5_9")`.${appStyle} & { color: blue; }`;
+        __csslit.css(__css_module_import.css_4_26)`color: red;`;
+        const appStyle = __css_module_import.css_4_26;
+        __csslit.css(__css_module_import.css_5_9)`.${appStyle} & { color: blue; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]]
+    .assert_eq(&output);
   }
 
   #[test]
@@ -3163,19 +3127,18 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         const useFoo = true;
-        __csslit.css("glNCrI_5_35")`color: red;`;
-        __csslit.css("wnfmD7_5_54")`color: blue;`;
-        const appStyle = useFoo ? "__csslit_class_glNCrI_5_35" : "__csslit_class_wnfmD7_5_54";
-        __csslit.css("aKU63j_6_9")`.${appStyle} & { color: hotpink; }`;
+        __csslit.css(__css_module_import.css_5_35)`color: red;`;
+        __csslit.css(__css_module_import.css_5_54)`color: blue;`;
+        const appStyle = useFoo ? __css_module_import.css_5_35 : __css_module_import.css_5_54;
+        __csslit.css(__css_module_import.css_6_9)`.${appStyle} & { color: hotpink; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]]
+    .assert_eq(&output);
   }
 
   #[test]
@@ -3191,22 +3154,21 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.defer(() => {
           const color = "red";
-          __csslit.css("PYapLP_6_18")`color: ${color};`;
+          __csslit.css(__css_module_import.css_6_18)`color: ${color};`;
         });
-        __csslit.css("QTVSqU_4_9")`.${__csslit.capture("3:15:6:12", () => (() => {
+        __csslit.css(__css_module_import.css_4_9)`.${__csslit.capture("3:15:6:12", () => (() => {
           const color = "red";
-          return "__csslit_class_PYapLP_6_18";
+          return __css_module_import.css_6_18;
         })())} & { color: blue; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]]
+    .assert_eq(&output);
   }
 
   #[test]
@@ -3222,25 +3184,23 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         __csslit.defer(() => {
-          __csslit.css("W2kfCu_5_27")`color: red;`;
+          __csslit.css(__css_module_import.css_5_27)`color: red;`;
           const inner = __csslit.cell("inner", "4:16:4:44");
-          __csslit.destructure([inner], "4:47:4:59", () => comptime({}), (__csslit_destructure_value_96) => ({inner: inner.value = "__csslit_class_W2kfCu_5_27"} = __csslit_destructure_value_96));
-          __csslit.css("PYapLP_6_18")`.${__csslit.capture("5:24:5:29", () => inner("5:24:5:29"))} & { color: blue; }`;
+          __csslit.destructure([inner], "4:47:4:59", () => comptime({}), (__csslit_destructure_value_96) => ({inner: inner.value = __css_module_import.css_5_27} = __csslit_destructure_value_96));
+          __csslit.css(__css_module_import.css_6_18)`.${__csslit.capture("5:24:5:29", () => inner("5:24:5:29"))} & { color: blue; }`;
         });
-        __csslit.css("QTVSqU_4_9")`.${__csslit.capture("3:15:6:12", () => (() => {
-          const { inner = "__csslit_class_W2kfCu_5_27" } = comptime({});
-          return "__csslit_class_PYapLP_6_18";
+        __csslit.css(__css_module_import.css_4_9)`.${__csslit.capture("3:15:6:12", () => (() => {
+          const { inner = __css_module_import.css_5_27 } = comptime({});
+          return __css_module_import.css_6_18;
         })())} & { color: green; }`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3257,18 +3217,16 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:27", () => pick())};`;
+        __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:27", () => pick())};`;
         function pick() {
           return "red";
         }
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3286,23 +3244,21 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_4_9")`.${__csslit.capture("3:15:3:21", () => pick())} & { color: blue; }`;
+        __csslit.css(__css_module_import.css_4_9)`.${__csslit.capture("3:15:3:21", () => pick())} & { color: blue; }`;
         function pick() {
           const color = "red";
-          return "__csslit_class_HVn7ul_8_18";
+          return __css_module_import.css_8_18;
         }
         __csslit.defer(() => {
           const color = "red";
-          __csslit.css("HVn7ul_8_18")`color: ${color};`;
+          __csslit.css(__css_module_import.css_8_18)`color: ${color};`;
         });
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3316,15 +3272,13 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("bmUxWS_5_9")`z-index: ${__csslit.capture("4:23:4:36", () => parseInt("1"))};`;
+        __csslit.css(__css_module_import.css_5_9)`z-index: ${__csslit.capture("4:23:4:36", () => parseInt("1"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 
   #[test]
@@ -3341,15 +3295,13 @@ mod tests {
       "#,
     );
 
-    assert_snapshot(
-      &output,
-      r#"
+    expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
+        import __css_module_import from "/src/example.tsx.csslit.eval.json";
         const __csslit = __csslit_eval_runtime.init();
-        __csslit.css("QTVSqU_4_9")`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
+        __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
         const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");
         export const __csslit_eval_result = __csslit.finalize(null);
-      "#,
-    );
+    "#]].assert_eq(&output);
   }
 }

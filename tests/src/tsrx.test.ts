@@ -44,13 +44,13 @@ test("react tsrx build extracts csslit css", async () => {
     }
 
     # js /src/Box.tsrx.csslit.json
-    export const css_3_13 = "uTwjTV_3_13";
+    export const css_3_13 = "baRzfH";
     export default {
       css_3_13,
     };
 
     # css /src/Box.tsrx.csslit.css
-    .uTwjTV_3_13 {
+    .baRzfH {
       color: #ff69b4;
     }
     "
@@ -81,13 +81,13 @@ test("preact tsrx build extracts csslit css", async () => {
     }
 
     # js /src/Box.tsrx.csslit.json
-    export const css_3_13 = "uTwjTV_3_13";
+    export const css_3_13 = "baRzfH";
     export default {
       css_3_13,
     };
 
     # css /src/Box.tsrx.csslit.css
-    .uTwjTV_3_13 {
+    .baRzfH {
       color: #ff69b4;
     }
     "
@@ -124,13 +124,13 @@ test("solid tsrx build extracts csslit css", async () => {
     }
 
     # js /src/Box.tsrx.csslit.json
-    export const css_6_13 = "Q6ncYu_6_13";
+    export const css_6_13 = "WeU3SY";
     export default {
       css_6_13,
     };
 
     # css /src/Box.tsrx.tsx.csslit.css
-    .Q6ncYu_6_13 {
+    .WeU3SY {
       color: #ff69b4;
     }
     "
@@ -193,13 +193,13 @@ test("octane tsrx build extracts csslit css", async () => {
     }
 
     # js /src/Box.tsrx.csslit.json
-    export const css_14_13 = "yFx7zL_14_13";
+    export const css_14_13 = "baRzfH";
     export default {
       css_14_13,
     };
 
     # css /src/Box.tsrx.csslit.css
-    .yFx7zL_14_13 {
+    .baRzfH {
       color: #ff69b4;
     }
     "

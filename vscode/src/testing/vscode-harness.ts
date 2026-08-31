@@ -7,7 +7,12 @@ const harnessPort = Number(process.env["CSSLIT_HARNESS_PORT"]);
 
 export interface HarnessInit {
   activateExtension?: string | undefined;
-  expectedFrameworkPlugin?: string | undefined;
+  expectedFrameworkPlugin?:
+    | {
+        name: string;
+        position: "before" | "after";
+      }
+    | undefined;
   file: string;
 }
 

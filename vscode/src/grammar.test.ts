@@ -20,7 +20,6 @@ const grammarFiles: Record<string, string> = {
   "source.astro": require.resolve("tm-grammars/grammars/astro.json"),
   "source.mdx": require.resolve("tm-grammars/grammars/mdx.json"),
   "source.svelte": require.resolve("tm-grammars/grammars/svelte.json"),
-  "text.marko": require.resolve("tm-grammars/grammars/marko.json"),
   "text.html.derivative.ng": require.resolve("tm-grammars/grammars/angular-html.json"),
   "text.html.vue": require.resolve("tm-grammars/grammars/vue.json"),
   "expression.ng": require.resolve("tm-grammars/grammars/angular-expression.json"),
@@ -108,8 +107,6 @@ beforeAll(async () => {
           "csslit.typescript.injection",
           "csslit.typescript.holes.injection",
         ];
-      if (scopeName === "text.marko")
-        return ["csslit.typescript.injection", "csslit.typescript.holes.injection"];
       if (scopeName === "source.js")
         return ["csslit.javascript.injection", "csslit.javascript.holes.injection"];
       if (scopeName === "source.ts")
@@ -241,7 +238,6 @@ test.each([
     ["<div class={css`.x { color: ${themeValue}; }`}></div>"],
   ],
   ["MDX expression", "source.mdx", ["<div className={css`.x { color: ${themeValue}; }`} />"]],
-  ["Marko expression", "text.marko", ["<div class=css`.x { color: ${themeValue}; }` />"]],
   ["Angular TypeScript", "source.ts.ng", ["const a = css`.x { color: ${themeValue}; }`;"]],
   [
     "Angular template expression",

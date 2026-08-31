@@ -12,7 +12,10 @@ type ProjectWithPlugins = ts.server.Project & {
 type TestReadiness = {
   port: number;
   file: string;
-  expectedFrameworkPlugin?: string;
+  expectedFrameworkPlugin?: {
+    name: string;
+    position: "before" | "after";
+  };
 };
 
 type PluginConfig = { testReadiness?: TestReadiness };
@@ -132,9 +135,11 @@ function announceReady(session: TestSession): void {
     if (csslit === -1) continue;
     if (readiness.expectedFrameworkPlugin) {
       const framework = plugins.findIndex(
-        (plugin) => plugin.name === readiness.expectedFrameworkPlugin,
+        (plugin) => plugin.name === readiness.expectedFrameworkPlugin!.name,
       );
-      if (framework <= csslit) continue;
+      if (framework === -1) continue;
+      if (readiness.expectedFrameworkPlugin.position === "before" && framework >= csslit) continue;
+      if (readiness.expectedFrameworkPlugin.position === "after" && framework <= csslit) continue;
     }
     if (project.getLanguageService().getProgram()?.getSourceFile(readiness.file)) {
       readyProject = project;
@@ -220,7 +225,6 @@ export default (function init({ typescript }) {
         if (textChanges.length === 0) return;
         return { edits: [{ fileName: args[0], textChanges }] };
       };
-
       return languageService;
     },
     getExternalFiles() {

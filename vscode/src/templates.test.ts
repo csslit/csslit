@@ -247,7 +247,7 @@ describe.each(targets)("$name", (target) => {
       `);
     } else if (framework.name === "mdx") {
       expect(result).toMatchInlineSnapshot(`"no TypeScript implementation answered"`);
-    } else if (framework.name === "vue") {
+    } else if (framework.name === "vue" || framework.name === "astro") {
       expect(result).toMatchInlineSnapshot(`"no template at offset"`);
     } else if (framework.name === "tsrx") {
       expect(result).toMatchInlineSnapshot(`

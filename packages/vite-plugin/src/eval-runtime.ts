@@ -487,7 +487,8 @@ export function init() {
     return { code, mappingRuns };
   }
 
-  function css(scopedName: string, quasiLocations?: number[]) {
+  function css(classReference: string, quasiLocations?: number[]) {
+    const scopedName = classReference.slice("__csslit_class_".length);
     return (strings: TemplateStringsArray, ...values: unknown[]) => {
       const { code, mappingRuns } = materialize(strings, values, quasiLocations);
       blocks.push({
