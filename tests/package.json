@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@csslit/core": "^0.0.8",
+    "@csslit/core": "^0.0.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@csslit/vite-plugin": "^0.0.8",
+    "@csslit/vite-plugin": "^0.0.9",
     "@octanejs/vite-plugin": "^0.1.19",
     "@solidjs/vite-plugin": "^3.0.0-next.34",
     "@solidjs/web": "^2.0.0-rc.3",

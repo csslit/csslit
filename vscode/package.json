@@ -17,7 +17,7 @@
   "type": "module",
   "main": "./dist/extension.js",
   "dependencies": {
-    "@csslit/typescript-plugin": "^0.0.8"
+    "@csslit/typescript-plugin": "^0.0.9"
   },
   "devDependencies": {
     "@astrojs/ts-plugin": "^1.10.11",

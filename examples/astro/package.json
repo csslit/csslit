@@ -3,12 +3,12 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@csslit/core": "^0.0.8",
+    "@csslit/core": "^0.0.9",
     "astro": "^7.2.9"
   },
   "devDependencies": {
-    "@csslit/typescript-plugin": "^0.0.8",
-    "@csslit/vite-plugin": "^0.0.8",
+    "@csslit/typescript-plugin": "^0.0.9",
+    "@csslit/vite-plugin": "^0.0.9",
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
     "vite-plus": "^0.3.0"

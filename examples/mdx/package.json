@@ -3,13 +3,13 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@csslit/core": "^0.0.8",
+    "@csslit/core": "^0.0.9",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
-    "@csslit/typescript-plugin": "^0.0.8",
-    "@csslit/vite-plugin": "^0.0.8",
+    "@csslit/typescript-plugin": "^0.0.9",
+    "@csslit/vite-plugin": "^0.0.9",
     "@mdx-js/rollup": "^3.1.1",
     "@mdx-js/typescript-plugin": "^0.1.3",
     "@types/mdx": "^2.0.14",

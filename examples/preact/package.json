@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@csslit/core": "^0.0.8",
+    "@csslit/core": "^0.0.9",
     "preact": "^10.29.8"
   },
   "devDependencies": {
-    "@csslit/vite-plugin": "^0.0.8",
+    "@csslit/vite-plugin": "^0.0.9",
     "@preact/preset-vite": "^2.10.6",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
