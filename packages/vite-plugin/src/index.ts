@@ -8,6 +8,7 @@ import path from "node:path";
 import { composeCssSourcemap } from "./compose-sourcemap.ts";
 import { BuildEnvironment, createRunnableDevEnvironment, normalizePath } from "vite";
 import type {
+  DevEnvironment,
   Environment,
   PluginOption,
   ResolvedConfig,
@@ -219,10 +220,14 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
   ) {
     const moduleInfo =
       command === "serve"
-        ? devServer!.environments[environmentName]?.pluginContainer.getModuleInfo(sourceId)
-        : getModuleInfoByEnvironment.get(environmentName)?.(sourceId);
+        ? devServer!.environments[environmentName]!.pluginContainer.getModuleInfo(sourceId)!
+        : getModuleInfoByEnvironment.get(environmentName)!(sourceId)!;
 
-    return moduleInfo?.meta.csslit;
+    return moduleInfo.meta.csslit!;
+  }
+
+  async function ensureMetadata(env: DevEnvironment, sourceId: string) {
+    await env.transformRequest(env.moduleGraph.getModuleById(sourceId)!.url)
   }
 
   async function transformModule(
@@ -395,13 +400,16 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           } else if (id.endsWith(".csslit.eval")) {
             const environmentEnd = id.length - ".csslit.eval".length;
             const environmentStart = id.lastIndexOf(".", environmentEnd - 1);
-            const environment = id.slice(environmentStart + 1, environmentEnd);
+            const environmentName = id.slice(environmentStart + 1, environmentEnd);
             const sourceId = id.slice(0, environmentStart);
 
             this.addWatchFile(sourceId);
 
+            if (this.environment.config.command === "serve")
+              await ensureMetadata(devServer!.environments[environmentName]!, sourceId);
+
             const metadata = getEvaluationMetadata(
-              environment,
+              environmentName,
               sourceId,
               this.environment.config.command,
             )!;
@@ -415,6 +423,9 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             const sourceId = id.slice(0, -".csslit.classmap".length);
 
             this.addWatchFile(sourceId);
+
+            if (this.environment.config.command === "serve")
+              await ensureMetadata(this.environment as DevEnvironment, sourceId);
 
             const metadata = this.getModuleInfo(sourceId)?.meta.csslit!;
 
@@ -432,13 +443,16 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           } else if (id.endsWith(".csslit.eval.classmap")) {
             const environmentEnd = id.length - ".csslit.eval.classmap".length;
             const environmentStart = id.lastIndexOf(".", environmentEnd - 1);
-            const environment = id.slice(environmentStart + 1, environmentEnd);
+            const environmentName = id.slice(environmentStart + 1, environmentEnd);
             const sourceId = id.slice(0, environmentStart);
 
             this.addWatchFile(sourceId);
 
+            if (this.environment.config.command === "serve")
+              await ensureMetadata(devServer!.environments[environmentName]!, sourceId);
+
             const metadata = getEvaluationMetadata(
-              environment,
+              environmentName,
               sourceId,
               this.environment.config.command,
             )!;
@@ -462,6 +476,9 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
             let result: EvalResult;
 
             this.addWatchFile(sourceId);
+
+            if (this.environment.config.command === "serve")
+              await ensureMetadata(this.environment as DevEnvironment, sourceId);
 
             const metadata = this.getModuleInfo(sourceId)?.meta.csslit!;
 

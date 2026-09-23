@@ -1,6 +1,6 @@
 {
   "name": "@csslit/typescript-plugin",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "description": "Enables the csslit VS Code extension to support additional file formats.",
   "keywords": [
     "css",
