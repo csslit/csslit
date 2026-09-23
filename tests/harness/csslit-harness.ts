@@ -189,8 +189,8 @@ function extractVirtualCssIds(code: string) {
   );
 }
 
-function extractVirtualCssModuleJsonIds(code: string) {
-  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.json/g) ?? [])].map(
+function extractVirtualClassmapIds(code: string) {
+  return [...new Set(code.match(/(?:\/|[A-Za-z]:\/)[^"'`]+?\.csslit\.classmap/g) ?? [])].map(
     normalizePath,
   );
 }
@@ -296,11 +296,11 @@ async function runCsslitCaseIsolated(
       }
       jsModules.push({ code: sourceResult.code, id: file });
 
-      for (const publicModuleId of extractVirtualCssModuleJsonIds(sourceResult.code)) {
+      for (const publicModuleId of extractVirtualClassmapIds(sourceResult.code)) {
         const resolvedModuleId = unwrapPublicId(publicModuleId);
         const moduleResult = await server.transformRequest(resolvedModuleId);
         const code = moduleResult?.code ?? "";
-        jsModules.push({ code, id: `${file}.csslit.json` });
+        jsModules.push({ code, id: `${file}.csslit.classmap` });
       }
 
       for (const publicCssId of extractVirtualCssIds(sourceResult.code)) {
@@ -417,9 +417,9 @@ async function runCsslitProductionBuildIsolated(
 
 function compactSnapshotPath(value: string) {
   return normalizeSnapshotText(value)
-    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.json)/g, "$1")
+    .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.classmap)/g, "$1")
     .replace(/\/[@]id\/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1")
-    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.json)/g, "$1")
+    .replace(/<root>(\/[^\s"'`)]+?\.csslit\.classmap)/g, "$1")
     .replace(/<root>(\/[^\s"'`)]+?\.csslit\.css)/g, "$1");
 }
 

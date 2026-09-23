@@ -2176,7 +2176,7 @@ pub(crate) fn transform_compile_time(
       1,
       quote_stmt!(
         ast,
-        import __css_module_import from @"{import_path}.csslit.eval.json";
+        import __css_module_import from @"{import_path}.csslit.eval.classmap";
       ),
     );
   }
@@ -2749,7 +2749,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { dedent } from "./tags";
         const scale = 4;
@@ -2776,7 +2776,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:35", () => color ?? "red");
@@ -2802,7 +2802,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         const outer = 1;
         __csslit.defer(() => {
@@ -2828,7 +2828,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { color } from "./theme";
         const tone = __csslit.cell("tone", "4:21:4:55", () => color ?? globalThis.theme.fallback);
@@ -2854,7 +2854,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { theme } from "./theme";
         const tone = __csslit.cellVarErr("tone", "reassigned", "5:8:5:12");
@@ -2884,7 +2884,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { fallback, key, theme, values } from "./theme";
         const tone = __csslit.cell("tone", "4:14:8:9");
@@ -2911,7 +2911,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         const used = __csslit.cell("used", "2:6:2:37");
@@ -2929,7 +2929,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         const rest = __csslit.cell("rest", "2:6:2:25");
@@ -2957,7 +2957,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         var legacy = __csslit.cell("legacy", "3:21:3:26", () => "red");
         const stable = "1px";
@@ -2979,7 +2979,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:27", () => __csslit.readCell("legacy", legacy, "3:21:3:27", "4:12:4:26"))};`;
         var legacy = __csslit.cell("legacy", "4:21:4:26", () => "red");
@@ -3001,7 +3001,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         var value = __csslit.cellVarErr("value", "reassigned", "4:14:4:19");
         var other = __csslit.cell("other", "4:12:4:28");
@@ -3019,7 +3019,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         var color = __csslit.cellVarErr("color", "reassigned", "2:13:2:18");
         __csslit.css(__css_module_import.css_4_1)`color: ${__csslit.capture("3:13:3:18", () => __csslit.readCell("color", color, "3:13:3:18", "2:4:2:43"))};`;
@@ -3041,7 +3041,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         var value = __csslit.cellVarErr("value", "reassigned", "4:12:4:17");
         __csslit.css(__css_module_import.css_6_9)`color: ${__csslit.capture("5:21:5:26", () => __csslit.readCell("value", value, "5:21:5:26", "3:12:3:25"))};`;
@@ -3062,7 +3062,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         const tone = "red";
         __csslit.css(__css_module_import.css_5_9)`color: ${tone}; width: ${__csslit.capture("4:37:4:47", () => pickSize())}px; border-color: ${__csslit.capture("4:68:4:87", () => window.theme.border)};`;
@@ -3084,7 +3084,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_5_11)`color: red;`;
         export const __csslit_eval_result = __csslit.finalize(null);
@@ -3105,7 +3105,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_4_26)`color: red;`;
         const appStyle = __css_module_import.css_4_26;
@@ -3129,7 +3129,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         const useFoo = true;
         __csslit.css(__css_module_import.css_5_35)`color: red;`;
@@ -3156,7 +3156,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.defer(() => {
           const color = "red";
@@ -3186,7 +3186,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         import { comptime } from "@csslit/core";
         __csslit.defer(() => {
@@ -3219,7 +3219,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:27", () => pick())};`;
         function pick() {
@@ -3246,7 +3246,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_4_9)`.${__csslit.capture("3:15:3:21", () => pick())} & { color: blue; }`;
         function pick() {
@@ -3274,7 +3274,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_5_9)`z-index: ${__csslit.capture("4:23:4:36", () => parseInt("1"))};`;
         export const __csslit_eval_result = __csslit.finalize(null);
@@ -3297,7 +3297,7 @@ mod tests {
 
     expect_test::expect![[r#"
         import * as __csslit_eval_runtime from "virtual:csslit-eval-runtime";
-        import __css_module_import from "/src/example.tsx.csslit.eval.json";
+        import __css_module_import from "/src/example.tsx.csslit.eval.classmap";
         const __csslit = __csslit_eval_runtime.init();
         __csslit.css(__css_module_import.css_4_9)`color: ${__csslit.capture("3:21:3:26", () => Theme("3:21:3:26"))};`;
         const Theme = __csslit.cellVarErr("Theme", "class-binding", "5:14:5:19");

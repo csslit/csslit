@@ -95,7 +95,7 @@ pub(crate) fn transform_runtime(
       0,
       quote_stmt!(
         ast,
-        import __css_module_import from @"{import_path}.csslit.json";
+        import __css_module_import from @"{import_path}.csslit.classmap";
       ),
     );
   }

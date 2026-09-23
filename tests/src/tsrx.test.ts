@@ -32,7 +32,7 @@ test("react tsrx build extracts csslit css", async () => {
     # js /src/Box.tsrx
     const _jsx = __vite__cjsImport3_react_jsxRuntime["jsx"];
     import "/src/Box.tsrx.csslit.css";
-    import __css_module_import from "/src/Box.tsrx.csslit.json?import";
+    import __css_module_import from "/src/Box.tsrx.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import __vite__cjsImport3_react_jsxRuntime from "/@fs/<root>/tests/node_modules/.vite/deps/react_jsx-runtime.js";
     const box = __css_module_import.css_3_13;
@@ -43,10 +43,9 @@ test("react tsrx build extracts csslit css", async () => {
       });
     }
 
-    # js /src/Box.tsrx.csslit.json
-    export const css_3_13 = "baRzfH";
+    # js /src/Box.tsrx.csslit.classmap
     export default {
-      css_3_13,
+      css_3_13: "baRzfH",
     };
 
     # css /src/Box.tsrx.csslit.css
@@ -69,7 +68,7 @@ test("preact tsrx build extracts csslit css", async () => {
     "
     # js /src/Box.tsrx
     import "/src/Box.tsrx.csslit.css";
-    import __css_module_import from "/src/Box.tsrx.csslit.json?import";
+    import __css_module_import from "/src/Box.tsrx.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { jsx as _jsx } from "/@fs/<root>/tests/node_modules/.vite/deps/preact_jsx-runtime.js";
     const box = __css_module_import.css_3_13;
@@ -80,10 +79,9 @@ test("preact tsrx build extracts csslit css", async () => {
       });
     }
 
-    # js /src/Box.tsrx.csslit.json
-    export const css_3_13 = "baRzfH";
+    # js /src/Box.tsrx.csslit.classmap
     export default {
-      css_3_13,
+      css_3_13: "baRzfH",
     };
 
     # css /src/Box.tsrx.csslit.css
@@ -105,7 +103,7 @@ test("solid tsrx build extracts csslit css", async () => {
     "
     # js /src/Box.tsrx
     import "/src/Box.tsrx.tsx.csslit.css";
-    import __css_module_import from "/src/Box.tsrx.tsx.csslit.json?import";
+    import __css_module_import from "/src/Box.tsrx.tsx.csslit.classmap?import";
     import { template as _$template } from "/@fs/<root>/tests/node_modules/.vite/deps/@solidjs_web.js";
     import { className as _$className } from "/@fs/<root>/tests/node_modules/.vite/deps/@solidjs_web.js";
     import { effect as _$effect } from "/@fs/<root>/tests/node_modules/.vite/deps/@solidjs_web.js";
@@ -123,10 +121,9 @@ test("solid tsrx build extracts csslit css", async () => {
       return _el$;
     }
 
-    # js /src/Box.tsrx.csslit.json
-    export const css_6_13 = "WeU3SY";
+    # js /src/Box.tsrx.csslit.classmap
     export default {
-      css_6_13,
+      css_6_13: "WeU3SY",
     };
 
     # css /src/Box.tsrx.tsx.csslit.css
@@ -153,7 +150,7 @@ test("octane tsrx build extracts csslit css", async () => {
       "/@id/<root>/src/Box.tsrx",
     );
     import "/src/Box.tsrx.csslit.css";
-    import __css_module_import from "/src/Box.tsrx.csslit.json?import";
+    import __css_module_import from "/src/Box.tsrx.csslit.classmap?import";
     import {
       HMR as _$HMR,
       bag2 as _$bag2,
@@ -192,10 +189,9 @@ test("octane tsrx build extracts csslit css", async () => {
       });
     }
 
-    # js /src/Box.tsrx.csslit.json
-    export const css_14_13 = "baRzfH";
+    # js /src/Box.tsrx.csslit.classmap
     export default {
-      css_14_13,
+      css_14_13: "baRzfH",
     };
 
     # css /src/Box.tsrx.csslit.css

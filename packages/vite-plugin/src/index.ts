@@ -355,20 +355,20 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
         filter: {
           id: [
             /^virtual:csslit-eval-runtime$/,
-            /\.(?:csslit\.json|csslit\.eval\.json|csslit\.css)$/,
+            /\.(?:csslit\.classmap|csslit\.eval\.classmap|csslit\.css)$/,
           ],
         },
         async handler(source, importer) {
           if (source === "virtual:csslit-eval-runtime") {
             return "\0virtual:csslit-eval-runtime";
-          } else if (source.endsWith(".csslit.json")) {
-            const sourceId = source.slice(0, -".csslit.json".length);
+          } else if (source.endsWith(".csslit.classmap")) {
+            const sourceId = source.slice(0, -".csslit.classmap".length);
             const resolved = await this.resolve(sourceId, importer);
             return {
-              id: `${resolved!.id}.csslit.json`,
+              id: `${resolved!.id}.csslit.classmap`,
             };
-          } else if (source.endsWith(".csslit.eval.json")) {
-            return `${importer!}.json`;
+          } else if (source.endsWith(".csslit.eval.classmap")) {
+            return `${importer!}.classmap`;
           } else if (source.endsWith(".csslit.css")) {
             const sourceId = source.slice(0, -".csslit.css".length);
             const resolved = await this.resolve(sourceId, importer);
@@ -386,7 +386,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
           id: [
             // oxlint-disable-next-line no-control-regex
             /^\0virtual:csslit-eval-runtime$/,
-            /\.(?:csslit\.eval|csslit\.json|csslit\.eval\.json|csslit\.css)$/,
+            /\.(?:csslit\.eval|csslit\.classmap|csslit\.eval\.classmap|csslit\.css)$/,
           ],
         },
         async handler(id) {
@@ -411,8 +411,8 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
               map: metadata.result.eval.map,
               moduleType: "js",
             };
-          } else if (id.endsWith(".csslit.json")) {
-            const sourceId = id.slice(0, -".csslit.json".length);
+          } else if (id.endsWith(".csslit.classmap")) {
+            const sourceId = id.slice(0, -".csslit.classmap".length);
 
             this.addWatchFile(sourceId);
 
@@ -424,9 +424,13 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
                 this.environment.name === "comptime" ? `__csslit_class_${scopedName}` : scopedName;
             }
 
-            return JSON.stringify(exports);
-          } else if (id.endsWith(".csslit.eval.json")) {
-            const environmentEnd = id.length - ".csslit.eval.json".length;
+            return {
+              code: `export default ${JSON.stringify(exports, null, "  ")};\n`,
+              map: null,
+              moduleType: "js",
+            };
+          } else if (id.endsWith(".csslit.eval.classmap")) {
+            const environmentEnd = id.length - ".csslit.eval.classmap".length;
             const environmentStart = id.lastIndexOf(".", environmentEnd - 1);
             const environment = id.slice(environmentStart + 1, environmentEnd);
             const sourceId = id.slice(0, environmentStart);
@@ -444,7 +448,11 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
               exports[localName] = `__csslit_class_${scopedName}`;
             }
 
-            return JSON.stringify(exports);
+            return {
+              code: `export default ${JSON.stringify(exports, null, "  ")};\n`,
+              map: null,
+              moduleType: "js",
+            };
           } else if (id.endsWith(".csslit.css")) {
             if (this.environment.config.consumer === "server") return "";
 

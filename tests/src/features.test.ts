@@ -35,7 +35,7 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { theme } from "/src/theme.ts";
     const key = "tone";
@@ -47,10 +47,9 @@ test("comptime supports destructuring with computed keys and defaults", async ()
     } = theme;
     export const className = __css_module_import.css_8_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_8_26 = "bFY7LX";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_8_26,
+      css_8_26: "bFY7LX",
     };
 
     # js /src/theme.ts
@@ -97,7 +96,7 @@ test("destructuring closures observe incrementally initialized bindings", async 
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     const { a, b, c } = comptime({
       a: 1,
@@ -108,10 +107,9 @@ test("destructuring closures observe incrementally initialized bindings", async 
     });
     export const className = __css_module_import.css_11_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_11_26 = "pj9Hxg";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_11_26,
+      css_11_26: "pj9Hxg",
     };
 
     # css /src/entry.ts.csslit.css
@@ -144,7 +142,7 @@ test("css literal reads from enclosing function scope", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const makeStyles = () => {
       const base = "hotpink";
@@ -152,10 +150,9 @@ test("css literal reads from enclosing function scope", async () => {
     };
     export const className = makeStyles();
 
-    # js /src/entry.ts.csslit.json
-    export const css_5_10 = "SFU29d";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_5_10,
+      css_5_10: "SFU29d",
     };
 
     # css /src/entry.ts.csslit.css
@@ -188,15 +185,14 @@ test("imported function can be called directly in interpolation", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { pickColor } from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_4_26 = "ADzKXK";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_4_26,
+      css_4_26: "ADzKXK",
     };
 
     # js /src/theme.ts
@@ -236,16 +232,15 @@ test("comptime allows function call in binding position", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { comptime, css } from "/@fs/<root>/packages/core/dist/index.js";
     import { pickColor } from "/src/theme.ts";
     const tone = comptime(pickColor());
     export const className = __css_module_import.css_6_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_6_26 = "eYxGv5";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_6_26,
+      css_6_26: "eYxGv5",
     };
 
     # js /src/theme.ts
@@ -277,14 +272,13 @@ test("array literal can be used in direct interpolation", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -311,14 +305,13 @@ test("object literal can be used in direct interpolation", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -347,14 +340,13 @@ test("css literal compiles to static css", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -391,15 +383,14 @@ test("css literal resolves inline module dependencies", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import theme from "/src/theme.ts";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_4_26 = "ADzKXK";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_4_26,
+      css_4_26: "ADzKXK",
     };
 
     # js /src/theme.ts
@@ -437,17 +428,15 @@ test("css class binding can be interpolated into another selector", async () => 
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const h1Style = __css_module_import.css_7_24;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_18 = "DmQfhQ";
-    export const css_7_24 = "GVCOwS";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_18,
-      css_7_24,
+      css_3_18: "DmQfhQ",
+      css_7_24: "GVCOwS",
     };
 
     # css /src/entry.ts.csslit.css
@@ -492,17 +481,15 @@ test("css class binding is rewritten inside selector functions", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const appStyle = __css_module_import.css_3_18;
     export const child = __css_module_import.css_7_22;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_18 = "DmQfhQ";
-    export const css_7_22 = "dDSrni";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_18,
-      css_7_22,
+      css_3_18: "DmQfhQ",
+      css_7_22: "dDSrni",
     };
 
     # css /src/entry.ts.csslit.css
@@ -543,27 +530,25 @@ test("imported css class binding can be interpolated into another selector", asy
     "
     # js /src/base.ts
     import "/src/base.ts.csslit.css";
-    import __css_module_import from "/src/base.ts.csslit.json?import";
+    import __css_module_import from "/src/base.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const base = __css_module_import.css_3_21;
 
-    # js /src/base.ts.csslit.json
-    export const css_3_21 = "eKmIvo";
+    # js /src/base.ts.csslit.classmap
     export default {
-      css_3_21,
+      css_3_21: "eKmIvo",
     };
 
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { base } from "/src/base.ts";
     export const child = __css_module_import.css_4_22;
 
-    # js /src/entry.ts.csslit.json
-    export const css_4_22 = "lPhY7R";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_4_22,
+      css_4_22: "lPhY7R",
     };
 
     # css /src/base.ts.csslit.css
@@ -602,17 +587,15 @@ test("css expressions in conditional bindings emit matching css module keys", as
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const enabled = true;
     export const style = enabled ? __css_module_import.css_4_32 : __css_module_import.css_6_5;
 
-    # js /src/entry.ts.csslit.json
-    export const css_4_32 = "G4gki8";
-    export const css_6_5 = "pA8vo2";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_4_32,
-      css_6_5,
+      css_4_32: "G4gki8",
+      css_6_5: "pA8vo2",
     };
 
     # css /src/entry.ts.csslit.css
@@ -657,15 +640,14 @@ test("css eval uses source transformed before csslit", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     const tone = "hotpink";
     export const className = __css_module_import.css_4_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_4_26 = "ADzKXK";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_4_26,
+      css_4_26: "ADzKXK",
     };
 
     # css /src/entry.ts.csslit.css
@@ -698,18 +680,16 @@ test("css and global css preserve source order in one stylesheet", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     undefined;
     export const second = __css_module_import.css_9_23;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_22 = "UGTb1u";
-    export const css_9_23 = "b47yAD";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_22,
-      css_9_23,
+      css_3_22: "UGTb1u",
+      css_9_23: "b47yAD",
     };
 
     # css /src/entry.ts.csslit.css
@@ -751,15 +731,14 @@ test("global keyframes remain global and ordered with scoped css", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     undefined;
     export const className = __css_module_import.css_7_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_7_26 = "R4nq2r";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_7_26,
+      css_7_26: "R4nq2r",
     };
 
     # css /src/entry.ts.csslit.css
@@ -801,14 +780,13 @@ test("css literal hoists and scopes keyframes", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -846,14 +824,13 @@ test("conditional keyframes preserve their media condition", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -896,17 +873,15 @@ test("duplicate keyframes in separate css blocks are independently scoped", asyn
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const first = __css_module_import.css_3_22;
     export const second = __css_module_import.css_8_23;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_22 = "UGTb1u";
-    export const css_8_23 = "kCoxkq";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_22,
-      css_8_23,
+      css_3_22: "UGTb1u",
+      css_8_23: "kCoxkq",
     };
 
     # css /src/entry.ts.csslit.css
@@ -952,14 +927,13 @@ test("css literals preserve custom property references", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -991,14 +965,13 @@ test("new, tagged template, and sequence expressions evaluate in interpolations"
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -1027,14 +1000,13 @@ test("css template nested directly in an interpolation becomes its class name", 
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -1070,14 +1042,13 @@ test("css nested in a closure is evaluated independently", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_3_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_3_26 = "L8OLuN";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_3_26,
+      css_3_26: "L8OLuN",
     };
 
     # css /src/entry.ts.csslit.css
@@ -1112,14 +1083,13 @@ test("ambient functions are treated as globals", async () => {
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     export const className = __css_module_import.css_5_26;
 
-    # js /src/entry.ts.csslit.json
-    export const css_5_26 = "FdnjzE";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_5_26,
+      css_5_26: "FdnjzE",
     };
 
     # css /src/entry.ts.csslit.css
@@ -1170,7 +1140,7 @@ test("closures in interpolations evaluate with outer constants and local state",
     "
     # js /src/entry.ts
     import "/src/entry.ts.csslit.css";
-    import __css_module_import from "/src/entry.ts.csslit.json?import";
+    import __css_module_import from "/src/entry.ts.csslit.classmap?import";
     import { css } from "/@fs/<root>/packages/core/dist/index.js";
     import { sizes } from "/src/theme.ts";
     const scale = (value) => value * 4;
@@ -1179,10 +1149,9 @@ test("closures in interpolations evaluate with outer constants and local state",
       return value + 1;
     }
 
-    # js /src/entry.ts.csslit.json
-    export const css_6_26 = "eYxGv5";
+    # js /src/entry.ts.csslit.classmap
     export default {
-      css_6_26,
+      css_6_26: "eYxGv5",
     };
 
     # js /src/theme.ts
