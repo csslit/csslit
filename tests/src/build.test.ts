@@ -31,6 +31,25 @@ test("production build emits csslit css", async () => {
   `);
 });
 
+test("production build emits csslit css from an imported module", async () => {
+  const result = await buildProductionSnapshot({
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `
+        import "./global";
+        export const answer = 42;
+      `,
+      "/src/global.ts": `
+        import { css } from "@csslit/core";
+        css.global\`html { color: hotpink; }\`;
+      `,
+    },
+  });
+
+  expect(result.css?.[0]?.code).toContain("html");
+  expect(result.css?.[0]?.code).toContain("#ff69b4");
+});
+
 test("production build eval uses source transformed before csslit", async () => {
   const result = await buildProductionSnapshot({
     entry: "/src/entry.ts",

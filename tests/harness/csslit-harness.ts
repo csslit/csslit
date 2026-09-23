@@ -100,6 +100,7 @@ expect.addSnapshotSerializer({
 type FixtureFiles = Record<`/${string}`, string>;
 
 type HarnessCase = {
+  coldCssFile?: `/${string}`;
   cssDevSourcemap?: boolean;
   entry: `/${string}`;
   files: FixtureFiles;
@@ -288,6 +289,12 @@ async function runCsslitCaseIsolated(
   try {
     const jsModules: SnapshotJsModule[] = [];
     const cssModules: SnapshotCssModule[] = [];
+
+    if (input.coldCssFile) {
+      const cssId = `${absolutizeFile(input.coldCssFile, fileRoot)}.csslit.css`;
+      const cssResult = await server.transformRequest(cssId);
+      cssModules.push(parseCssSnapshot(cssResult?.code ?? "", cssId));
+    }
 
     for (const file of Object.keys(files).sort()) {
       const sourceResult = await server.transformRequest(absolutizeFile(file, fileRoot));

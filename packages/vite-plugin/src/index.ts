@@ -227,7 +227,7 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
   }
 
   async function ensureMetadata(env: DevEnvironment, sourceId: string) {
-    await env.transformRequest(env.moduleGraph.getModuleById(sourceId)!.url)
+    await env.transformRequest(fileToDevUrl(sourceId, env.config));
   }
 
   async function transformModule(
@@ -299,6 +299,8 @@ export default function csslit(options: CsslitOptions = {}): PluginOption {
       config(config) {
         projectConfiguredBuilder = Boolean(config.builder);
         config.builder ??= {};
+        config.server ??= {};
+        config.server.perEnvironmentStartEndDuringDev = true;
         config.build ??= {};
         const createEnvironment = config.build.createEnvironment;
         config.build.createEnvironment = (name, config) =>

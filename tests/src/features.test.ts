@@ -1,7 +1,23 @@
 import { expect, test } from "vite-plus/test";
 import type { Plugin } from "vite";
 
-import { buildSnapshot } from "../harness/csslit-harness.ts";
+import { build, buildSnapshot } from "../harness/csslit-harness.ts";
+
+test("generated CSS can be requested before its source module", async () => {
+  const result = await build({
+    coldCssFile: "/src/global.ts",
+    entry: "/src/entry.ts",
+    files: {
+      "/src/entry.ts": `import "./global";`,
+      "/src/global.ts": `
+        import { css } from "@csslit/core";
+        css.global\`html { color: hotpink; }\`;
+      `,
+    },
+  });
+
+  expect(result.css?.[0]?.code).toContain("#ff69b4");
+});
 
 test("comptime supports destructuring with computed keys and defaults", async () => {
   const result = await buildSnapshot({
